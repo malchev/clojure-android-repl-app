@@ -1,0 +1,66 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.example.clojurerepl'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.example.clojurerepl"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+    
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packagingOptions {
+        resources {
+            excludes += ['META-INF/LICENSE.txt', 'META-INF/NOTICE.txt']
+            pickFirst 'data_readers.clj'
+            pickFirst 'data_readers.cljc'
+            pickFirst 'clojure/**/*.clj'
+            pickFirst 'clojure/**/*.cljc'
+            pickFirst 'META-INF/services/**'
+        }
+    }
+
+    sourceSets {
+        main {
+            java {
+                srcDirs = ['src/main/java']
+            }
+            resources.srcDirs += ['src/main/clojure', 'src/main/resources']
+        }
+    }
+}
+
+dependencies {
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation files("../clojure/target/clojure-1.11.1.jar")
+    // Comment out any other Clojure dependency
+    // implementation 'org.clojure:clojure:1.11.1'
+    implementation 'org.clojure:spec.alpha:0.3.218'
+    implementation('org.clojure:tools.nrepl:0.2.13') {
+        exclude group: 'org.clojure', module: 'clojure'
+    }
+    implementation('cider:cider-nrepl:0.28.5') {
+        exclude group: 'org.clojure', module: 'clojure'
+    }
+    implementation 'com.google.dexmaker:dexmaker:1.2'
+    implementation 'com.android.tools:r8:8.2.47'
+}

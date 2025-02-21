@@ -1,0 +1,169 @@
+From 5dceeff72acf2f94d014bdce13ad84efdcf9ae53 Mon Sep 17 00:00:00 2001
+From: Iliyan Malchev <malchev@gmail.com>
+Date: Sun, 23 Feb 2025 10:48:37 -0800
+Subject: [PATCH 2/2] Patch DynamicClassLoader
+
+Signed-off-by: Iliyan Malchev <malchev@gmail.com>
+---
+ src/jvm/clojure/lang/DynamicClassLoader.java | 130 ++++++++++---------
+ 1 file changed, 66 insertions(+), 64 deletions(-)
+
+diff --git a/src/jvm/clojure/lang/DynamicClassLoader.java b/src/jvm/clojure/lang/DynamicClassLoader.java
+index 1bab0d5c..c3ea4c67 100644
+--- a/src/jvm/clojure/lang/DynamicClassLoader.java
++++ b/src/jvm/clojure/lang/DynamicClassLoader.java
+@@ -12,85 +12,87 @@
+ 
+ package clojure.lang;
+ 
+-import java.lang.ref.Reference;
++import java.net.URL;
++import java.net.URLClassLoader;
+ import java.util.HashMap;
+ import java.util.Map;
+-import java.util.concurrent.ConcurrentHashMap;
+-import java.net.URLClassLoader;
+-import java.net.URL;
+-import java.lang.ref.ReferenceQueue;
+-import java.lang.ref.SoftReference;
+ 
+-public class DynamicClassLoader extends URLClassLoader{
+-HashMap<Integer, Object[]> constantVals = new HashMap<Integer, Object[]>();
+-static ConcurrentHashMap<String, Reference<Class>>classCache =
+-        new ConcurrentHashMap<String, Reference<Class> >();
++public class DynamicClassLoader extends URLClassLoader {
++    static final URL[] EMPTY_URLS = new URL[]{};
++    private static final Map<String, Class> staticClassCache = new HashMap<String, Class>();
++    private final Map<String, Class> instanceClassCache;
++    private static boolean isAndroid;
++    private static Object androidDelegate;
++
++    static {
++        try {
++            Class.forName("android.os.Build");
++            isAndroid = true;
++        } catch (ClassNotFoundException e) {
++            isAndroid = false;
++        }
++    }
+ 
+-static final URL[] EMPTY_URLS = new URL[]{};
++    public DynamicClassLoader(){
++        super(EMPTY_URLS);
++        instanceClassCache = new HashMap<String, Class>();
++    }
+ 
+-static final ReferenceQueue rq = new ReferenceQueue();
++    public DynamicClassLoader(ClassLoader parent){
++        super(EMPTY_URLS, parent);
++        instanceClassCache = new HashMap<String, Class>();
++    }
+ 
+-public DynamicClassLoader(){
+-    //pseudo test in lieu of hasContextClassLoader()
+-	super(EMPTY_URLS,(Thread.currentThread().getContextClassLoader() == null ||
+-                Thread.currentThread().getContextClassLoader() == ClassLoader.getSystemClassLoader())?
+-                Compiler.class.getClassLoader():Thread.currentThread().getContextClassLoader());
+-}
++    public static void setAndroidDelegate(Object delegate) {
++        androidDelegate = delegate;
++    }
+ 
+-public DynamicClassLoader(ClassLoader parent){
+-	super(EMPTY_URLS,parent);
+-}
++    public Class defineClass(String name, byte[] bytes, Object srcForm) {
++        Class c = instanceClassCache.get(name);
++        if(c == null) {
++            if (isAndroid && androidDelegate != null) {
++                try {
++                    c = (Class) androidDelegate.getClass()
++                        .getMethod("defineClass", String.class, byte[].class)
++                        .invoke(androidDelegate, name, bytes);
++                } catch (Exception e) {
++                    throw new RuntimeException("Failed to define class through Android delegate", e);
++                }
++            } else {
++                c = defineClass(name, bytes, 0, bytes.length);
++            }
++            instanceClassCache.put(name, c);
++            staticClassCache.put(name, c);
++        }
++        return c;
++    }
+ 
+-public Class defineClass(String name, byte[] bytes, Object srcForm){
+-	Util.clearCache(rq, classCache);
+-	Class c = defineClass(name, bytes, 0, bytes.length);
+-    classCache.put(name, new SoftReference(c,rq));
+-    return c;
+-}
++    public Class defineClass(String name, byte[] bytes) {
++        return defineClass(name, bytes, null);
++    }
+ 
+-static Class<?> findInMemoryClass(String name) {
+-    Reference<Class> cr = classCache.get(name);
+-	if(cr != null)
+-		{
+-		Class c = cr.get();
++    protected Class<?> findClass(String name) throws ClassNotFoundException {
++        Class c = instanceClassCache.get(name);
+         if(c != null)
+             return c;
+-		else
+-	        classCache.remove(name, cr);
+-		}
+-	return null;
+-}
+-
+-protected Class<?>findClass(String name) throws ClassNotFoundException {
+-	Class c = findInMemoryClass(name);
+-	if (c != null)
+-		return c;
+-	else
+-		return super.findClass(name);
+-}
++        return super.findClass(name);
++    }
+ 
+-protected synchronized Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+-	Class c = findLoadedClass(name);
+-	if (c == null) {
+-		c = findInMemoryClass(name);
+-		if (c == null)
+-			c = super.loadClass(name, false);
++    public static Class<?> findInMemoryClass(String name) {
++        return staticClassCache.get(name);
+     }
+-	if (resolve)
+-		resolveClass(c);
+-	return c;
+-}
+ 
+-public void registerConstants(int id, Object[] val){
+-	constantVals.put(id, val);
+-}
++    HashMap<Integer, Object[]> constantVals = new HashMap<Integer, Object[]>();
+ 
+-public Object[] getConstants(int id){
+-	return constantVals.get(id);
+-}
++    public void registerConstants(int id, Object[] val) {
++        constantVals.put(id, val);
++    }
+ 
+-public void addURL(URL url){
+-	super.addURL(url);
+-}
++    public Object[] getConstants(int id) {
++        return constantVals.get(id);
++    }
+ 
++    public void addURL(URL url) {
++        super.addURL(url);
++    }
+ }
+-- 
+2.34.1
+

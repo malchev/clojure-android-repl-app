@@ -1,0 +1,22 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+
+include ':app'
+include ':clojure-android'
+rootProject.name = "ClojureRepl"
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url "https://clojars.org/repo" }
+    }
+}
+
+project(':clojure-android').buildFileName = 'clojure-build.gradle' 

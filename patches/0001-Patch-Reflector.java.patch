@@ -1,0 +1,66 @@
+From 837fc7b6a5496140cce86555d68f53d7683d3cdb Mon Sep 17 00:00:00 2001
+From: Iliyan Malchev <malchev@gmail.com>
+Date: Sun, 23 Feb 2025 10:48:22 -0800
+Subject: [PATCH 1/2] Patch Reflector.java
+
+Signed-off-by: Iliyan Malchev <malchev@gmail.com>
+---
+ src/jvm/clojure/lang/Reflector.java | 34 ++---------------------------
+ 1 file changed, 2 insertions(+), 32 deletions(-)
+
+diff --git a/src/jvm/clojure/lang/Reflector.java b/src/jvm/clojure/lang/Reflector.java
+index d5811cc5..47dc7eb4 100644
+--- a/src/jvm/clojure/lang/Reflector.java
++++ b/src/jvm/clojure/lang/Reflector.java
+@@ -12,9 +12,6 @@
+ 
+ package clojure.lang;
+ 
+-import java.lang.invoke.MethodHandle;
+-import java.lang.invoke.MethodHandles;
+-import java.lang.invoke.MethodType;
+ import java.lang.reflect.Constructor;
+ import java.lang.reflect.Field;
+ import java.lang.reflect.Method;
+@@ -24,36 +21,9 @@ import java.util.stream.Collectors;
+ 
+ public class Reflector{
+ 
+-private static final MethodHandle CAN_ACCESS_PRED;
+-
+-// Java 8 is oldest JDK supported
+-private static boolean isJava8() {
+-	return System.getProperty("java.vm.specification.version").equals("1.8");
+-}
+-
+-static {
+-	MethodHandle pred = null;
+-	try {
+-		if (! isJava8())
+-			pred = MethodHandles.lookup().findVirtual(Method.class, "canAccess", MethodType.methodType(boolean.class, Object.class));
+-	} catch (Throwable t) {
+-		Util.sneakyThrow(t);
+-	}
+-	CAN_ACCESS_PRED = pred;
+-}
+-
++// On Android, we always bypass module access checks
+ private static boolean canAccess(Method m, Object target) {
+-	if (CAN_ACCESS_PRED != null) {
+-		// JDK9+ use j.l.r.AccessibleObject::canAccess, which respects module rules
+-		try {
+-			return (boolean) CAN_ACCESS_PRED.invoke(m, target);
+-		} catch (Throwable t) {
+-			throw Util.sneakyThrow(t);
+-		}
+-	} else {
+-		// JDK 8
+-		return true;
+-	}
++	return true;
+ }
+ 
+ private static Collection<Class> interfaces(Class c) {
+-- 
+2.34.1
+

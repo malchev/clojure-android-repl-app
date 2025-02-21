@@ -1,0 +1,10 @@
+plugins {
+    id 'base'
+}
+
+task buildClojure(type: Exec) {
+    workingDir = file('../clojure')
+    commandLine 'mvn', '-Plocal', '-Dmaven.test.skip', 'package'
+}
+
+build.dependsOn buildClojure
