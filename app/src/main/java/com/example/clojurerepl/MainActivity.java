@@ -32,6 +32,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView replOutput;
     private StringBuilder outputHistory;
     private LinearLayout rootLayout;
+    private LinearLayout contentLayout;
     private Var activityVar;
     private Var rootLayoutVar;
     private Var nsVar;
@@ -66,7 +67,7 @@ public class MainActivity extends AppCompatActivity {
         rootLayout.addView(replLayout, 0);
         
         // Create a container for dynamic content
-        LinearLayout contentLayout = new LinearLayout(this);
+        contentLayout = new LinearLayout(this);
         contentLayout.setOrientation(LinearLayout.VERTICAL);
         contentLayout.setLayoutParams(new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -206,14 +207,17 @@ public class MainActivity extends AppCompatActivity {
             // Get the user namespace
             Object userNS = RT.var("clojure.core", "find-ns").invoke(Symbol.intern("user"));
             
-            // Push thread bindings
+            // Push thread bindings with contentLayout
             Var.pushThreadBindings(RT.map(
                 nsVar, userNS,
                 activityVar, this,
-                rootLayoutVar, rootLayout
+                rootLayoutVar, contentLayout
             ));
             
             try {
+                // Clear previous content before evaluation
+                runOnUiThread(() -> contentLayout.removeAllViews());
+                
                 // Read and eval with the custom class loader
                 Thread.currentThread().setContextClassLoader(clojureClassLoader);
                 Object form = RT.var("clojure.core", "read-string").invoke(code);
