@@ -55,6 +55,7 @@ dependencies {
     // Comment out any other Clojure dependency
     // implementation 'org.clojure:clojure:1.11.1'
     implementation 'org.clojure:spec.alpha:0.3.218'
+    implementation 'org.clojure:core.specs.alpha:0.2.62'
     implementation('org.clojure:tools.nrepl:0.2.13') {
         exclude group: 'org.clojure', module: 'clojure'
     }
