@@ -151,6 +151,13 @@ public class MainActivity extends AppCompatActivity {
     private void handleIntent(Intent intent) {
         if (intent == null) return;
 
+        // Clear UI state immediately
+        runOnUiThread(() -> {
+            replInput.setText("");
+            replOutput.setText("");
+            contentLayout.removeAllViews();
+        });
+
         String code = null;
         String encoding = intent.getStringExtra("encoding");
 
@@ -174,7 +181,8 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // Show the code in the input field
-        replInput.setText(code);
+        final String finalCode = code;
+        runOnUiThread(() -> replInput.setText(finalCode));
 
         try {
             // Get the user namespace
@@ -188,9 +196,6 @@ public class MainActivity extends AppCompatActivity {
             ));
             
             try {
-                // Clear previous UI elements
-                runOnUiThread(() -> contentLayout.removeAllViews());
-                
                 // Set the context class loader before reading and evaluating
                 Thread.currentThread().setContextClassLoader(clojureClassLoader);
                 
@@ -205,14 +210,15 @@ public class MainActivity extends AppCompatActivity {
                 // Show the result
                 String resultStr = String.valueOf(result);
                 Log.i(TAG, "Evaluation result: " + resultStr);
-                replOutput.setText(resultStr);
+                runOnUiThread(() -> replOutput.setText(resultStr));
                 
             } finally {
                 Var.popThreadBindings();
             }
         } catch (Exception e) {
             Log.e(TAG, "Error evaluating Clojure code", e);
-            replOutput.setText("Error: " + e.getMessage());
+            final String errorMsg = "Error: " + e.getMessage();
+            runOnUiThread(() -> replOutput.setText(errorMsg));
             e.printStackTrace();
         }
     }
