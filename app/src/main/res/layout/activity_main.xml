@@ -6,30 +6,27 @@
     android:padding="16dp">
 
     <EditText
-        android:id="@+id/replInput"
+        android:id="@+id/repl_input"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="Enter Clojure code"
         android:inputType="textMultiLine"
-        android:minLines="3" />
+        android:minLines="3"
+        android:gravity="top" />
 
-    <Button
-        android:id="@+id/evalButton"
+    <TextView
+        android:id="@+id/repl_output"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Evaluate" />
+        android:layout_marginTop="8dp"
+        android:textIsSelectable="true" />
 
-    <ScrollView
+    <LinearLayout
+        android:id="@+id/content_layout"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
-
-        <TextView
-            android:id="@+id/replOutput"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:fontFamily="monospace"
-            android:textSize="14sp" />
-    </ScrollView>
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginTop="16dp" />
 
 </LinearLayout> 

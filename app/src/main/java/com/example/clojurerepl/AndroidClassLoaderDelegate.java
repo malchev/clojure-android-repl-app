@@ -11,16 +11,31 @@ import dalvik.system.InMemoryDexClassLoader;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.ArrayList;
+import java.util.List;
 
 public class AndroidClassLoaderDelegate {
     private static final String TAG = "ClojureREPL";
     private final Context context;
     private final ClassLoader parent;
-    private final Map<String, Class<?>> classCache = new HashMap<>();
+    private final Map<String, Class<?>> classCache;
+    private final List<ByteBuffer> dexBuffers;
+    private ClassLoader currentLoader;
     
     public AndroidClassLoaderDelegate(Context context, ClassLoader parent) {
         this.context = context;
         this.parent = parent;
+        this.classCache = new ConcurrentHashMap<>();
+        this.dexBuffers = new ArrayList<>();
+        this.currentLoader = parent;
+    }
+
+    private void updateClassLoader(ByteBuffer newDex) {
+        dexBuffers.add(newDex);
+        ByteBuffer[] buffers = dexBuffers.toArray(new ByteBuffer[0]);
+        currentLoader = new InMemoryDexClassLoader(buffers, parent);
+        Thread.currentThread().setContextClassLoader(currentLoader);
     }
 
     public Class<?> defineClass(String name, byte[] bytes) {
@@ -30,7 +45,20 @@ public class AndroidClassLoaderDelegate {
             // Check cache first
             Class<?> cached = classCache.get(name);
             if (cached != null) {
+                Log.d(TAG, "Returning cached class for: " + name);
                 return cached;
+            }
+
+            // Try loading from current loader first
+            try {
+                Class<?> existing = currentLoader.loadClass(name);
+                if (existing != null) {
+                    Log.d(TAG, "Found class in current loader: " + name);
+                    classCache.put(name, existing);
+                    return existing;
+                }
+            } catch (ClassNotFoundException ignored) {
+                // Expected - continue with defining the class
             }
 
             // Convert JVM bytecode to DEX using D8
@@ -51,12 +79,15 @@ public class AndroidClassLoaderDelegate {
             buffer.put(dexBytes);
             buffer.position(0);
 
-            // Create class loader and load the class
-            ClassLoader loader = new InMemoryDexClassLoader(buffer, parent);
-            Class<?> clazz = loader.loadClass(name);
+            // Update class loader with new DEX
+            updateClassLoader(buffer);
+            
+            // Load the class from the updated loader
+            Class<?> clazz = currentLoader.loadClass(name);
             
             // Cache the class
             classCache.put(name, clazz);
+            Log.d(TAG, "Successfully defined class: " + name);
             
             // Clean up
             java.nio.file.Files.delete(dexPath);

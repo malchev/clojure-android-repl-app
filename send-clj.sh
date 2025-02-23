@@ -1,28 +1,36 @@
 #!/bin/bash
 
 # Check if a file was provided
-if [ $# -ne 1 ]; then
+if [ "$#" -ne 1 ]; then
     echo "Usage: $0 <clojure-file>"
     exit 1
 fi
 
-# Check if the file exists
-if [ ! -f "$1" ]; then
-    echo "Error: File $1 does not exist"
+file="$1"
+if [ ! -f "$file" ]; then
+    echo "File not found: $file"
     exit 1
 fi
 
-# Create a temporary file for the base64 encoded content
-TMP_FILE=$(mktemp)
+# Read the file content and base64 encode it
+content=$(base64 -w 0 "$file")
 
-# Base64 encode the file content to the temporary file
-base64 "$1" > "$TMP_FILE"
+# First, start the app (it will be brought to front if already running)
+echo "Starting or resuming the app..."
+adb shell am start -n com.example.clojurerepl/.MainActivity
 
-# Push the temporary file to the device
-adb push "$TMP_FILE" /data/local/tmp/clojure_code.b64
+# Give the app a moment to start
+sleep 1
 
-# Start the app with the path to the encoded file
-adb shell "am start -n com.example.clojurerepl/.MainActivity --es clojure-code-file '/data/local/tmp/clojure_code.b64'"
+# Now send the broadcast with the code
+echo "Sending code to evaluate..."
+adb shell am broadcast \
+    -a com.example.clojurerepl.EVAL_CODE \
+    -n com.example.clojurerepl/.ClojureCodeReceiver \
+    --es code "$content" \
+    --es encoding "base64"
 
-# Clean up
-rm "$TMP_FILE" 
+# If no running instance, start the activity
+if [ $? -ne 0 ]; then
+    adb shell "am start -n com.example.clojurerepl/.MainActivity --es clojure-code-file '/data/local/tmp/clojure_code.b64'"
+fi 
