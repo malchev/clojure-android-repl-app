@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:padding="8dp">
 
     <EditText
         android:id="@+id/repl_input"
@@ -11,14 +11,21 @@
         android:layout_height="wrap_content"
         android:hint="Enter Clojure code"
         android:inputType="textMultiLine"
-        android:minLines="3"
-        android:gravity="top" />
+        android:minLines="2"
+        android:maxLines="3"
+        android:textSize="12sp"
+        android:gravity="top"
+        android:padding="4dp" />
 
     <TextView
         android:id="@+id/repl_output"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="4dp"
+        android:textSize="12sp"
+        android:padding="4dp"
+        android:maxLines="2"
+        android:ellipsize="end"
         android:textIsSelectable="true" />
 
     <LinearLayout
@@ -27,6 +34,6 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:orientation="vertical"
-        android:layout_marginTop="16dp" />
+        android:layout_marginTop="8dp" />
 
 </LinearLayout> 
