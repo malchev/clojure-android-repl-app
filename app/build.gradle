@@ -12,6 +12,9 @@ android {
         targetSdk 34
         versionCode 1
         versionName "1.0"
+        
+        // Enable multidex to handle large number of methods
+        multiDexEnabled true
     }
     
     buildTypes {
@@ -45,6 +48,12 @@ android {
             resources.srcDirs += ['src/main/clojure', 'src/main/resources']
         }
     }
+
+    // Enable dx flags for runtime class generation
+    dexOptions {
+        additionalParameters = ['--minimal-main-dex']
+        javaMaxHeapSize "4g"
+    }
 }
 
 dependencies {
@@ -64,4 +73,5 @@ dependencies {
     }
     implementation 'com.google.dexmaker:dexmaker:1.2'
     implementation 'com.android.tools:r8:8.2.47'
+    implementation 'androidx.multidex:multidex:2.0.1'
 }
