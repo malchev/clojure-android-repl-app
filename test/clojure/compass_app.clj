@@ -5,11 +5,12 @@
 
       ;; Shader source code
       vertex-shader "uniform mat4 uProjectionMatrix;
+                    uniform mat4 uRotationMatrix;
                     attribute vec4 vPosition;
                     attribute vec4 vColor;
                     varying vec4 fColor;
                     void main() {
-                      gl_Position = uProjectionMatrix * vPosition;
+                      gl_Position = uProjectionMatrix * uRotationMatrix * vPosition;
                       fColor = vColor;
                     }"
       
@@ -88,7 +89,9 @@
       position-handle (atom 0)
       color-handle (atom 0)
       projection-matrix-handle (atom 0)
+      rotation-matrix-handle (atom 0)  ; Add handle for rotation matrix
       projection-matrix (float-array 16)
+      model-matrix (float-array 16)    ; For rotation
 
       ;; Helper function to compile shader
       compile-shader (fn [type source]
@@ -146,6 +149,13 @@
               (android.hardware.SensorManager/getOrientation 
                rotation-matrix orientation)
               
+              ;; Update rotation matrix for compass pointer
+              (android.opengl.Matrix/setRotateM model-matrix 0 
+                                               (-> (aget orientation 0) 
+                                                   Math/toDegrees 
+                                                   (+ 90.0))  ; Adjust for screen orientation
+                                               0.0 0.0 1.0)
+              
               ;; Only log if orientation changed significantly
               (let [current (vec orientation)
                     last @last-orientation
@@ -191,10 +201,13 @@
               (android.opengl.GLES20/glGetAttribLocation @program-handle "vColor"))
             (reset! projection-matrix-handle 
               (android.opengl.GLES20/glGetUniformLocation @program-handle "uProjectionMatrix"))
+            (reset! rotation-matrix-handle
+              (android.opengl.GLES20/glGetUniformLocation @program-handle "uRotationMatrix"))
             
             (android.util.Log/d tag (str "Shader handles - position: " @position-handle 
                                        " color: " @color-handle
-                                       " projection: " @projection-matrix-handle))))
+                                       " projection: " @projection-matrix-handle
+                                       " rotation: " @rotation-matrix-handle))))
         
         (onSurfaceChanged [gl width height]
           (android.util.Log/d tag (str "Surface changed: " width "x" height))
@@ -215,7 +228,10 @@
           (android.opengl.GLES20/glEnableVertexAttribArray @position-handle)
           (android.opengl.GLES20/glEnableVertexAttribArray @color-handle)
           
-          ;; Draw the compass disk
+          ;; Draw the compass disk (no rotation)
+          (android.opengl.Matrix/setIdentityM model-matrix 0)  ; Reset to identity for disk
+          (android.opengl.GLES20/glUniformMatrix4fv @rotation-matrix-handle
+                                                   1 false model-matrix 0)
           (android.opengl.GLES20/glVertexAttribPointer 
             @position-handle 3 
             android.opengl.GLES20/GL_FLOAT false 
@@ -228,7 +244,9 @@
             android.opengl.GLES20/GL_TRIANGLE_FAN 
             0 (+ 2 num-points))
           
-          ;; Draw the north pointer
+          ;; Draw the north pointer (with rotation from sensors)
+          (android.opengl.GLES20/glUniformMatrix4fv @rotation-matrix-handle
+                                                   1 false model-matrix 0)
           (android.opengl.GLES20/glVertexAttribPointer 
             @position-handle 3 
             android.opengl.GLES20/GL_FLOAT false 
