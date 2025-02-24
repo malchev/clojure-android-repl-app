@@ -253,15 +253,17 @@
             
             (when (android.hardware.SensorManager/getRotationMatrix 
                    rotation-matrix nil accel-data magnetic-data)
-              (android.hardware.SensorManager/getOrientation 
-               rotation-matrix orientation)
-              
-              ;; Get the full rotation matrix from sensors
-              (when (android.hardware.SensorManager/getRotationMatrix 
-                     rotation-matrix nil accel-data magnetic-data)
-                ;; Get orientation angles
+              ;; Remap coordinates to match our desired orientation
+              (let [remapped-matrix (float-array 16)]
+                ;; Remap so that when phone is flat, disk is flat (Y is up)
+                (android.hardware.SensorManager/remapCoordinateSystem
+                  rotation-matrix
+                  android.hardware.SensorManager/AXIS_X
+                  android.hardware.SensorManager/AXIS_Z
+                  remapped-matrix)
+                
                 (android.hardware.SensorManager/getOrientation 
-                 rotation-matrix orientation)
+                 remapped-matrix orientation)
                 
                 ;; Update pointer rotation (just azimuth around Z)
                 (android.opengl.Matrix/setRotateM model-matrix 0 
@@ -270,8 +272,8 @@
                                                      (+ 90.0))  ; Adjust for screen orientation
                                                  0.0 0.0 1.0)
                 
-                ;; Copy the full rotation matrix for the disk
-                (System/arraycopy rotation-matrix 0 disk-matrix 0 16)
+                ;; Copy the remapped rotation matrix for the disk
+                (System/arraycopy remapped-matrix 0 disk-matrix 0 16)
                 
                 ;; Adjust for screen orientation (rotate 90 degrees around X)
                 (android.opengl.Matrix/setRotateM temp-matrix 0 90.0 1.0 0.0 0.0)
