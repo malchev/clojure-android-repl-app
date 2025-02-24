@@ -4,9 +4,10 @@
       tag "CompassApp"
 
       ;; Shader source code
-      vertex-shader "attribute vec4 vPosition;
+      vertex-shader "uniform mat4 uProjectionMatrix;
+                    attribute vec4 vPosition;
                     void main() {
-                      gl_Position = vPosition;
+                      gl_Position = uProjectionMatrix * vPosition;
                     }"
       
       fragment-shader "precision mediump float;
@@ -39,6 +40,8 @@
       ;; Store handles
       program-handle (atom 0)
       position-handle (atom 0)
+      projection-matrix-handle (atom 0)
+      projection-matrix (float-array 16)
 
       ;; Helper function to compile shader
       compile-shader (fn [type source]
@@ -54,8 +57,14 @@
                 (throw (RuntimeException. (str "Shader compilation failed: " error))))))
           shader))
 
-      ;; Store program handle
-      program-handle (atom 0)
+      ;; Helper function to create orthographic projection
+      create-ortho-matrix (fn [width height]
+                           (let [aspect (/ width height)
+                                scale (if (> width height) [1.0 aspect 1.0] [aspect 1.0 1.0])]
+                             (android.opengl.Matrix/orthoM projection-matrix 0
+                                                          (- (first scale)) (first scale)
+                                                          (- (second scale)) (second scale)
+                                                          -1.0 1.0)))
 
       ;; Arrays for sensor data
       accel-data (float-array 3)
@@ -128,19 +137,29 @@
             (reset! program-handle program)
             (android.util.Log/d tag (str "Shader program created: " @program-handle))
             
-            ;; Get handle to vertex position
-            (reset! position-handle (android.opengl.GLES20/glGetAttribLocation @program-handle "vPosition"))
-            (android.util.Log/d tag (str "Position handle: " @position-handle))))
+            ;; Get handles to shader variables
+            (reset! position-handle 
+              (android.opengl.GLES20/glGetAttribLocation @program-handle "vPosition"))
+            (reset! projection-matrix-handle 
+              (android.opengl.GLES20/glGetUniformLocation @program-handle "uProjectionMatrix"))
+            
+            (android.util.Log/d tag (str "Shader handles - position: " @position-handle 
+                                       " projection: " @projection-matrix-handle))))
         
         (onSurfaceChanged [gl width height]
           (android.util.Log/d tag (str "Surface changed: " width "x" height))
-          (android.opengl.GLES20/glViewport 0 0 width height))
+          (android.opengl.GLES20/glViewport 0 0 width height)
+          (create-ortho-matrix width height))
         
         (onDrawFrame [gl]
           (android.opengl.GLES20/glClear android.opengl.GLES20/GL_COLOR_BUFFER_BIT)
           
           ;; Use the shader program
           (android.opengl.GLES20/glUseProgram @program-handle)
+          
+          ;; Set the projection matrix
+          (android.opengl.GLES20/glUniformMatrix4fv @projection-matrix-handle 
+                                                   1 false projection-matrix 0)
           
           ;; Enable vertex array
           (android.opengl.GLES20/glEnableVertexAttribArray @position-handle)
