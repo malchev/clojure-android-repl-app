@@ -12,6 +12,13 @@
                                      android.widget.LinearLayout$LayoutParams/MATCH_PARENT))
                    (.setPadding 32 32 32 32))
       
+      details-layout (doto (android.widget.LinearLayout. activity)
+                      (.setOrientation android.widget.LinearLayout/VERTICAL)
+                      (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
+                                       android.widget.LinearLayout$LayoutParams/MATCH_PARENT
+                                       android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
+                      (.setPadding 0 16 0 16))
+      
       status-text (doto (android.widget.TextView. activity)
                    (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                      android.widget.LinearLayout$LayoutParams/MATCH_PARENT
@@ -39,6 +46,27 @@
                     (.setTextSize 48.0)
                     (.setGravity android.view.Gravity/CENTER))
       
+      wind-text (doto (android.widget.TextView. activity)
+                 (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
+                                   android.widget.LinearLayout$LayoutParams/MATCH_PARENT
+                                   android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
+                 (.setTextSize 16.0)
+                 (.setGravity android.view.Gravity/CENTER))
+      
+      humidity-text (doto (android.widget.TextView. activity)
+                     (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
+                                      android.widget.LinearLayout$LayoutParams/MATCH_PARENT
+                                      android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
+                     (.setTextSize 16.0)
+                     (.setGravity android.view.Gravity/CENTER))
+      
+      forecast-text (doto (android.widget.TextView. activity)
+                     (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
+                                      android.widget.LinearLayout$LayoutParams/MATCH_PARENT
+                                      android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
+                     (.setTextSize 16.0)
+                     (.setGravity android.view.Gravity/CENTER))
+      
       refresh-btn (doto (android.widget.Button. activity)
                    (.setText "Refresh Weather")
                    (.setLayoutParams (doto (android.widget.LinearLayout$LayoutParams.
@@ -52,7 +80,14 @@
     (.addView weather-icon)
     (.addView temp-text)
     (.addView desc-text)
+    (.addView details-layout)
     (.addView refresh-btn))
+  
+  (doto details-layout
+    (.addView wind-text)
+    (.addView humidity-text)
+    (.addView forecast-text))
+  
   (.addView content main-layout)
   
   ;; Function to update UI on main thread
@@ -104,8 +139,14 @@
           properties (.getJSONObject json "properties")
           periods (.getJSONArray properties "periods")
           current-period (.getJSONObject periods 0)
+          next-period (.getJSONObject periods 1)
           result {:temp (.getInt current-period "temperature")
-                 :description (.getString current-period "shortForecast")}]
+                 :description (.getString current-period "shortForecast")
+                 :detailed (.getString current-period "detailedForecast")
+                 :wind-speed (.getString current-period "windSpeed")
+                 :wind-direction (.getString current-period "windDirection")
+                 :next-forecast (.getString next-period "shortForecast")
+                 :next-temp (.getInt next-period "temperature")}]
       (android.util.Log/d tag (str "Parsed weather data: " result))
       result))
   
@@ -160,6 +201,13 @@
                 (.setText weather-icon weather-symbol)
                 (.setText desc-text (.toUpperCase (:description weather-data)))
                 (.setText status-text (str "Weather in " location-name))
+                (.setText wind-text (format "Wind: %s %s" 
+                                         (:wind-speed weather-data)
+                                         (:wind-direction weather-data)))
+                (.setText humidity-text (:detailed weather-data))
+                (.setText forecast-text (format "Next: %s, %d°F"
+                                             (:next-forecast weather-data)
+                                             (:next-temp weather-data)))
                 (android.util.Log/d tag "UI updated with weather data"))))
           (catch Exception e
             (android.util.Log/e tag (str "Error updating weather: " (.getMessage e)))
