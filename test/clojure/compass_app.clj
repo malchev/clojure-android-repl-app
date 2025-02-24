@@ -129,6 +129,14 @@
       orientation (float-array 3)
       last-orientation (atom [0 0 0])
       min-change 0.1  ; About 5.7 degrees
+      last-update-time (atom 0)
+      update-interval 50  ; Minimum time between updates in milliseconds
+      smoothing-factor 0.3  ; Lower = smoother but more latency (0.0 to 1.0)
+
+      ;; Helper function to interpolate between angles
+      lerp-angle (fn [start end factor]
+                  (let [diff (- end start)]
+                    (+ start (* diff factor))))
 
       ;; Create sensor manager and get sensors
       _ (android.util.Log/d tag "Getting sensor service")
@@ -253,43 +261,51 @@
             
             (when (android.hardware.SensorManager/getRotationMatrix 
                    rotation-matrix nil accel-data magnetic-data)
-              ;; Remap coordinates to match our desired orientation
-              (let [remapped-matrix (float-array 16)]
-                ;; Remap so that when phone is flat, disk is flat (Y is up)
-                (android.hardware.SensorManager/remapCoordinateSystem
-                  rotation-matrix
-                  android.hardware.SensorManager/AXIS_X
-                  android.hardware.SensorManager/AXIS_Z
-                  remapped-matrix)
-                
-                (android.hardware.SensorManager/getOrientation 
-                 remapped-matrix orientation)
-                
-                ;; Update pointer rotation (just azimuth around Z)
-                (android.opengl.Matrix/setRotateM model-matrix 0 
-                                                 (-> (aget orientation 0) 
-                                                     Math/toDegrees 
-                                                     (+ 90.0))  ; Adjust for screen orientation
-                                                 0.0 0.0 1.0)
-                
-                ;; Copy the remapped rotation matrix for the disk
-                (System/arraycopy remapped-matrix 0 disk-matrix 0 16)
-                
-                ;; Adjust for screen orientation (rotate 90 degrees around X)
-                (android.opengl.Matrix/setRotateM temp-matrix 0 90.0 1.0 0.0 0.0)
-                (android.opengl.Matrix/multiplyMM disk-matrix 0 temp-matrix 0 disk-matrix 0)
-                
-                ;; Request a redraw
-                (.requestRender gl-view)
-                
-                ;; Only log if orientation changed significantly
-                (let [current (vec orientation)
-                      last @last-orientation
-                      changes (map #(Math/abs (- %1 %2)) current last)
-                      changed? (some #(> % min-change) changes)]
-                  (when changed?
-                    (reset! last-orientation current)
-                    (android.util.Log/d tag (str "Orientation: " current))))))))
+              ;; Check if enough time has passed since last update
+              (let [current-time (System/currentTimeMillis)]
+                (when (> (- current-time @last-update-time) update-interval)
+                  (reset! last-update-time current-time)
+                  
+                  ;; Remap coordinates to match our desired orientation
+                  (let [remapped-matrix (float-array 16)]
+                    ;; Remap so that when phone is flat, disk is flat (Y is up)
+                    (android.hardware.SensorManager/remapCoordinateSystem
+                      rotation-matrix
+                      android.hardware.SensorManager/AXIS_X
+                      android.hardware.SensorManager/AXIS_Z
+                      remapped-matrix)
+                    
+                    (android.hardware.SensorManager/getOrientation 
+                     remapped-matrix orientation)
+                    
+                    ;; Smooth the orientation changes
+                    (let [current (vec orientation)
+                          last @last-orientation
+                          smoothed (mapv #(lerp-angle %1 %2 smoothing-factor) last current)
+                          changes (map #(Math/abs (- %1 %2)) current last)
+                          changed? (some #(> % min-change) changes)]
+                      
+                      ;; Update pointer rotation (just azimuth around Z)
+                      (android.opengl.Matrix/setRotateM model-matrix 0 
+                                                       (-> (first smoothed)
+                                                           Math/toDegrees 
+                                                           (+ 90.0))  ; Adjust for screen orientation
+                                                       0.0 0.0 1.0)
+                      
+                      ;; Copy the remapped rotation matrix for the disk
+                      (System/arraycopy remapped-matrix 0 disk-matrix 0 16)
+                      
+                      ;; Adjust for screen orientation (rotate 90 degrees around X)
+                      (android.opengl.Matrix/setRotateM temp-matrix 0 90.0 1.0 0.0 0.0)
+                      (android.opengl.Matrix/multiplyMM disk-matrix 0 temp-matrix 0 disk-matrix 0)
+                      
+                      ;; Request a redraw
+                      (.requestRender gl-view)
+                      
+                      ;; Only log if orientation changed significantly
+                      (when changed?
+                        (reset! last-orientation smoothed)
+                        (android.util.Log/d tag (str "Orientation: " smoothed))))))))))
         
         (onAccuracyChanged [sensor accuracy]
           (android.util.Log/d tag (str "Sensor accuracy changed: " accuracy))))]
