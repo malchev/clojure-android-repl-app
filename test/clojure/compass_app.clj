@@ -14,6 +14,32 @@
                         gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
                       }"
 
+      ;; Create compass disk vertices (center + 32 points around circle)
+      num-points 32
+      radius 0.8
+      vertices (float-array 
+                (concat 
+                  [0.0 0.0 0.0]  ; Center point
+                  (flatten
+                    (for [i (range (inc num-points))]
+                      (let [angle (* 2.0 Math/PI (/ i num-points))]
+                        [(* radius (Math/cos angle))
+                         (* radius (Math/sin angle))
+                         0.0])))))
+
+      ;; Create vertex buffer
+      vertex-buffer (let [vbb (java.nio.ByteBuffer/allocateDirect (* (count vertices) 4))
+                         native-order (java.nio.ByteOrder/nativeOrder)]
+                     (.order vbb native-order)
+                     (let [fb (.asFloatBuffer vbb)]
+                       (.put fb vertices)
+                       (.position fb 0)
+                       fb))
+
+      ;; Store handles
+      program-handle (atom 0)
+      position-handle (atom 0)
+
       ;; Helper function to compile shader
       compile-shader (fn [type source]
         (let [shader (android.opengl.GLES20/glCreateShader type)]
@@ -100,14 +126,38 @@
                   (throw (RuntimeException. (str "Program linking failed: " error))))))
             
             (reset! program-handle program)
-            (android.util.Log/d tag (str "Shader program created: " @program-handle))))
+            (android.util.Log/d tag (str "Shader program created: " @program-handle))
+            
+            ;; Get handle to vertex position
+            (reset! position-handle (android.opengl.GLES20/glGetAttribLocation @program-handle "vPosition"))
+            (android.util.Log/d tag (str "Position handle: " @position-handle))))
         
         (onSurfaceChanged [gl width height]
           (android.util.Log/d tag (str "Surface changed: " width "x" height))
           (android.opengl.GLES20/glViewport 0 0 width height))
         
         (onDrawFrame [gl]
-          (android.opengl.GLES20/glClear android.opengl.GLES20/GL_COLOR_BUFFER_BIT)))
+          (android.opengl.GLES20/glClear android.opengl.GLES20/GL_COLOR_BUFFER_BIT)
+          
+          ;; Use the shader program
+          (android.opengl.GLES20/glUseProgram @program-handle)
+          
+          ;; Enable vertex array
+          (android.opengl.GLES20/glEnableVertexAttribArray @position-handle)
+          
+          ;; Prepare the vertex data
+          (android.opengl.GLES20/glVertexAttribPointer 
+            @position-handle 3 
+            android.opengl.GLES20/GL_FLOAT false 
+            0 vertex-buffer)
+          
+          ;; Draw the compass disk
+          (android.opengl.GLES20/glDrawArrays 
+            android.opengl.GLES20/GL_TRIANGLE_FAN 
+            0 (+ 2 num-points))
+          
+          ;; Disable vertex array
+          (android.opengl.GLES20/glDisableVertexAttribArray @position-handle)))
 
       gl-view (doto (proxy [android.opengl.GLSurfaceView] [activity]
                      (init []
