@@ -22,7 +22,7 @@
 
       ;; Create compass disk vertices (center + 32 points around circle)
       num-points 32
-      radius 0.8
+      radius 0.5  ; Reduced from 0.8 to prevent clipping
       disk-vertices (float-array 
                      (concat 
                        [0.0 0.0 0.0]  ; Center point
@@ -39,8 +39,8 @@
                      (repeat (+ 2 num-points) [1.0 0.0 0.0 1.0])))
 
       ;; Create north pointer vertices
-      pointer-height 0.4  ; Half the radius
-      pointer-width 0.1   ; Narrow triangle
+      pointer-height 0.25  ; Reduced from 0.4 to match new disk size
+      pointer-width 0.06   ; Reduced from 0.1 to maintain proportion
       pointer-vertices (float-array
                         [0.0 radius 0.0          ; Tip
                          (- pointer-width) (- radius pointer-height) 0.0  ; Left base
