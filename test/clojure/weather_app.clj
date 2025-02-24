@@ -60,12 +60,17 @@
                      (.setTextSize 16.0)
                      (.setGravity android.view.Gravity/CENTER))
       
-      forecast-text (doto (android.widget.TextView. activity)
-                     (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
-                                      android.widget.LinearLayout$LayoutParams/MATCH_PARENT
-                                      android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
-                     (.setTextSize 16.0)
-                     (.setGravity android.view.Gravity/CENTER))
+      forecast-scroll (doto (android.widget.HorizontalScrollView. activity)
+                       (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
+                                        android.widget.LinearLayout$LayoutParams/MATCH_PARENT
+                                        android.widget.LinearLayout$LayoutParams/WRAP_CONTENT)))
+      
+      forecast-container (doto (android.widget.LinearLayout. activity)
+                          (.setOrientation android.widget.LinearLayout/HORIZONTAL)
+                          (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
+                                           android.widget.LinearLayout$LayoutParams/WRAP_CONTENT
+                                           android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
+                          (.setPadding 16 16 16 16))
       
       refresh-btn (doto (android.widget.Button. activity)
                    (.setText "Refresh Weather")
@@ -81,12 +86,14 @@
     (.addView temp-text)
     (.addView desc-text)
     (.addView details-layout)
+    (.addView forecast-scroll)
     (.addView refresh-btn))
+  
+  (.addView forecast-scroll forecast-container)
   
   (doto details-layout
     (.addView wind-text)
-    (.addView humidity-text)
-    (.addView forecast-text))
+    (.addView humidity-text))
   
   (.addView content main-layout)
   
@@ -139,17 +146,46 @@
           properties (.getJSONObject json "properties")
           periods (.getJSONArray properties "periods")
           current-period (.getJSONObject periods 0)
-          next-period (.getJSONObject periods 1)
-          result {:temp (.getInt current-period "temperature")
-                 :description (.getString current-period "shortForecast")
-                 :detailed (.getString current-period "detailedForecast")
-                 :wind-speed (.getString current-period "windSpeed")
-                 :wind-direction (.getString current-period "windDirection")
-                 :next-forecast (.getString next-period "shortForecast")
-                 :next-temp (.getInt next-period "temperature")}]
+          forecasts (for [i (range (.length periods))]
+                     (let [period (.getJSONObject periods i)]
+                       {:name (.getString period "name")
+                        :temp (.getInt period "temperature")
+                        :description (.getString period "shortForecast")
+                        :detailed (.getString period "detailedForecast")
+                        :wind-speed (.getString period "windSpeed")
+                        :wind-direction (.getString period "windDirection")
+                        :is-daytime (.getBoolean period "isDaytime")}))
+          result {:current (first forecasts)
+                 :forecasts (rest forecasts)}]
       (android.util.Log/d tag (str "Parsed weather data: " result))
       result))
-  
+
+  ;; Function to create a forecast day view
+  (defn create-forecast-day [forecast]
+    (let [day-container (doto (android.widget.LinearLayout. activity)
+                         (.setOrientation android.widget.LinearLayout/VERTICAL)
+                         (.setLayoutParams (doto (android.widget.LinearLayout$LayoutParams.
+                                                android.widget.LinearLayout$LayoutParams/WRAP_CONTENT
+                                                android.widget.LinearLayout$LayoutParams/WRAP_CONTENT)
+                                           (.setMargins 8 0 8 0)))
+                         (.setPadding 16 16 16 16))
+          name-text (doto (android.widget.TextView. activity)
+                     (.setText (:name forecast))
+                     (.setTextSize 14.0)
+                     (.setGravity android.view.Gravity/CENTER))
+          icon-text (doto (android.widget.TextView. activity)
+                     (.setText (get-weather-symbol (:description forecast)))
+                     (.setTextSize 24.0)
+                     (.setGravity android.view.Gravity/CENTER))
+          temp-text (doto (android.widget.TextView. activity)
+                     (.setText (format "%d°F" (:temp forecast)))
+                     (.setTextSize 14.0)
+                     (.setGravity android.view.Gravity/CENTER))]
+      (doto day-container
+        (.addView name-text)
+        (.addView icon-text)
+        (.addView temp-text))))
+
   ;; Function to get weather symbol
   (defn get-weather-symbol [description]
     (let [desc (.toLowerCase (str description))]
@@ -193,21 +229,25 @@
           (run-on-ui #(.setText status-text "Fetching weather data..."))
           (let [weather-json (fetch-weather lat lon)
                 weather-data (parse-weather weather-json)
-                weather-symbol (get-weather-symbol (:description weather-data))]
+                current (:current weather-data)
+                weather-symbol (get-weather-symbol (:description current))]
             (android.util.Log/d tag "Weather data fetched and parsed")
             (run-on-ui
               (fn []
-                (.setText temp-text (format "%d°F" (:temp weather-data)))
+                (.setText temp-text (format "%d°F" (:temp current)))
                 (.setText weather-icon weather-symbol)
-                (.setText desc-text (.toUpperCase (:description weather-data)))
+                (.setText desc-text (.toUpperCase (:description current)))
                 (.setText status-text (str "Weather in " location-name))
                 (.setText wind-text (format "Wind: %s %s" 
-                                         (:wind-speed weather-data)
-                                         (:wind-direction weather-data)))
-                (.setText humidity-text (:detailed weather-data))
-                (.setText forecast-text (format "Next: %s, %d°F"
-                                             (:next-forecast weather-data)
-                                             (:next-temp weather-data)))
+                                         (:wind-speed current)
+                                         (:wind-direction current)))
+                (.setText humidity-text (:detailed current))
+                
+                ;; Update forecast view
+                (.removeAllViews forecast-container)
+                (doseq [forecast (filter :is-daytime (:forecasts weather-data))]
+                  (.addView forecast-container (create-forecast-day forecast)))
+                
                 (android.util.Log/d tag "UI updated with weather data"))))
           (catch Exception e
             (android.util.Log/e tag (str "Error updating weather: " (.getMessage e)))
