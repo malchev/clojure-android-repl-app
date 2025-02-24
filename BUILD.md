@@ -43,9 +43,11 @@ This document describes how to set up your development environment and build the
 
 1. **Android Studio**
    - Download from https://developer.android.com/studio
+   - sudo dpkg -i ~/android-studio-2024.2.2.14-cros.deb # or whatever the download is
+   - run /opt/android-studio/bin/studio.sh, install the Android SDK, accept the licenses
    - Add to your shell profile:
      ```bash
-     echo 'export ANDROID_HOME=$HOME/Android/Sdk' >> ~/.bashrc
+     echo 'export ANDROID_HOME=~/Android/Sdk' >> ~/.bashrc # or wherever it's installed
      ```
 
 2. **Gradle**
@@ -55,7 +57,7 @@ This document describes how to set up your development environment and build the
 
 3. **Android Platform Tools**
    ```bash
-   sudo apt install android-platform-tools
+   sudo apt install adb # just need adb for this
    ```
    - Alternatively, download from https://developer.android.com/tools/releases/platform-tools
 
@@ -85,19 +87,14 @@ After installing all prerequisites, follow these steps to build the app:
    ./scripts/download_clojure.sh
    ```
 
-2. Set up Gradle wrapper:
-   ```bash
-   gradle wrapper
-   ```
-
-3. Patch and build Clojure:
+2. Patch and build Clojure:
    ```bash
    ./scripts/patch-and-build-clojure.sh
    ```
 
-4. Build the debug APK:
+3. Build the debug APK:
    ```bash
    ./gradlew clean assembleDebug
    ```
 
-The built APK will be available in the `app/build/outputs/apk/debug/` directory. 
+The built APK will be available in the `app/build/outputs/apk/debug/` directory.
