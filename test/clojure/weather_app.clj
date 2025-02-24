@@ -32,6 +32,13 @@
                  (.setTextSize 20.0)
                  (.setGravity android.view.Gravity/CENTER))
       
+      weather-icon (doto (android.widget.TextView. activity)
+                    (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
+                                     android.widget.LinearLayout$LayoutParams/MATCH_PARENT
+                                     android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
+                    (.setTextSize 48.0)
+                    (.setGravity android.view.Gravity/CENTER))
+      
       refresh-btn (doto (android.widget.Button. activity)
                    (.setText "Refresh Weather")
                    (.setLayoutParams (doto (android.widget.LinearLayout$LayoutParams.
@@ -42,6 +49,7 @@
   ;; Add views to layout
   (doto main-layout
     (.addView status-text)
+    (.addView weather-icon)
     (.addView temp-text)
     (.addView desc-text)
     (.addView refresh-btn))
@@ -101,6 +109,20 @@
       (android.util.Log/d tag (str "Parsed weather data: " result))
       result))
   
+  ;; Function to get weather symbol
+  (defn get-weather-symbol [description]
+    (let [desc (.toLowerCase (str description))]
+      (cond
+        (or (.contains desc "sunny")
+            (.contains desc "clear")) "☀️"
+        (.contains desc "partly") "⛅"
+        (.contains desc "cloudy") "☁️"
+        (.contains desc "rain") "🌧️"
+        (.contains desc "showers") "🌧️"
+        (.contains desc "thunderstorm") "⛈️"
+        (.contains desc "snow") "🌨️"
+        :else "❓")))
+
   ;; Function to update weather display
   (defn update-weather [location]
     (android.util.Log/d tag "update-weather called with location")
@@ -111,11 +133,13 @@
         (try
           (run-on-ui #(.setText status-text "Fetching weather data..."))
           (let [weather-json (fetch-weather lat lon)
-                weather-data (parse-weather weather-json)]
+                weather-data (parse-weather weather-json)
+                weather-symbol (get-weather-symbol (:description weather-data))]
             (android.util.Log/d tag "Weather data fetched and parsed")
             (run-on-ui
               (fn []
                 (.setText temp-text (format "%d°F" (:temp weather-data)))
+                (.setText weather-icon weather-symbol)
                 (.setText desc-text (.toUpperCase (:description weather-data)))
                 (.setText status-text (format "Weather at %.4f, %.4f" lat lon))
                 (android.util.Log/d tag "UI updated with weather data"))))
