@@ -91,11 +91,13 @@
       projection-matrix-handle (atom 0)
       rotation-matrix-handle (atom 0)
       projection-matrix (float-array 16)
-      model-matrix (float-array 16)        ; For pointer rotation
-      identity-matrix (float-array 16)     ; For static disk
+      model-matrix (float-array 16)        ; For pointer rotation around Z
+      disk-matrix (float-array 16)         ; For disk orientation in 3D
+      temp-matrix (float-array 16)         ; For matrix operations
       
-      ;; Initialize identity matrix
-      _ (android.opengl.Matrix/setIdentityM identity-matrix 0)
+      ;; Initialize matrices
+      _ (android.opengl.Matrix/setIdentityM model-matrix 0)
+      _ (android.opengl.Matrix/setIdentityM disk-matrix 0)
 
       ;; Helper function to compile shader
       compile-shader (fn [type source]
@@ -197,9 +199,9 @@
           (android.opengl.GLES20/glEnableVertexAttribArray @position-handle)
           (android.opengl.GLES20/glEnableVertexAttribArray @color-handle)
           
-          ;; Draw the compass disk (no rotation)
+          ;; Draw the compass disk (with full 3D rotation)
           (android.opengl.GLES20/glUniformMatrix4fv @rotation-matrix-handle
-                                                   1 false identity-matrix 0)
+                                                   1 false disk-matrix 0)
           (android.opengl.GLES20/glVertexAttribPointer 
             @position-handle 3 
             android.opengl.GLES20/GL_FLOAT false 
@@ -254,24 +256,38 @@
               (android.hardware.SensorManager/getOrientation 
                rotation-matrix orientation)
               
-              ;; Update rotation matrix for compass pointer
-              (android.opengl.Matrix/setRotateM model-matrix 0 
-                                               (-> (aget orientation 0) 
-                                                   Math/toDegrees 
-                                                   (+ 90.0))  ; Adjust for screen orientation
-                                               0.0 0.0 1.0)
-              
-              ;; Request a redraw
-              (.requestRender gl-view)
-              
-              ;; Only log if orientation changed significantly
-              (let [current (vec orientation)
-                    last @last-orientation
-                    changes (map #(Math/abs (- %1 %2)) current last)
-                    changed? (some #(> % min-change) changes)]
-                (when changed?
-                  (reset! last-orientation current)
-                  (android.util.Log/d tag (str "Orientation: " current)))))))
+              ;; Get the full rotation matrix from sensors
+              (when (android.hardware.SensorManager/getRotationMatrix 
+                     rotation-matrix nil accel-data magnetic-data)
+                ;; Get orientation angles
+                (android.hardware.SensorManager/getOrientation 
+                 rotation-matrix orientation)
+                
+                ;; Update pointer rotation (just azimuth around Z)
+                (android.opengl.Matrix/setRotateM model-matrix 0 
+                                                 (-> (aget orientation 0) 
+                                                     Math/toDegrees 
+                                                     (+ 90.0))  ; Adjust for screen orientation
+                                                 0.0 0.0 1.0)
+                
+                ;; Copy the full rotation matrix for the disk
+                (System/arraycopy rotation-matrix 0 disk-matrix 0 16)
+                
+                ;; Adjust for screen orientation (rotate 90 degrees around X)
+                (android.opengl.Matrix/setRotateM temp-matrix 0 90.0 1.0 0.0 0.0)
+                (android.opengl.Matrix/multiplyMM disk-matrix 0 temp-matrix 0 disk-matrix 0)
+                
+                ;; Request a redraw
+                (.requestRender gl-view)
+                
+                ;; Only log if orientation changed significantly
+                (let [current (vec orientation)
+                      last @last-orientation
+                      changes (map #(Math/abs (- %1 %2)) current last)
+                      changed? (some #(> % min-change) changes)]
+                  (when changed?
+                    (reset! last-orientation current)
+                    (android.util.Log/d tag (str "Orientation: " current))))))))
         
         (onAccuracyChanged [sensor accuracy]
           (android.util.Log/d tag (str "Sensor accuracy changed: " accuracy))))]
