@@ -123,12 +123,30 @@
         (.contains desc "snow") "🌨️"
         :else "❓")))
 
+  ;; Function to get location name
+  (defn get-location-name [lat lon]
+    (try
+      (let [geocoder (android.location.Geocoder. activity)
+            addresses (.getFromLocation geocoder lat lon 1)]
+        (if (and addresses (pos? (.size addresses)))
+          (let [address (.get addresses 0)
+                city (.getLocality address)
+                state (.getAdminArea address)]
+            (if (and city state)
+              (format "%s, %s" city state)
+              "Unknown Location"))
+          "Unknown Location"))
+      (catch Exception e
+        (android.util.Log/e tag (str "Geocoding error: " (.getMessage e)))
+        "Unknown Location")))
+
   ;; Function to update weather display
   (defn update-weather [location]
     (android.util.Log/d tag "update-weather called with location")
     (let [lat (.getLatitude location)
-          lon (.getLongitude location)]
-      (android.util.Log/d tag (str "Location: lat=" lat ", lon=" lon))
+          lon (.getLongitude location)
+          location-name (get-location-name lat lon)]
+      (android.util.Log/d tag (str "Location: " location-name " (lat=" lat ", lon=" lon ")"))
       (future
         (try
           (run-on-ui #(.setText status-text "Fetching weather data..."))
@@ -141,7 +159,7 @@
                 (.setText temp-text (format "%d°F" (:temp weather-data)))
                 (.setText weather-icon weather-symbol)
                 (.setText desc-text (.toUpperCase (:description weather-data)))
-                (.setText status-text (format "Weather at %.4f, %.4f" lat lon))
+                (.setText status-text (str "Weather in " location-name))
                 (android.util.Log/d tag "UI updated with weather data"))))
           (catch Exception e
             (android.util.Log/e tag (str "Error updating weather: " (.getMessage e)))
