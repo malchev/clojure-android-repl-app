@@ -6,40 +6,87 @@
       ;; Shader source code
       vertex-shader "uniform mat4 uProjectionMatrix;
                     attribute vec4 vPosition;
+                    attribute vec4 vColor;
+                    varying vec4 fColor;
                     void main() {
                       gl_Position = uProjectionMatrix * vPosition;
+                      fColor = vColor;
                     }"
       
       fragment-shader "precision mediump float;
+                      varying vec4 fColor;
                       void main() {
-                        gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+                        gl_FragColor = fColor;
                       }"
 
       ;; Create compass disk vertices (center + 32 points around circle)
       num-points 32
       radius 0.8
-      vertices (float-array 
-                (concat 
-                  [0.0 0.0 0.0]  ; Center point
-                  (flatten
-                    (for [i (range (inc num-points))]
-                      (let [angle (* 2.0 Math/PI (/ i num-points))]
-                        [(* radius (Math/cos angle))
-                         (* radius (Math/sin angle))
-                         0.0])))))
+      disk-vertices (float-array 
+                     (concat 
+                       [0.0 0.0 0.0]  ; Center point
+                       (flatten
+                         (for [i (range (inc num-points))]
+                           (let [angle (* 2.0 Math/PI (/ i num-points))]
+                             [(* radius (Math/cos angle))
+                              (* radius (Math/sin angle))
+                              0.0])))))
 
-      ;; Create vertex buffer
-      vertex-buffer (let [vbb (java.nio.ByteBuffer/allocateDirect (* (count vertices) 4))
-                         native-order (java.nio.ByteOrder/nativeOrder)]
-                     (.order vbb native-order)
-                     (let [fb (.asFloatBuffer vbb)]
-                       (.put fb vertices)
-                       (.position fb 0)
-                       fb))
+      ;; Create disk colors (all red)
+      disk-colors (float-array
+                   (flatten
+                     (repeat (+ 2 num-points) [1.0 0.0 0.0 1.0])))
+
+      ;; Create north pointer vertices
+      pointer-height 0.4  ; Half the radius
+      pointer-width 0.1   ; Narrow triangle
+      pointer-vertices (float-array
+                        [0.0 radius 0.0          ; Tip
+                         (- pointer-width) (- radius pointer-height) 0.0  ; Left base
+                         pointer-width (- radius pointer-height) 0.0])    ; Right base
+
+      ;; Create pointer colors (white)
+      pointer-colors (float-array
+                      (flatten
+                        (repeat 3 [1.0 1.0 1.0 1.0])))
+
+      ;; Create vertex and color buffers
+      disk-vertex-buffer (let [vbb (java.nio.ByteBuffer/allocateDirect (* (count disk-vertices) 4))
+                              native-order (java.nio.ByteOrder/nativeOrder)]
+                          (.order vbb native-order)
+                          (let [fb (.asFloatBuffer vbb)]
+                            (.put fb disk-vertices)
+                            (.position fb 0)
+                            fb))
+
+      disk-color-buffer (let [vbb (java.nio.ByteBuffer/allocateDirect (* (count disk-colors) 4))
+                             native-order (java.nio.ByteOrder/nativeOrder)]
+                         (.order vbb native-order)
+                         (let [fb (.asFloatBuffer vbb)]
+                           (.put fb disk-colors)
+                           (.position fb 0)
+                           fb))
+
+      pointer-vertex-buffer (let [vbb (java.nio.ByteBuffer/allocateDirect (* (count pointer-vertices) 4))
+                                 native-order (java.nio.ByteOrder/nativeOrder)]
+                             (.order vbb native-order)
+                             (let [fb (.asFloatBuffer vbb)]
+                               (.put fb pointer-vertices)
+                               (.position fb 0)
+                               fb))
+
+      pointer-color-buffer (let [vbb (java.nio.ByteBuffer/allocateDirect (* (count pointer-colors) 4))
+                                native-order (java.nio.ByteOrder/nativeOrder)]
+                            (.order vbb native-order)
+                            (let [fb (.asFloatBuffer vbb)]
+                              (.put fb pointer-colors)
+                              (.position fb 0)
+                              fb))
 
       ;; Store handles
       program-handle (atom 0)
       position-handle (atom 0)
+      color-handle (atom 0)
       projection-matrix-handle (atom 0)
       projection-matrix (float-array 16)
 
@@ -140,10 +187,13 @@
             ;; Get handles to shader variables
             (reset! position-handle 
               (android.opengl.GLES20/glGetAttribLocation @program-handle "vPosition"))
+            (reset! color-handle
+              (android.opengl.GLES20/glGetAttribLocation @program-handle "vColor"))
             (reset! projection-matrix-handle 
               (android.opengl.GLES20/glGetUniformLocation @program-handle "uProjectionMatrix"))
             
             (android.util.Log/d tag (str "Shader handles - position: " @position-handle 
+                                       " color: " @color-handle
                                        " projection: " @projection-matrix-handle))))
         
         (onSurfaceChanged [gl width height]
@@ -161,22 +211,39 @@
           (android.opengl.GLES20/glUniformMatrix4fv @projection-matrix-handle 
                                                    1 false projection-matrix 0)
           
-          ;; Enable vertex array
+          ;; Enable vertex arrays
           (android.opengl.GLES20/glEnableVertexAttribArray @position-handle)
+          (android.opengl.GLES20/glEnableVertexAttribArray @color-handle)
           
-          ;; Prepare the vertex data
+          ;; Draw the compass disk
           (android.opengl.GLES20/glVertexAttribPointer 
             @position-handle 3 
             android.opengl.GLES20/GL_FLOAT false 
-            0 vertex-buffer)
-          
-          ;; Draw the compass disk
+            0 disk-vertex-buffer)
+          (android.opengl.GLES20/glVertexAttribPointer
+            @color-handle 4
+            android.opengl.GLES20/GL_FLOAT false
+            0 disk-color-buffer)
           (android.opengl.GLES20/glDrawArrays 
             android.opengl.GLES20/GL_TRIANGLE_FAN 
             0 (+ 2 num-points))
           
-          ;; Disable vertex array
-          (android.opengl.GLES20/glDisableVertexAttribArray @position-handle)))
+          ;; Draw the north pointer
+          (android.opengl.GLES20/glVertexAttribPointer 
+            @position-handle 3 
+            android.opengl.GLES20/GL_FLOAT false 
+            0 pointer-vertex-buffer)
+          (android.opengl.GLES20/glVertexAttribPointer
+            @color-handle 4
+            android.opengl.GLES20/GL_FLOAT false
+            0 pointer-color-buffer)
+          (android.opengl.GLES20/glDrawArrays 
+            android.opengl.GLES20/GL_TRIANGLES
+            0 3)
+          
+          ;; Disable vertex arrays
+          (android.opengl.GLES20/glDisableVertexAttribArray @position-handle)
+          (android.opengl.GLES20/glDisableVertexAttribArray @color-handle)))
 
       gl-view (doto (proxy [android.opengl.GLSurfaceView] [activity]
                      (init []
