@@ -89,9 +89,13 @@
       position-handle (atom 0)
       color-handle (atom 0)
       projection-matrix-handle (atom 0)
-      rotation-matrix-handle (atom 0)  ; Add handle for rotation matrix
+      rotation-matrix-handle (atom 0)
       projection-matrix (float-array 16)
-      model-matrix (float-array 16)    ; For rotation
+      model-matrix (float-array 16)        ; For pointer rotation
+      identity-matrix (float-array 16)     ; For static disk
+      
+      ;; Initialize identity matrix
+      _ (android.opengl.Matrix/setIdentityM identity-matrix 0)
 
       ;; Helper function to compile shader
       compile-shader (fn [type source]
@@ -132,41 +136,6 @@
       
       _ (android.util.Log/d tag (str "Accelerometer: " accelerometer))
       _ (android.util.Log/d tag (str "Magnetometer: " magnetometer))
-
-      ;; Create sensor event listener
-      sensor-listener (proxy [android.hardware.SensorEventListener] []
-        (onSensorChanged [event]
-          (let [sensor-type (.getType (.sensor event))]
-            (cond
-              (= sensor-type android.hardware.Sensor/TYPE_ACCELEROMETER)
-              (System/arraycopy (.values event) 0 accel-data 0 3)
-              
-              (= sensor-type android.hardware.Sensor/TYPE_MAGNETIC_FIELD)
-              (System/arraycopy (.values event) 0 magnetic-data 0 3))
-            
-            (when (android.hardware.SensorManager/getRotationMatrix 
-                   rotation-matrix nil accel-data magnetic-data)
-              (android.hardware.SensorManager/getOrientation 
-               rotation-matrix orientation)
-              
-              ;; Update rotation matrix for compass pointer
-              (android.opengl.Matrix/setRotateM model-matrix 0 
-                                               (-> (aget orientation 0) 
-                                                   Math/toDegrees 
-                                                   (+ 90.0))  ; Adjust for screen orientation
-                                               0.0 0.0 1.0)
-              
-              ;; Only log if orientation changed significantly
-              (let [current (vec orientation)
-                    last @last-orientation
-                    changes (map #(Math/abs (- %1 %2)) current last)
-                    changed? (some #(> % min-change) changes)]
-                (when changed?
-                  (reset! last-orientation current)
-                  (android.util.Log/d tag (str "Orientation: " current)))))))
-        
-        (onAccuracyChanged [sensor accuracy]
-          (android.util.Log/d tag (str "Sensor accuracy changed: " accuracy))))
 
       ;; Create OpenGL surface view with updated renderer
       compass-renderer (proxy [android.opengl.GLSurfaceView$Renderer] []
@@ -229,9 +198,8 @@
           (android.opengl.GLES20/glEnableVertexAttribArray @color-handle)
           
           ;; Draw the compass disk (no rotation)
-          (android.opengl.Matrix/setIdentityM model-matrix 0)  ; Reset to identity for disk
           (android.opengl.GLES20/glUniformMatrix4fv @rotation-matrix-handle
-                                                   1 false model-matrix 0)
+                                                   1 false identity-matrix 0)
           (android.opengl.GLES20/glVertexAttribPointer 
             @position-handle 3 
             android.opengl.GLES20/GL_FLOAT false 
@@ -268,7 +236,45 @@
                        (android.util.Log/d tag "Initializing GL view")))
                (.setEGLContextClientVersion 2)
                (.setRenderer compass-renderer)
-               (.setRenderMode android.opengl.GLSurfaceView/RENDERMODE_CONTINUOUSLY))]
+               (.setRenderMode android.opengl.GLSurfaceView/RENDERMODE_WHEN_DIRTY))
+
+      ;; Create sensor event listener
+      sensor-listener (proxy [android.hardware.SensorEventListener] []
+        (onSensorChanged [event]
+          (let [sensor-type (.getType (.sensor event))]
+            (cond
+              (= sensor-type android.hardware.Sensor/TYPE_ACCELEROMETER)
+              (System/arraycopy (.values event) 0 accel-data 0 3)
+              
+              (= sensor-type android.hardware.Sensor/TYPE_MAGNETIC_FIELD)
+              (System/arraycopy (.values event) 0 magnetic-data 0 3))
+            
+            (when (android.hardware.SensorManager/getRotationMatrix 
+                   rotation-matrix nil accel-data magnetic-data)
+              (android.hardware.SensorManager/getOrientation 
+               rotation-matrix orientation)
+              
+              ;; Update rotation matrix for compass pointer
+              (android.opengl.Matrix/setRotateM model-matrix 0 
+                                               (-> (aget orientation 0) 
+                                                   Math/toDegrees 
+                                                   (+ 90.0))  ; Adjust for screen orientation
+                                               0.0 0.0 1.0)
+              
+              ;; Request a redraw
+              (.requestRender gl-view)
+              
+              ;; Only log if orientation changed significantly
+              (let [current (vec orientation)
+                    last @last-orientation
+                    changes (map #(Math/abs (- %1 %2)) current last)
+                    changed? (some #(> % min-change) changes)]
+                (when changed?
+                  (reset! last-orientation current)
+                  (android.util.Log/d tag (str "Orientation: " current)))))))
+        
+        (onAccuracyChanged [sensor accuracy]
+          (android.util.Log/d tag (str "Sensor accuracy changed: " accuracy))))]
 
   ;; Register sensor listeners
   (android.util.Log/d tag "Registering sensor listeners")
