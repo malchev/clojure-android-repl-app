@@ -73,7 +73,7 @@ Unlike other mobile development approaches like ReactNative, this app leverages 
 
 ## Example Applications
 
-The project includes several example applications in the `test/clojure/` directory:
+The project includes several example applications in the `examples/` directory:
 
 - `compass_app.clj`: Demonstrates sensor integration and real-time UI updates
 - `weather_app.clj`: Shows network requests and data visualization
@@ -87,7 +87,7 @@ To run the examples:
 1. Launch the application on your Android device
 2. Use the provided `send-clj.sh` script to send and evaluate Clojure code:
    ```bash
-   ./send-clj.sh test/clojure/compass_app.clj
+   ./send-clj.sh examples/compass_app.clj
    ```
 
 The script will:
