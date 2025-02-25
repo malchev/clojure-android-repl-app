@@ -1,14 +1,23 @@
 #!/bin/bash
 set -o errexit
 
-pushd clojure
-git am ../patches/*.patch
-git checkout -b android-clojure-1.11.1-Reflector-and-DynamicClassLoader
-git checkout -b android-clojure-1.11.1-Reflector HEAD~1
-popd
+branch=android-clojure-1.11.1-Reflector-and-DynamicClassLoader
+pushd clojure>/dev/null
+if git rev-parse --verify "$branch" >/dev/null 2>&1; then
+	cat<<EOF
+Branch $branch exists, looks like this script has already run.  If you want to
+rebuild, first run ./scripts/download_clojure.sh again, then run this script
+again.
+EOF
+	popd>/dev/null
+	exit 1;
+fi
+popd>/dev/null
+
 ./gradlew :clojure-android:buildClojure
 
 pushd clojure
-git checkout android-clojure-1.11.1-Reflector-and-DynamicClassLoader
+git am ../patches/*.patch
+git checkout -b $branch
 popd
 ./gradlew :clojure-android:buildClojure
