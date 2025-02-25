@@ -160,6 +160,19 @@
       (android.util.Log/d tag (str "Parsed weather data: " result))
       result))
 
+  ;; Function to get weather symbol
+  (defn get-weather-symbol [description]
+    (let [desc (.toLowerCase (str description))]
+      (cond
+        (or (.contains desc "sunny")
+            (.contains desc "clear")) "☀️"
+        (.contains desc "partly") "⛅"
+        (.contains desc "cloudy") "☁️"
+        (.contains desc "rain") "🌧️"
+        (.contains desc "showers") "🌧️"
+        (.contains desc "thunderstorm") "⛈️"
+        (.contains desc "snow") "🌨️"
+        :else "❓")))
   ;; Function to create a forecast day view
   (defn create-forecast-day [forecast]
     (let [day-container (doto (android.widget.LinearLayout. activity)
@@ -185,20 +198,6 @@
         (.addView name-text)
         (.addView icon-text)
         (.addView temp-text))))
-
-  ;; Function to get weather symbol
-  (defn get-weather-symbol [description]
-    (let [desc (.toLowerCase (str description))]
-      (cond
-        (or (.contains desc "sunny")
-            (.contains desc "clear")) "☀️"
-        (.contains desc "partly") "⛅"
-        (.contains desc "cloudy") "☁️"
-        (.contains desc "rain") "🌧️"
-        (.contains desc "showers") "🌧️"
-        (.contains desc "thunderstorm") "⛈️"
-        (.contains desc "snow") "🌨️"
-        :else "❓")))
 
   ;; Function to get location name
   (defn get-location-name [lat lon]
