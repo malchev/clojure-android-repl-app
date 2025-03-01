@@ -60,6 +60,7 @@
     <uses-feature android:glEsVersion="0x00020000" android:required="true" />
 
     <application
+        android:name="androidx.multidex.MultiDexApplication"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -68,13 +69,16 @@
 
         <activity
             android:name=".MainActivity"
-            android:exported="true"
-            android:launchMode="singleTop">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".RenderActivity"
+            android:exported="false" />
 
         <receiver
             android:name=".ClojureCodeReceiver"

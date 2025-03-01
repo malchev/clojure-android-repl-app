@@ -31,10 +31,6 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "ClojureREPL";
     private EditText replInput;
     private TextView replOutput;
-    private LinearLayout contentLayout;
-    private Var contextVar;
-    private Var contentLayoutVar;
-    private Var nsVar;
     private DynamicClassLoader clojureClassLoader;
 
     @Override
@@ -48,7 +44,6 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         
-        contentLayout = findViewById(R.id.content_layout);
         replInput = findViewById(R.id.repl_input);
         replOutput = findViewById(R.id.repl_output);
         
@@ -59,11 +54,12 @@ public class MainActivity extends AppCompatActivity {
             
             setupClojureClassLoader();
             RT.init();
-            setupClojureVars();
-            initializeClojureEnvironment();
             
-            // Handle intent that started the activity
-            handleIntent(getIntent());
+            // Only handle intent if it's not the initial launch
+            Intent intent = getIntent();
+            if (intent != null && intent.hasExtra("code")) {
+                handleIntent(intent);
+            }
         } catch (Exception e) {
             Log.e(TAG, "Error initializing Clojure", e);
             replOutput.setText("Error initializing Clojure: " + e.getMessage());
@@ -94,54 +90,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void setupClojureVars() {
-        try {
-            nsVar = RT.var("clojure.core", "*ns*");
-            contextVar = RT.var("clojure.core", "*context*");
-            contentLayoutVar = RT.var("clojure.core", "*content-layout*");
-            
-            contextVar.setDynamic(true);
-            contentLayoutVar.setDynamic(true);
-            
-            // Bind these vars permanently
-            contextVar.bindRoot(this);
-            contentLayoutVar.bindRoot(contentLayout);
-        } catch (Exception e) {
-            Log.e(TAG, "Error setting up vars", e);
-            throw new RuntimeException(e);
-        }
-    }
-
-    private void initializeClojureEnvironment() {
-        try {
-            // Create and switch to user namespace
-            Symbol userSym = Symbol.intern("user");
-            Object userNS = RT.var("clojure.core", "create-ns").invoke(userSym);
-            
-            // Set up bindings
-            Var.pushThreadBindings(RT.map(
-                nsVar, userNS,
-                contextVar, this,
-                contentLayoutVar, contentLayout
-            ));
-            
-            try {
-                // Require core into user namespace
-                RT.var("clojure.core", "refer").invoke(Symbol.intern("clojure.core"));
-                
-                // Don't require spec at all
-                // RT.var("clojure.core", "require").invoke(Symbol.intern("clojure.spec.alpha"));
-                // RT.var("clojure.spec.alpha", "check-asserts").invoke(false);
-                
-            } finally {
-                Var.popThreadBindings();
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error initializing Clojure environment", e);
-            throw new RuntimeException(e);
-        }
-    }
-
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
@@ -149,13 +97,15 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void handleIntent(Intent intent) {
-        if (intent == null) return;
+        if (intent == null || !intent.hasExtra("code")) {
+            Log.w(TAG, "No code provided in intent");
+            return;
+        }
 
         // Clear UI state immediately
         runOnUiThread(() -> {
             replInput.setText("");
             replOutput.setText("");
-            contentLayout.removeAllViews();
         });
 
         String code = null;
@@ -176,50 +126,26 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (code == null || code.trim().isEmpty()) {
-            Log.w(TAG, "No code provided in intent");
+            Log.w(TAG, "Empty code provided in intent");
             return;
         }
 
-        // Show the code in the input field
+        // Show the code in the input field and launch RenderActivity in a single UI operation
         final String finalCode = code;
-        runOnUiThread(() -> replInput.setText(finalCode));
-
-        try {
-            // Get the user namespace
-            Object userNS = RT.var("clojure.core", "find-ns").invoke(Symbol.intern("user"));
-            
-            // Push thread bindings
-            Var.pushThreadBindings(RT.map(
-                nsVar, userNS,
-                contextVar, this,
-                contentLayoutVar, contentLayout
-            ));
-            
+        runOnUiThread(() -> {
             try {
-                // Set the context class loader before reading and evaluating
-                Thread.currentThread().setContextClassLoader(clojureClassLoader);
-                
-                // Evaluate the code
-                Log.d(TAG, "Evaluating code: " + code);
-                Object form = RT.var("clojure.core", "read-string").invoke(code);
-                
-                // Ensure classloader is still set before eval
-                Thread.currentThread().setContextClassLoader(clojureClassLoader);
-                Object result = RT.var("clojure.core", "eval").invoke(form);
-                
-                // Show the result
-                String resultStr = String.valueOf(result);
-                Log.i(TAG, "Evaluation result: " + resultStr);
-                runOnUiThread(() -> replOutput.setText(resultStr));
-                
-            } finally {
-                Var.popThreadBindings();
+                replInput.setText(finalCode);
+                Intent renderIntent = new Intent(MainActivity.this, RenderActivity.class);
+                Log.d(TAG, "Creating intent for RenderActivity with code length: " + finalCode.length());
+                renderIntent.putExtra("code", finalCode);
+                Log.d(TAG, "Starting RenderActivity...");
+                startActivity(renderIntent);
+                Log.d(TAG, "RenderActivity started");
+                replOutput.setText("Launching render activity...");
+            } catch (Exception e) {
+                Log.e(TAG, "Error launching RenderActivity", e);
+                replOutput.setText("Error: " + e.getMessage());
             }
-        } catch (Exception e) {
-            Log.e(TAG, "Error evaluating Clojure code", e);
-            final String errorMsg = "Error: " + e.getMessage();
-            runOnUiThread(() -> replOutput.setText(errorMsg));
-            e.printStackTrace();
-        }
+        });
     }
 } 
