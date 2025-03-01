@@ -175,7 +175,7 @@ public class MainActivity extends AppCompatActivity {
             Log.d(TAG, "Creating intent for RenderActivity with code length: " + code.length());
             renderIntent.putExtra("code", code);
             Log.d(TAG, "Starting RenderActivity...");
-            startActivity(renderIntent);
+            startActivityForResult(renderIntent, 1001); // Use request code 1001 for render activity
             Log.d(TAG, "RenderActivity started");
             replOutput.setText("Launching render activity...");
             
@@ -186,6 +186,38 @@ public class MainActivity extends AppCompatActivity {
             Log.e(TAG, "Error launching RenderActivity", e);
             replOutput.setText("Error: " + e.getMessage());
             updateStats("Compilation error", lineCount, null);
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == 1001 && resultCode == RESULT_OK && data != null) {
+            String timings = data.getStringExtra("timings");
+            if (timings != null) {
+                // Create a collapsible section for timings
+                LinearLayout timingsLayout = new LinearLayout(this);
+                timingsLayout.setOrientation(LinearLayout.VERTICAL);
+                timingsLayout.setBackgroundColor(Color.parseColor("#F5F5F5"));
+                timingsLayout.setPadding(16, 16, 16, 16);
+
+                TextView headerView = new TextView(this);
+                headerView.setText("Execution Timings:");
+                headerView.setTypeface(Typeface.DEFAULT_BOLD);
+                headerView.setTextColor(Color.parseColor("#1976D2"));
+                timingsLayout.addView(headerView);
+
+                TextView timingsView = new TextView(this);
+                timingsView.setTypeface(Typeface.MONOSPACE);
+                timingsView.setTextColor(Color.parseColor("#263238"));
+                timingsView.setText(timings);
+                timingsView.setPadding(0, 8, 0, 0);
+                timingsLayout.addView(timingsView);
+
+                // Add timings view below the stats view
+                LinearLayout root = findViewById(R.id.root_layout);
+                root.addView(timingsLayout, 1); // Add after stats view
+            }
         }
     }
 

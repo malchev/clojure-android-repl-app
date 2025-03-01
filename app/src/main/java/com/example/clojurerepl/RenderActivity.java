@@ -25,6 +25,7 @@ public class RenderActivity extends AppCompatActivity {
     private DynamicClassLoader clojureClassLoader;
     private long activityStartTime;
     private TextView timingView;
+    private StringBuilder timingData = new StringBuilder();
 
     private class UiSafeViewGroup extends LinearLayout {
         private final LinearLayout delegate;
@@ -144,11 +145,24 @@ public class RenderActivity extends AppCompatActivity {
 
     private void updateTimings(String stage, long timeMs) {
         runOnUiThread(() -> {
-            String currentText = timingView.getText().toString();
-            String newText = currentText + 
-                String.format("%s: %dms\n", stage, timeMs);
-            timingView.setText(newText);
+            String entry = String.format("%s: %dms\n", stage, timeMs);
+            timingData.append(entry);
+            timingView.setText(timingData.toString());
+            
+            // Send timing data back to MainActivity
+            Intent resultIntent = new Intent();
+            resultIntent.putExtra("timings", timingData.toString());
+            setResult(RESULT_OK, resultIntent);
         });
+    }
+
+    @Override
+    public void onBackPressed() {
+        // Ensure final timing data is sent back
+        Intent resultIntent = new Intent();
+        resultIntent.putExtra("timings", timingData.toString());
+        setResult(RESULT_OK, resultIntent);
+        super.onBackPressed();
     }
 
     private void setupClojureClassLoader() {
