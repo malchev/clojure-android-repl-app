@@ -65,6 +65,10 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout root = findViewById(R.id.root_layout);
         root.addView(statsView, 0);  // Add at the top
         
+        // Set up launch button
+        Button launchButton = findViewById(R.id.launch_button);
+        launchButton.setOnClickListener(v -> launchRenderActivity());
+        
         updateStats("Initializing...", null, null);
         
         try {
@@ -153,6 +157,38 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void launchRenderActivity() {
+        String code = replInput.getText().toString();
+        if (code.trim().isEmpty()) {
+            replOutput.setText("Please enter some code first");
+            updateStats("No code", 0, 0L);
+            return;
+        }
+
+        final int lineCount = code.split("\n").length;
+        final long startTime = System.currentTimeMillis();
+        
+        updateStats("Compiling...", lineCount, null);
+
+        try {
+            Intent renderIntent = new Intent(MainActivity.this, RenderActivity.class);
+            Log.d(TAG, "Creating intent for RenderActivity with code length: " + code.length());
+            renderIntent.putExtra("code", code);
+            Log.d(TAG, "Starting RenderActivity...");
+            startActivity(renderIntent);
+            Log.d(TAG, "RenderActivity started");
+            replOutput.setText("Launching render activity...");
+            
+            // Update stats with final timing
+            long totalTime = System.currentTimeMillis() - startTime;
+            updateStats("Compiled successfully", lineCount, totalTime);
+        } catch (Exception e) {
+            Log.e(TAG, "Error launching RenderActivity", e);
+            replOutput.setText("Error: " + e.getMessage());
+            updateStats("Compilation error", lineCount, null);
+        }
+    }
+
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
@@ -165,12 +201,6 @@ public class MainActivity extends AppCompatActivity {
             updateStats("No code provided", 0, 0L);
             return;
         }
-
-        // Clear UI state immediately
-        runOnUiThread(() -> {
-            replInput.setText("");
-            replOutput.setText("");
-        });
 
         String code = null;
         String encoding = intent.getStringExtra("encoding");
@@ -196,33 +226,8 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // Count lines and start timing
+        // Show the code in the input field
         final String finalCode = code;
-        final int lineCount = finalCode.split("\n").length;
-        final long startTime = System.currentTimeMillis();
-        
-        updateStats("Compiling...", lineCount, null);
-
-        // Show the code in the input field and launch RenderActivity in a single UI operation
-        runOnUiThread(() -> {
-            try {
-                replInput.setText(finalCode);
-                Intent renderIntent = new Intent(MainActivity.this, RenderActivity.class);
-                Log.d(TAG, "Creating intent for RenderActivity with code length: " + finalCode.length());
-                renderIntent.putExtra("code", finalCode);
-                Log.d(TAG, "Starting RenderActivity...");
-                startActivity(renderIntent);
-                Log.d(TAG, "RenderActivity started");
-                replOutput.setText("Launching render activity...");
-                
-                // Update stats with final timing
-                long totalTime = System.currentTimeMillis() - startTime;
-                updateStats("Compiled successfully", lineCount, totalTime);
-            } catch (Exception e) {
-                Log.e(TAG, "Error launching RenderActivity", e);
-                replOutput.setText("Error: " + e.getMessage());
-                updateStats("Compilation error", lineCount, null);
-            }
-        });
+        runOnUiThread(() -> replInput.setText(finalCode));
     }
 } 
