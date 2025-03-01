@@ -7,6 +7,7 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.LinearLayout;
 import android.view.ViewGroup;
+import android.view.View;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.multidex.MultiDex;
 import clojure.java.api.Clojure;
@@ -32,13 +33,20 @@ import android.graphics.Color;
 import android.text.SpannableString;
 import android.text.style.StyleSpan;
 import android.text.style.ForegroundColorSpan;
+import android.widget.HorizontalScrollView;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "ClojureREPL";
     private EditText replInput;
     private TextView replOutput;
     private TextView statsView;
+    private LinearLayout timingsLayout;
+    private TextView timingsHeaderView;
+    private LinearLayout timingsTableView;
+    private int runCount = 0;
     private DynamicClassLoader clojureClassLoader;
+    private LinearLayout[] stageRows; // Array to keep track of stage label columns
+    private LinearLayout[] dataRows;  // Array to keep track of data columns
 
     @Override
     protected void attachBaseContext(Context base) {
@@ -59,11 +67,51 @@ public class MainActivity extends AppCompatActivity {
         statsView.setTextSize(14);
         statsView.setPadding(16, 16, 16, 16);
         statsView.setBackgroundColor(Color.parseColor("#F5F5F5"));
-        statsView.setTextColor(Color.parseColor("#263238"));  // Dark gray text
+        statsView.setTextColor(Color.parseColor("#263238"));
         statsView.setTypeface(Typeface.MONOSPACE);
         
+        // Create timings section
+        timingsLayout = new LinearLayout(this);
+        timingsLayout.setOrientation(LinearLayout.VERTICAL);
+        timingsLayout.setBackgroundColor(Color.parseColor("#F5F5F5"));
+        timingsLayout.setPadding(16, 16, 16, 16);
+
+        timingsHeaderView = new TextView(this);
+        timingsHeaderView.setText("Execution Timings");
+        timingsHeaderView.setTypeface(Typeface.DEFAULT_BOLD);
+        timingsHeaderView.setTextColor(Color.parseColor("#1976D2"));
+        timingsLayout.addView(timingsHeaderView);
+
+        // Create table view for timings
+        timingsTableView = new LinearLayout(this);
+        timingsTableView.setOrientation(LinearLayout.VERTICAL);
+        timingsTableView.setPadding(0, 8, 0, 0);
+
+        // Create a horizontal layout to hold the labels column and scrollview
+        LinearLayout horizontalContainer = new LinearLayout(this);
+        horizontalContainer.setOrientation(LinearLayout.HORIZONTAL);
+
+        // Create a container for stage labels (fixed left column)
+        LinearLayout labelsColumn = new LinearLayout(this);
+        labelsColumn.setOrientation(LinearLayout.VERTICAL);
+        labelsColumn.setLayoutParams(new LinearLayout.LayoutParams(
+            250, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // Create a horizontal scroll view for the data
+        HorizontalScrollView scrollView = new HorizontalScrollView(this);
+        scrollView.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 
+            LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // Add the containers to the main layout
+        horizontalContainer.addView(labelsColumn);
+        horizontalContainer.addView(scrollView);
+        scrollView.addView(timingsTableView);
+        timingsLayout.addView(horizontalContainer);
+        
         LinearLayout root = findViewById(R.id.root_layout);
-        root.addView(statsView, 0);  // Add at the top
+        root.addView(statsView, 0);
+        root.addView(timingsLayout, 1);
         
         // Set up launch button
         Button launchButton = findViewById(R.id.launch_button);
@@ -195,28 +243,116 @@ public class MainActivity extends AppCompatActivity {
         if (requestCode == 1001 && resultCode == RESULT_OK && data != null) {
             String timings = data.getStringExtra("timings");
             if (timings != null) {
-                // Create a collapsible section for timings
-                LinearLayout timingsLayout = new LinearLayout(this);
-                timingsLayout.setOrientation(LinearLayout.VERTICAL);
-                timingsLayout.setBackgroundColor(Color.parseColor("#F5F5F5"));
-                timingsLayout.setPadding(16, 16, 16, 16);
+                runCount++;
+                updateTimingsTable(timings);
+            }
+        }
+    }
 
-                TextView headerView = new TextView(this);
-                headerView.setText("Execution Timings:");
-                headerView.setTypeface(Typeface.DEFAULT_BOLD);
-                headerView.setTextColor(Color.parseColor("#1976D2"));
-                timingsLayout.addView(headerView);
-
-                TextView timingsView = new TextView(this);
-                timingsView.setTypeface(Typeface.MONOSPACE);
-                timingsView.setTextColor(Color.parseColor("#263238"));
-                timingsView.setText(timings);
-                timingsView.setPadding(0, 8, 0, 0);
-                timingsLayout.addView(timingsView);
-
-                // Add timings view below the stats view
-                LinearLayout root = findViewById(R.id.root_layout);
-                root.addView(timingsLayout, 1); // Add after stats view
+    private void updateTimingsTable(String newTimings) {
+        // Parse the timings into rows
+        String[] rows = newTimings.split("\n");
+        
+        // Create header row if this is the first run
+        if (runCount == 1) {
+            // Initialize arrays for stage rows
+            stageRows = new LinearLayout[rows.length + 1]; // +1 for header
+            dataRows = new LinearLayout[rows.length + 1];
+            
+            // Create header rows
+            stageRows[0] = new LinearLayout(this);
+            dataRows[0] = new LinearLayout(this);
+            stageRows[0].setOrientation(LinearLayout.HORIZONTAL);
+            dataRows[0].setOrientation(LinearLayout.HORIZONTAL);
+            
+            // Add "Stage" column header to fixed column
+            TextView stageHeader = new TextView(this);
+            stageHeader.setText("Stage");
+            stageHeader.setTypeface(Typeface.DEFAULT_BOLD);
+            stageHeader.setTextColor(Color.parseColor("#1976D2"));
+            stageHeader.setLayoutParams(new LinearLayout.LayoutParams(
+                250, LinearLayout.LayoutParams.WRAP_CONTENT));
+            stageHeader.setPadding(4, 4, 4, 4);
+            stageRows[0].addView(stageHeader);
+            
+            // Add header row to the layouts
+            LinearLayout labelsColumn = (LinearLayout) ((ViewGroup) ((ViewGroup) timingsTableView.getParent()).getParent()).getChildAt(0);
+            labelsColumn.addView(stageRows[0]);
+            timingsTableView.addView(dataRows[0]);
+            
+            // Create rows for each stage
+            int rowIndex = 1;
+            for (String row : rows) {
+                String[] parts = row.split(":");
+                if (parts.length < 2) continue;
+                
+                String stageName = parts[0].trim();
+                
+                // Create fixed label column
+                stageRows[rowIndex] = new LinearLayout(this);
+                stageRows[rowIndex].setOrientation(LinearLayout.HORIZONTAL);
+                
+                TextView stageLabel = new TextView(this);
+                stageLabel.setText(stageName);
+                stageLabel.setTypeface(Typeface.MONOSPACE);
+                stageLabel.setTextColor(Color.parseColor("#263238"));
+                stageLabel.setLayoutParams(new LinearLayout.LayoutParams(
+                    250, LinearLayout.LayoutParams.WRAP_CONTENT));
+                stageLabel.setPadding(4, 4, 4, 4);
+                stageRows[rowIndex].addView(stageLabel);
+                
+                // Create scrollable data row
+                dataRows[rowIndex] = new LinearLayout(this);
+                dataRows[rowIndex].setOrientation(LinearLayout.HORIZONTAL);
+                dataRows[rowIndex].setTag("row_" + stageName);
+                
+                // Add rows to their respective containers
+                labelsColumn.addView(stageRows[rowIndex]);
+                timingsTableView.addView(dataRows[rowIndex]);
+                
+                rowIndex++;
+            }
+        }
+        
+        // Add column header for this run
+        TextView runHeader = new TextView(this);
+        runHeader.setText("Run " + runCount);
+        runHeader.setTypeface(Typeface.DEFAULT_BOLD);
+        runHeader.setTextColor(Color.parseColor("#1976D2"));
+        runHeader.setLayoutParams(new LinearLayout.LayoutParams(
+            150, LinearLayout.LayoutParams.WRAP_CONTENT));
+        runHeader.setPadding(4, 4, 4, 4);
+        dataRows[0].addView(runHeader);
+        
+        // Add timing data for each stage
+        for (String row : rows) {
+            String[] parts = row.split(":");
+            if (parts.length < 2) continue;
+            
+            String stageName = parts[0].trim();
+            String timing = parts[1].trim();
+            
+            // Find the data row for this stage
+            LinearLayout dataRow = null;
+            for (int i = 1; i < dataRows.length; i++) {
+                if (dataRows[i] != null && 
+                    dataRows[i].getTag() != null && 
+                    dataRows[i].getTag().toString().equals("row_" + stageName)) {
+                    dataRow = dataRows[i];
+                    break;
+                }
+            }
+            
+            // Add the timing cell
+            TextView timeCell = new TextView(this);
+            timeCell.setText(timing);
+            timeCell.setTypeface(Typeface.MONOSPACE);
+            timeCell.setTextColor(Color.parseColor("#263238"));
+            timeCell.setLayoutParams(new LinearLayout.LayoutParams(
+                150, LinearLayout.LayoutParams.WRAP_CONTENT));
+            timeCell.setPadding(4, 4, 4, 4);
+            if (dataRow != null) {
+                dataRow.addView(timeCell);
             }
         }
     }
