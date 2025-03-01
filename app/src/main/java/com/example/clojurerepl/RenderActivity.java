@@ -12,6 +12,9 @@ import android.util.Log;
 import java.lang.reflect.Field;
 import android.content.Intent;
 import clojure.lang.Symbol;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.widget.TextView;
 
 public class RenderActivity extends AppCompatActivity {
     private static final String TAG = "ClojureRender";
@@ -20,6 +23,8 @@ public class RenderActivity extends AppCompatActivity {
     private Var contentLayoutVar;
     private Var nsVar;
     private DynamicClassLoader clojureClassLoader;
+    private long activityStartTime;
+    private TextView timingView;
 
     private class UiSafeViewGroup extends LinearLayout {
         private final LinearLayout delegate;
@@ -59,28 +64,59 @@ public class RenderActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        activityStartTime = System.currentTimeMillis();
         Log.d(TAG, "RenderActivity onCreate started");
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_render);
         
+        // Add timing view at the top
+        timingView = new TextView(this);
+        timingView.setTextSize(12);
+        timingView.setPadding(16, 16, 16, 16);
+        timingView.setTypeface(Typeface.MONOSPACE);
+        timingView.setTextColor(Color.parseColor("#1976D2")); // Material Blue
+        timingView.setBackgroundColor(Color.parseColor("#F5F5F5")); // Light Gray
+        
         contentLayout = findViewById(R.id.content_layout);
+        LinearLayout root = (LinearLayout) contentLayout.getParent();
+        root.addView(timingView, 0);
+        
+        // Set content layout background for better contrast
+        contentLayout.setBackgroundColor(Color.WHITE);
+        
         Log.d(TAG, "Content layout found: " + (contentLayout != null));
         
         try {
+            long rtStartTime = System.currentTimeMillis();
             // Initialize RT before any Clojure operations
             Log.d(TAG, "Initializing RT");
             System.setProperty("clojure.spec.skip-macros", "true");
             System.setProperty("clojure.spec.compile-asserts", "false");
             RT.init();
-            Log.d(TAG, "RT initialized successfully");
+            long rtTime = System.currentTimeMillis() - rtStartTime;
+            Log.d(TAG, "RT initialized successfully in " + rtTime + "ms");
+            updateTimings("RT init", rtTime);
             
+            long classLoaderStartTime = System.currentTimeMillis();
             Log.d(TAG, "Setting up Clojure class loader");
             setupClojureClassLoader();
+            long classLoaderTime = System.currentTimeMillis() - classLoaderStartTime;
+            Log.d(TAG, "Class loader setup completed in " + classLoaderTime + "ms");
+            updateTimings("ClassLoader", classLoaderTime);
+            
+            long varsStartTime = System.currentTimeMillis();
             Log.d(TAG, "Setting up Clojure vars");
             setupClojureVars();
+            long varsTime = System.currentTimeMillis() - varsStartTime;
+            Log.d(TAG, "Vars setup completed in " + varsTime + "ms");
+            updateTimings("Vars setup", varsTime);
+            
+            long envStartTime = System.currentTimeMillis();
             Log.d(TAG, "Initializing Clojure environment");
             initializeClojureEnvironment();
-            Log.d(TAG, "Clojure environment setup complete");
+            long envTime = System.currentTimeMillis() - envStartTime;
+            Log.d(TAG, "Clojure environment setup complete in " + envTime + "ms");
+            updateTimings("Env init", envTime);
             
             // Get the code from the intent
             Intent intent = getIntent();
@@ -104,6 +140,15 @@ public class RenderActivity extends AppCompatActivity {
             Log.e(TAG, "Error in RenderActivity", e);
             showError("Error: " + e.getMessage());
         }
+    }
+
+    private void updateTimings(String stage, long timeMs) {
+        runOnUiThread(() -> {
+            String currentText = timingView.getText().toString();
+            String newText = currentText + 
+                String.format("%s: %dms\n", stage, timeMs);
+            timingView.setText(newText);
+        });
     }
 
     private void setupClojureClassLoader() {
@@ -195,6 +240,7 @@ public class RenderActivity extends AppCompatActivity {
         // Compile and evaluate in a background thread
         new Thread(() -> {
             Log.d(TAG, "Starting evaluation thread");
+            long evalStartTime = System.currentTimeMillis();
             try {
                 // Ensure classloader is set
                 Thread.currentThread().setContextClassLoader(clojureClassLoader);
@@ -212,10 +258,22 @@ public class RenderActivity extends AppCompatActivity {
                 try {
                     // Read and evaluate the code
                     Log.d(TAG, "Reading code string");
+                    long parseStartTime = System.currentTimeMillis();
                     Object form = RT.var("clojure.core", "read-string").invoke(code);
-                    Log.d(TAG, "Code parsed, starting evaluation");
+                    long parseTime = System.currentTimeMillis() - parseStartTime;
+                    Log.d(TAG, "Code parsed in " + parseTime + "ms");
+                    updateTimings("Parse", parseTime);
+                    
+                    Log.d(TAG, "Starting evaluation");
+                    long execStartTime = System.currentTimeMillis();
                     Object result = RT.var("clojure.core", "eval").invoke(form);
+                    long execTime = System.currentTimeMillis() - execStartTime;
                     Log.i(TAG, "Render result: " + result);
+                    Log.d(TAG, "Code executed in " + execTime + "ms");
+                    updateTimings("Execute", execTime);
+                    
+                    long totalTime = System.currentTimeMillis() - activityStartTime;
+                    updateTimings("Total", totalTime);
                 } finally {
                     Log.d(TAG, "Cleaning up thread bindings");
                     Var.popThreadBindings();
@@ -223,11 +281,15 @@ public class RenderActivity extends AppCompatActivity {
             } catch (Exception e) {
                 Log.e(TAG, "Error rendering code", e);
                 Log.e(TAG, "Stack trace: ", e);
+                long errorTime = System.currentTimeMillis() - evalStartTime;
+                updateTimings("Error", errorTime);
                 runOnUiThread(() -> {
                     // Show error in UI
                     android.widget.TextView errorView = new android.widget.TextView(RenderActivity.this);
                     errorView.setText("Error: " + e.getMessage());
-                    errorView.setTextColor(0xFFFF0000);  // Red color
+                    errorView.setTextColor(Color.parseColor("#D32F2F")); // Material Red
+                    errorView.setBackgroundColor(Color.parseColor("#FFEBEE")); // Light Red
+                    errorView.setPadding(16, 16, 16, 16);
                     contentLayout.addView(errorView);
                 });
             }
@@ -239,7 +301,9 @@ public class RenderActivity extends AppCompatActivity {
         runOnUiThread(() -> {
             android.widget.TextView errorView = new android.widget.TextView(this);
             errorView.setText(message);
-            errorView.setTextColor(0xFFFF0000);  // Red color
+            errorView.setTextColor(Color.parseColor("#D32F2F")); // Material Red
+            errorView.setBackgroundColor(Color.parseColor("#FFEBEE")); // Light Red
+            errorView.setPadding(16, 16, 16, 16);
             contentLayout.addView(errorView);
         });
     }
