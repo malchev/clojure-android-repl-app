@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root_layout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="8dp">
+    android:padding="16dp"
+    android:background="#FFFFFF">
 
     <EditText
         android:id="@+id/repl_input"
@@ -13,20 +15,26 @@
         android:inputType="textMultiLine"
         android:minLines="2"
         android:maxLines="3"
-        android:textSize="12sp"
+        android:textSize="14sp"
         android:gravity="top"
-        android:padding="4dp" />
+        android:padding="8dp"
+        android:background="#F5F5F5"
+        android:textColor="#263238"
+        android:textColorHint="#78909C"
+        android:layout_marginTop="8dp" />
 
     <TextView
         android:id="@+id/repl_output"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:textSize="12sp"
-        android:padding="4dp"
+        android:layout_marginTop="8dp"
+        android:textSize="14sp"
+        android:padding="8dp"
         android:maxLines="2"
         android:ellipsize="end"
-        android:textIsSelectable="true" />
+        android:textIsSelectable="true"
+        android:background="#F5F5F5"
+        android:textColor="#263238" />
 
     <LinearLayout
         android:id="@+id/content_layout"
@@ -34,6 +42,6 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:orientation="vertical"
-        android:layout_marginTop="8dp" />
+        android:layout_marginTop="16dp" />
 
 </LinearLayout> 

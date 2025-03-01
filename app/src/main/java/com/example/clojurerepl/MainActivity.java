@@ -26,11 +26,18 @@ import dalvik.system.BaseDexClassLoader;
 import java.io.File;
 import android.content.Context;
 import java.nio.charset.StandardCharsets;
+import android.graphics.Typeface;
+import android.view.Gravity;
+import android.graphics.Color;
+import android.text.SpannableString;
+import android.text.style.StyleSpan;
+import android.text.style.ForegroundColorSpan;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "ClojureREPL";
     private EditText replInput;
     private TextView replOutput;
+    private TextView statsView;
     private DynamicClassLoader clojureClassLoader;
 
     @Override
@@ -47,13 +54,30 @@ public class MainActivity extends AppCompatActivity {
         replInput = findViewById(R.id.repl_input);
         replOutput = findViewById(R.id.repl_output);
         
+        // Create and add stats view
+        statsView = new TextView(this);
+        statsView.setTextSize(14);
+        statsView.setPadding(16, 16, 16, 16);
+        statsView.setBackgroundColor(Color.parseColor("#F5F5F5"));
+        statsView.setTextColor(Color.parseColor("#263238"));  // Dark gray text
+        statsView.setTypeface(Typeface.MONOSPACE);
+        
+        LinearLayout root = findViewById(R.id.root_layout);
+        root.addView(statsView, 0);  // Add at the top
+        
+        updateStats("Initializing...", null, null);
+        
         try {
             // Disable spec checking before any Clojure initialization
             System.setProperty("clojure.spec.skip-macros", "true");
             System.setProperty("clojure.spec.compile-asserts", "false");
             
+            long startTime = System.currentTimeMillis();
             setupClojureClassLoader();
             RT.init();
+            long initTime = System.currentTimeMillis() - startTime;
+            
+            updateStats("Ready", 0, initTime);
             
             // Only handle intent if it's not the initial launch
             Intent intent = getIntent();
@@ -63,6 +87,45 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception e) {
             Log.e(TAG, "Error initializing Clojure", e);
             replOutput.setText("Error initializing Clojure: " + e.getMessage());
+            updateStats("Error", null, null);
+        }
+    }
+
+    private void updateStats(String status, Integer codeLines, Long timeMs) {
+        runOnUiThread(() -> {
+            StringBuilder stats = new StringBuilder();
+            stats.append("Status: ").append(status).append("\n");
+            
+            if (codeLines != null) {
+                stats.append("Code size: ").append(codeLines).append(" lines\n");
+            }
+            
+            if (timeMs != null) {
+                stats.append("Time: ");
+                if (timeMs < 1000) {
+                    stats.append(timeMs).append("ms");
+                } else {
+                    stats.append(String.format("%.1fs", timeMs / 1000.0));
+                }
+            }
+            
+            SpannableString spannableStats = new SpannableString(stats.toString());
+            
+            // Style the labels
+            String text = stats.toString();
+            styleLabel(spannableStats, text, "Status:");
+            styleLabel(spannableStats, text, "Code size:");
+            styleLabel(spannableStats, text, "Time:");
+            
+            statsView.setText(spannableStats);
+        });
+    }
+    
+    private void styleLabel(SpannableString spannableString, String fullText, String label) {
+        int start = fullText.indexOf(label);
+        if (start >= 0) {
+            spannableString.setSpan(new StyleSpan(Typeface.BOLD), start, start + label.length(), 0);
+            spannableString.setSpan(new ForegroundColorSpan(Color.parseColor("#1976D2")), start, start + label.length(), 0);  // Darker blue
         }
     }
 
@@ -99,6 +162,7 @@ public class MainActivity extends AppCompatActivity {
     private void handleIntent(Intent intent) {
         if (intent == null || !intent.hasExtra("code")) {
             Log.w(TAG, "No code provided in intent");
+            updateStats("No code provided", 0, 0L);
             return;
         }
 
@@ -118,6 +182,7 @@ public class MainActivity extends AppCompatActivity {
                     code = new String(Base64.decode(base64Code, Base64.DEFAULT), StandardCharsets.UTF_8);
                 } catch (IllegalArgumentException e) {
                     Log.e(TAG, "Failed to decode base64 content", e);
+                    updateStats("Error decoding", null, null);
                     return;
                 }
             }
@@ -127,11 +192,18 @@ public class MainActivity extends AppCompatActivity {
 
         if (code == null || code.trim().isEmpty()) {
             Log.w(TAG, "Empty code provided in intent");
+            updateStats("Empty code", 0, 0L);
             return;
         }
 
-        // Show the code in the input field and launch RenderActivity in a single UI operation
+        // Count lines and start timing
         final String finalCode = code;
+        final int lineCount = finalCode.split("\n").length;
+        final long startTime = System.currentTimeMillis();
+        
+        updateStats("Compiling...", lineCount, null);
+
+        // Show the code in the input field and launch RenderActivity in a single UI operation
         runOnUiThread(() -> {
             try {
                 replInput.setText(finalCode);
@@ -142,9 +214,14 @@ public class MainActivity extends AppCompatActivity {
                 startActivity(renderIntent);
                 Log.d(TAG, "RenderActivity started");
                 replOutput.setText("Launching render activity...");
+                
+                // Update stats with final timing
+                long totalTime = System.currentTimeMillis() - startTime;
+                updateStats("Compiled successfully", lineCount, totalTime);
             } catch (Exception e) {
                 Log.e(TAG, "Error launching RenderActivity", e);
                 replOutput.setText("Error: " + e.getMessage());
+                updateStats("Compilation error", lineCount, null);
             }
         });
     }
