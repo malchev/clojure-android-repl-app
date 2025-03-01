@@ -363,12 +363,30 @@ public class MainActivity extends AppCompatActivity {
         handleIntent(intent);
     }
 
+    private void clearTimingsTable() {
+        runCount = 0;
+        if (timingsTableView != null) {
+            timingsTableView.removeAllViews();
+        }
+        // Clear the labels column
+        LinearLayout labelsColumn = (LinearLayout) ((ViewGroup) ((ViewGroup) timingsTableView.getParent()).getParent()).getChildAt(0);
+        if (labelsColumn != null) {
+            labelsColumn.removeAllViews();
+        }
+        // Reset arrays
+        stageRows = null;
+        dataRows = null;
+    }
+
     private void handleIntent(Intent intent) {
         if (intent == null || !intent.hasExtra("code")) {
             Log.w(TAG, "No code provided in intent");
             updateStats("No code provided", 0, 0L);
             return;
         }
+
+        // Clear timing table for new code
+        clearTimingsTable();
 
         String code = null;
         String encoding = intent.getStringExtra("encoding");
