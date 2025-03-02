@@ -7,21 +7,18 @@
     android:padding="16dp"
     android:background="#FFFFFF">
 
-    <EditText
+    <TextView
         android:id="@+id/repl_input"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:hint="Enter Clojure code"
-        android:inputType="textMultiLine"
-        android:gravity="top"
         android:padding="12dp"
         android:background="#F5F5F5"
         android:textColor="#263238"
-        android:textColorHint="#78909C"
         android:textSize="14sp"
         android:layout_marginTop="8dp"
-        android:fontFamily="monospace" />
+        android:fontFamily="monospace"
+        android:textIsSelectable="true" />
 
     <LinearLayout
         android:layout_width="match_parent"

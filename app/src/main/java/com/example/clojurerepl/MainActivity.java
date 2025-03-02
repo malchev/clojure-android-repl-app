@@ -37,7 +37,7 @@ import android.widget.HorizontalScrollView;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "ClojureREPL";
-    private EditText replInput;
+    private TextView replInput;
     private TextView replOutput;
     private TextView statsView;
     private LinearLayout timingsLayout;
@@ -61,6 +61,13 @@ public class MainActivity extends AppCompatActivity {
         
         replInput = findViewById(R.id.repl_input);
         replOutput = findViewById(R.id.repl_output);
+        
+        // Configure replInput for scrolling
+        replInput.setMovementMethod(new android.text.method.ScrollingMovementMethod());
+        replInput.setHorizontallyScrolling(true);
+        replInput.setHorizontalScrollBarEnabled(true);
+        replInput.setVerticalScrollBarEnabled(true);
+        replInput.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
         
         // Create and add stats view
         statsView = new TextView(this);
