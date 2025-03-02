@@ -289,8 +289,12 @@ public class RenderActivity extends AppCompatActivity {
                     long totalTime = System.currentTimeMillis() - activityStartTime;
                     updateTimings("Total", totalTime);
                 } finally {
-                    Log.d(TAG, "Cleaning up thread bindings");
-                    Var.popThreadBindings();
+                    try {
+                        Log.d(TAG, "Cleaning up thread bindings");
+                        Var.popThreadBindings();
+                    } catch (Exception e) {
+                        Log.w(TAG, "Error cleaning up thread bindings in renderCode", e);
+                    }
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Error rendering code", e);
@@ -325,10 +329,7 @@ public class RenderActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        try {
-            Var.popThreadBindings();
-        } catch (Exception e) {
-            Log.e(TAG, "Error cleaning up bindings", e);
-        }
+        // No need to pop thread bindings in onDestroy since they are handled in renderCode
+        Log.d(TAG, "RenderActivity destroyed");
     }
 } 
