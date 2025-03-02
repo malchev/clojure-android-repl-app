@@ -26,6 +26,8 @@ public class RenderActivity extends AppCompatActivity {
     private long activityStartTime;
     private TextView timingView;
     private StringBuilder timingData = new StringBuilder();
+    private volatile boolean isDestroyed = false;
+    private Thread evaluationThread = null;
 
     private class UiSafeViewGroup extends LinearLayout {
         private final LinearLayout delegate;
@@ -158,10 +160,26 @@ public class RenderActivity extends AppCompatActivity {
 
     @Override
     public void onBackPressed() {
+        Log.d(TAG, "Back button pressed, marking activity as destroyed");
+        isDestroyed = true;
+        
+        // Interrupt the evaluation thread if it's running
+        if (evaluationThread != null && evaluationThread.isAlive()) {
+            Log.d(TAG, "Interrupting evaluation thread");
+            evaluationThread.interrupt();
+            try {
+                // Wait briefly for the thread to clean up
+                evaluationThread.join(1000);
+            } catch (InterruptedException e) {
+                Log.w(TAG, "Interrupted while waiting for evaluation thread to finish");
+            }
+        }
+
         // Ensure final timing data is sent back
         Intent resultIntent = new Intent();
         resultIntent.putExtra("timings", timingData.toString());
         setResult(RESULT_OK, resultIntent);
+        
         super.onBackPressed();
     }
 
@@ -251,11 +269,16 @@ public class RenderActivity extends AppCompatActivity {
         // Clear existing views on UI thread
         runOnUiThread(() -> contentLayout.removeAllViews());
         
-        // Compile and evaluate in a background thread
-        new Thread(() -> {
+        // Create and store the evaluation thread
+        evaluationThread = new Thread(() -> {
             Log.d(TAG, "Starting evaluation thread");
             long evalStartTime = System.currentTimeMillis();
             try {
+                if (isDestroyed) {  // Check if already destroyed
+                    Log.d(TAG, "Activity destroyed, abandoning evaluation");
+                    return;
+                }
+
                 // Ensure classloader is set
                 Thread.currentThread().setContextClassLoader(clojureClassLoader);
                 Log.d(TAG, "ClassLoader set for evaluation thread");
@@ -278,6 +301,11 @@ public class RenderActivity extends AppCompatActivity {
                     Log.d(TAG, "Code parsed in " + parseTime + "ms");
                     updateTimings("Parse", parseTime);
                     
+                    if (isDestroyed) {  // Check again before evaluation
+                        Log.d(TAG, "Activity destroyed before evaluation, abandoning");
+                        return;
+                    }
+
                     Log.d(TAG, "Starting evaluation");
                     long execStartTime = System.currentTimeMillis();
                     Object result = RT.var("clojure.core", "eval").invoke(form);
@@ -286,8 +314,10 @@ public class RenderActivity extends AppCompatActivity {
                     Log.d(TAG, "Code executed in " + execTime + "ms");
                     updateTimings("Execute", execTime);
                     
-                    long totalTime = System.currentTimeMillis() - activityStartTime;
-                    updateTimings("Total", totalTime);
+                    if (!isDestroyed) {  // Only update total time if not destroyed
+                        long totalTime = System.currentTimeMillis() - activityStartTime;
+                        updateTimings("Total", totalTime);
+                    }
                 } finally {
                     try {
                         Log.d(TAG, "Cleaning up thread bindings");
@@ -297,21 +327,24 @@ public class RenderActivity extends AppCompatActivity {
                     }
                 }
             } catch (Exception e) {
-                Log.e(TAG, "Error rendering code", e);
-                Log.e(TAG, "Stack trace: ", e);
-                long errorTime = System.currentTimeMillis() - evalStartTime;
-                updateTimings("Error", errorTime);
-                runOnUiThread(() -> {
-                    // Show error in UI
-                    android.widget.TextView errorView = new android.widget.TextView(RenderActivity.this);
-                    errorView.setText("Error: " + e.getMessage());
-                    errorView.setTextColor(Color.parseColor("#D32F2F")); // Material Red
-                    errorView.setBackgroundColor(Color.parseColor("#FFEBEE")); // Light Red
-                    errorView.setPadding(16, 16, 16, 16);
-                    contentLayout.addView(errorView);
-                });
+                if (!isDestroyed) {  // Only show error if not destroyed
+                    Log.e(TAG, "Error rendering code", e);
+                    Log.e(TAG, "Stack trace: ", e);
+                    long errorTime = System.currentTimeMillis() - evalStartTime;
+                    updateTimings("Error", errorTime);
+                    runOnUiThread(() -> {
+                        // Show error in UI
+                        android.widget.TextView errorView = new android.widget.TextView(RenderActivity.this);
+                        errorView.setText("Error: " + e.getMessage());
+                        errorView.setTextColor(Color.parseColor("#D32F2F"));
+                        errorView.setBackgroundColor(Color.parseColor("#FFEBEE"));
+                        errorView.setPadding(16, 16, 16, 16);
+                        contentLayout.addView(errorView);
+                    });
+                }
             }
-        }).start();
+        });
+        evaluationThread.start();
     }
 
     private void showError(String message) {
@@ -328,8 +361,22 @@ public class RenderActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        Log.d(TAG, "onDestroy called");
+        isDestroyed = true;
+
+        // Interrupt the evaluation thread if it's running
+        if (evaluationThread != null && evaluationThread.isAlive()) {
+            Log.d(TAG, "Interrupting evaluation thread in onDestroy");
+            evaluationThread.interrupt();
+            try {
+                // Wait briefly for the thread to clean up
+                evaluationThread.join(1000);
+            } catch (InterruptedException e) {
+                Log.w(TAG, "Interrupted while waiting for evaluation thread to finish");
+            }
+        }
+
         super.onDestroy();
-        // No need to pop thread bindings in onDestroy since they are handled in renderCode
         Log.d(TAG, "RenderActivity destroyed");
     }
 } 
