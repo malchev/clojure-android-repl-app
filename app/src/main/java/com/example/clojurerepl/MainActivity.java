@@ -250,17 +250,43 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         
-        // Parse the timings into rows from the first run (they should all have the same stages)
-        String[] rows = timingRuns.get(0).split(TIMING_LINE_SEPARATOR);
-        if (rows.length == 0) {
+        // Parse the timings into rows and find the maximum number of stages across all runs
+        int maxStages = 0;
+        List<String> allStageNames = new ArrayList<>();
+        
+        // First pass: collect all unique stage names and find max stages
+        for (String run : timingRuns) {
+            String[] runRows = run.split(TIMING_LINE_SEPARATOR);
+            for (String row : runRows) {
+                String[] parts = row.split(":");
+                if (parts.length >= 1) {
+                    String stageName = parts[0].trim();
+                    if (!allStageNames.contains(stageName)) {
+                        allStageNames.add(stageName);
+                    }
+                }
+            }
+            maxStages = Math.max(maxStages, runRows.length);
+        }
+        
+        // Always ensure we have at least these stages
+        String[] requiredStages = {"RT init", "ClassLoader", "Vars setup", "Env init", "Parse", "Execute", "Total"};
+        for (String stage : requiredStages) {
+            if (!allStageNames.contains(stage)) {
+                allStageNames.add(stage);
+                maxStages = Math.max(maxStages, allStageNames.size());
+            }
+        }
+        
+        if (maxStages == 0) {
             Log.w(TAG, "No timing rows to display");
             return;
         }
 
         // Initialize arrays if needed
-        if (stageRows == null || dataRows == null) {
-            stageRows = new LinearLayout[rows.length + 1]; // +1 for header
-            dataRows = new LinearLayout[rows.length + 1];
+        if (stageRows == null || dataRows == null || stageRows.length < maxStages + 1) {
+            stageRows = new LinearLayout[maxStages + 1]; // +1 for header
+            dataRows = new LinearLayout[maxStages + 1];
         }
 
         // Get the labels column and data container
@@ -309,11 +335,8 @@ public class MainActivity extends AppCompatActivity {
         timingsTableView.addView(dataRows[0]);
         
         // Create data rows
-        for (int i = 0; i < rows.length; i++) {
-            String[] parts = rows[i].split(":");
-            if (parts.length < 2) continue;
-            
-            String stageName = parts[0].trim();
+        for (int i = 0; i < allStageNames.size(); i++) {
+            String stageName = allStageNames.get(i);
             
             // Create stage label row
             stageRows[i + 1] = new LinearLayout(this);
@@ -335,21 +358,25 @@ public class MainActivity extends AppCompatActivity {
             // Add timing cells for each run
             for (String runData : timingRuns) {
                 String[] runRows = runData.split(TIMING_LINE_SEPARATOR);
-                if (i < runRows.length) {
-                    String[] runParts = runRows[i].split(":");
-                    if (runParts.length >= 2) {
-                        String timing = runParts[1].trim();
-                        
-                        TextView timeCell = new TextView(this);
-                        timeCell.setText(timing);
-                        timeCell.setTypeface(Typeface.MONOSPACE);
-                        timeCell.setTextColor(Color.parseColor("#263238"));
-                        timeCell.setLayoutParams(new LinearLayout.LayoutParams(
-                            150, LinearLayout.LayoutParams.WRAP_CONTENT));
-                        timeCell.setPadding(4, 4, 4, 4);
-                        dataRows[i + 1].addView(timeCell);
+                TextView timeCell = new TextView(this);
+                timeCell.setTypeface(Typeface.MONOSPACE);
+                timeCell.setTextColor(Color.parseColor("#263238"));
+                timeCell.setLayoutParams(new LinearLayout.LayoutParams(
+                    150, LinearLayout.LayoutParams.WRAP_CONTENT));
+                timeCell.setPadding(4, 4, 4, 4);
+                
+                // Find timing for this stage in the current run
+                String timing = "N/A";
+                for (String row : runRows) {
+                    String[] parts = row.split(":");
+                    if (parts.length >= 2 && parts[0].trim().equals(stageName)) {
+                        timing = parts[1].trim();
+                        break;
                     }
                 }
+                timeCell.setText(timing);
+                
+                dataRows[i + 1].addView(timeCell);
             }
             
             // Add rows to their containers
@@ -503,15 +530,42 @@ public class MainActivity extends AppCompatActivity {
         timingsTableView.removeAllViews();
         labelsColumn.removeAllViews();
 
-        // Parse the timings into rows from the first run
-        String[] rows = timingRuns.get(0).split(TIMING_LINE_SEPARATOR);
-        if (rows.length == 0) {
+        // Parse the timings into rows and find the maximum number of stages across all runs
+        int maxStages = 0;
+        List<String> allStageNames = new ArrayList<>();
+        
+        // First pass: collect all unique stage names and find max stages
+        for (String run : timingRuns) {
+            String[] runRows = run.split(TIMING_LINE_SEPARATOR);
+            for (String row : runRows) {
+                String[] parts = row.split(":");
+                if (parts.length >= 1) {
+                    String stageName = parts[0].trim();
+                    if (!allStageNames.contains(stageName)) {
+                        allStageNames.add(stageName);
+                    }
+                }
+            }
+            maxStages = Math.max(maxStages, runRows.length);
+        }
+        
+        // Always ensure we have at least these stages
+        String[] requiredStages = {"RT init", "ClassLoader", "Vars setup", "Env init", "Parse", "Execute", "Total"};
+        for (String stage : requiredStages) {
+            if (!allStageNames.contains(stage)) {
+                allStageNames.add(stage);
+                maxStages = Math.max(maxStages, allStageNames.size());
+            }
+        }
+        
+        if (maxStages == 0) {
+            Log.w(TAG, "No timing rows to display");
             return;
         }
 
         // Initialize arrays
-        stageRows = new LinearLayout[rows.length + 1];
-        dataRows = new LinearLayout[rows.length + 1];
+        stageRows = new LinearLayout[maxStages + 1];
+        dataRows = new LinearLayout[maxStages + 1];
 
         // Create and populate the table using the same logic as updateTimingsTable
         // Create header row
@@ -547,11 +601,8 @@ public class MainActivity extends AppCompatActivity {
         timingsTableView.addView(dataRows[0]);
         
         // Create data rows
-        for (int i = 0; i < rows.length; i++) {
-            String[] parts = rows[i].split(":");
-            if (parts.length < 2) continue;
-            
-            String stageName = parts[0].trim();
+        for (int i = 0; i < allStageNames.size(); i++) {
+            String stageName = allStageNames.get(i);
             
             // Create stage label row
             stageRows[i + 1] = new LinearLayout(this);
@@ -573,21 +624,25 @@ public class MainActivity extends AppCompatActivity {
             // Add timing cells for each run
             for (String runData : timingRuns) {
                 String[] runRows = runData.split(TIMING_LINE_SEPARATOR);
-                if (i < runRows.length) {
-                    String[] runParts = runRows[i].split(":");
-                    if (runParts.length >= 2) {
-                        String timing = runParts[1].trim();
-                        
-                        TextView timeCell = new TextView(this);
-                        timeCell.setText(timing);
-                        timeCell.setTypeface(Typeface.MONOSPACE);
-                        timeCell.setTextColor(Color.parseColor("#263238"));
-                        timeCell.setLayoutParams(new LinearLayout.LayoutParams(
-                            150, LinearLayout.LayoutParams.WRAP_CONTENT));
-                        timeCell.setPadding(4, 4, 4, 4);
-                        dataRows[i + 1].addView(timeCell);
+                TextView timeCell = new TextView(this);
+                timeCell.setTypeface(Typeface.MONOSPACE);
+                timeCell.setTextColor(Color.parseColor("#263238"));
+                timeCell.setLayoutParams(new LinearLayout.LayoutParams(
+                    150, LinearLayout.LayoutParams.WRAP_CONTENT));
+                timeCell.setPadding(4, 4, 4, 4);
+                
+                // Find timing for this stage in the current run
+                String timing = "N/A";
+                for (String row : runRows) {
+                    String[] parts = row.split(":");
+                    if (parts.length >= 2 && parts[0].trim().equals(stageName)) {
+                        timing = parts[1].trim();
+                        break;
                     }
                 }
+                timeCell.setText(timing);
+                
+                dataRows[i + 1].addView(timeCell);
             }
             
             // Add rows to their containers
