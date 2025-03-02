@@ -4,6 +4,11 @@
       handler (android.os.Handler. (android.os.Looper/getMainLooper))
       tag "WeatherApp"  ;; Tag for logging
       
+      ;; Store location client as atom so we can reference it later
+      location-client (atom nil)
+      location-callback (atom nil)
+      destroyed (atom false)  ;; Track if the activity is destroyed
+      
       ;; Create UI elements
       main-layout (doto (android.widget.LinearLayout. activity)
                    (.setOrientation android.widget.LinearLayout/VERTICAL)
@@ -23,13 +28,15 @@
                    (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                      android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                      android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
-                   (.setTextSize 16.0))
+                   (.setTextSize 16.0)
+                   (.setTextColor android.graphics.Color/BLACK))
       
       temp-text (doto (android.widget.TextView. activity)
                  (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                    android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                    android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
                  (.setTextSize 48.0)
+                 (.setTextColor android.graphics.Color/BLACK)
                  (.setGravity android.view.Gravity/CENTER))
       
       desc-text (doto (android.widget.TextView. activity)
@@ -37,6 +44,7 @@
                                    android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                    android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
                  (.setTextSize 20.0)
+                 (.setTextColor android.graphics.Color/BLACK)
                  (.setGravity android.view.Gravity/CENTER))
       
       weather-icon (doto (android.widget.TextView. activity)
@@ -51,6 +59,7 @@
                                    android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                    android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
                  (.setTextSize 16.0)
+                 (.setTextColor android.graphics.Color/BLACK)
                  (.setGravity android.view.Gravity/CENTER))
       
       humidity-text (doto (android.widget.TextView. activity)
@@ -58,6 +67,7 @@
                                       android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                       android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
                      (.setTextSize 16.0)
+                     (.setTextColor android.graphics.Color/BLACK)
                      (.setGravity android.view.Gravity/CENTER))
       
       forecast-scroll (doto (android.widget.HorizontalScrollView. activity)
@@ -115,7 +125,8 @@
             (.append content buffer 0 n)
             (recur))))
       (let [result (.toString content)]
-        (android.util.Log/d tag (str "API response: " result))
+        ; (android.util.Log/d tag (str "API response: " result))
+        (android.util.Log/d tag (str "API response: "))
         result)))
 
   ;; Function to get NOAA points data
@@ -157,7 +168,8 @@
                         :is-daytime (.getBoolean period "isDaytime")}))
           result {:current (first forecasts)
                  :forecasts (rest forecasts)}]
-      (android.util.Log/d tag (str "Parsed weather data: " result))
+      ; (android.util.Log/d tag (str "Parsed weather data: " result))
+      (android.util.Log/d tag (str "Parsed weather data."))
       result))
 
   ;; Function to get weather symbol
@@ -185,6 +197,7 @@
           name-text (doto (android.widget.TextView. activity)
                      (.setText (:name forecast))
                      (.setTextSize 14.0)
+                     (.setTextColor android.graphics.Color/BLACK)
                      (.setGravity android.view.Gravity/CENTER))
           icon-text (doto (android.widget.TextView. activity)
                      (.setText (get-weather-symbol (:description forecast)))
@@ -193,6 +206,7 @@
           temp-text (doto (android.widget.TextView. activity)
                      (.setText (format "%d°F" (:temp forecast)))
                      (.setTextSize 14.0)
+                     (.setTextColor android.graphics.Color/BLACK)
                      (.setGravity android.view.Gravity/CENTER))]
       (doto day-container
         (.addView name-text)
@@ -218,51 +232,89 @@
 
   ;; Function to update weather display
   (defn update-weather [location]
-    (android.util.Log/d tag "update-weather called with location")
-    (let [lat (.getLatitude location)
-          lon (.getLongitude location)
-          location-name (get-location-name lat lon)]
-      (android.util.Log/d tag (str "Location: " location-name " (lat=" lat ", lon=" lon ")"))
-      (future
-        (try
-          (run-on-ui #(.setText status-text "Fetching weather data..."))
-          (let [weather-json (fetch-weather lat lon)
-                weather-data (parse-weather weather-json)
-                current (:current weather-data)
-                weather-symbol (get-weather-symbol (:description current))]
-            (android.util.Log/d tag "Weather data fetched and parsed")
-            (run-on-ui
-              (fn []
-                (.setText temp-text (format "%d°F" (:temp current)))
-                (.setText weather-icon weather-symbol)
-                (.setText desc-text (.toUpperCase (:description current)))
-                (.setText status-text (str "Weather in " location-name))
-                (.setText wind-text (format "Wind: %s %s" 
-                                         (:wind-speed current)
-                                         (:wind-direction current)))
-                (.setText humidity-text (:detailed current))
-                
-                ;; Update forecast view
-                (.removeAllViews forecast-container)
-                (doseq [forecast (filter :is-daytime (:forecasts weather-data))]
-                  (.addView forecast-container (create-forecast-day forecast)))
-                
-                (android.util.Log/d tag "UI updated with weather data"))))
-          (catch Exception e
-            (android.util.Log/e tag (str "Error updating weather: " (.getMessage e)))
-            (run-on-ui #(.setText status-text (str "Error: " (.getMessage e)))))))))
+    (when-not @destroyed  ;; Only update if not destroyed
+      (android.util.Log/d tag "update-weather called with location")
+      (let [lat (.getLatitude location)
+            lon (.getLongitude location)
+            location-name (get-location-name lat lon)]
+        (android.util.Log/d tag (str "Location: " location-name " (lat=" lat ", lon=" lon ")"))
+        (future
+          (try
+            (when-not @destroyed  ;; Check again before making network calls
+              (run-on-ui #(.setText status-text "Fetching weather data..."))
+              (let [weather-json (fetch-weather lat lon)
+                    weather-data (parse-weather weather-json)
+                    current (:current weather-data)
+                    weather-symbol (get-weather-symbol (:description current))]
+                (android.util.Log/d tag "Weather data fetched and parsed")
+                (when-not @destroyed  ;; Check again before updating UI
+                  (run-on-ui
+                    (fn []
+                      (.setText temp-text (format "%d°F" (:temp current)))
+                      (.setText weather-icon weather-symbol)
+                      (.setText desc-text (.toUpperCase (:description current)))
+                      (.setText status-text (str "Weather in " location-name))
+                      (.setText wind-text (format "Wind: %s %s" 
+                                               (:wind-speed current)
+                                               (:wind-direction current)))
+                      (.setText humidity-text (:detailed current))
+                      
+                      ;; Update forecast view
+                      (.removeAllViews forecast-container)
+                      (doseq [forecast (filter :is-daytime (:forecasts weather-data))]
+                        (.addView forecast-container (create-forecast-day forecast)))
+                      
+                      (android.util.Log/d tag "UI updated with weather data"))))))
+            (catch Exception e
+              (android.util.Log/e tag (str "Error updating weather: " (.getMessage e)))
+              (when-not @destroyed
+                (run-on-ui #(.setText status-text (str "Error: " (.getMessage e)))))))))))
 
   ;; Location callback
-  (def location-callback
+  (reset! location-callback
     (proxy [com.google.android.gms.location.LocationCallback] []
       (onLocationResult [result]
         (android.util.Log/d tag "Location callback received")
-        (if-let [location (.getLastLocation result)]
-          (do
-            (android.util.Log/d tag "Got location from callback")
-            (update-weather location))
-          (android.util.Log/w tag "No location available in callback")))))
+        (when-not @destroyed  ;; Only process location updates if not destroyed
+          (if-let [location (.getLastLocation result)]
+            (do
+              (android.util.Log/d tag "Got location from callback")
+              (update-weather location))
+            (android.util.Log/w tag "No location available in callback"))))))
   
+  ;; Function to stop location updates
+  (defn stop-location-updates []
+    (android.util.Log/d tag "Stopping location updates")
+    (when-let [client @location-client]
+      (when-let [callback @location-callback]
+        (-> (.removeLocationUpdates client callback)
+            (.addOnSuccessListener
+             (reify com.google.android.gms.tasks.OnSuccessListener
+               (onSuccess [this result]
+                 (android.util.Log/d tag "Location updates successfully removed"))))
+            (.addOnFailureListener
+             (reify com.google.android.gms.tasks.OnFailureListener
+               (onFailure [this e]
+                 (android.util.Log/e tag (str "Failed to remove location updates: " (.getMessage e))))))))))
+
+  ;; Function to cleanup resources
+  (defn cleanup []
+    (android.util.Log/d tag "=== Starting weather app cleanup ===")
+    (android.util.Log/d tag "Setting destroyed flag")
+    (reset! destroyed true)
+    
+    (android.util.Log/d tag (str "Location client exists? " (if @location-client "yes" "no")))
+    (android.util.Log/d tag (str "Location callback exists? " (if @location-callback "yes" "no")))
+    
+    (android.util.Log/d tag "Calling stop-location-updates")
+    (stop-location-updates)
+    
+    (android.util.Log/d tag "Clearing location client")
+    (reset! location-client nil)
+    (android.util.Log/d tag "Clearing location callback")
+    (reset! location-callback nil)
+    (android.util.Log/d tag "=== Weather app cleanup complete ==="))
+
   ;; Function to request location updates
   (defn request-location []
     (android.util.Log/d tag "Requesting location updates")
@@ -273,6 +325,10 @@
           builder (com.google.android.gms.location.LocationSettingsRequest$Builder.)
           _ (.addLocationRequest builder request)
           settings-client (com.google.android.gms.location.LocationServices/getSettingsClient activity)]
+      
+      ;; Store the client for later cleanup
+      (reset! location-client client)
+      
       (.setText status-text "Getting location...")
       (android.util.Log/d tag "Calling requestLocationUpdates")
       (-> (.checkLocationSettings settings-client (.build builder))
@@ -280,7 +336,7 @@
            (reify com.google.android.gms.tasks.OnSuccessListener
              (onSuccess [this result]
                (android.util.Log/d tag "Location settings satisfied")
-               (-> (.requestLocationUpdates client request location-callback (android.os.Looper/getMainLooper))
+               (-> (.requestLocationUpdates client request @location-callback (android.os.Looper/getMainLooper))
                    (.addOnSuccessListener
                     (reify com.google.android.gms.tasks.OnSuccessListener
                       (onSuccess [this result]
@@ -319,6 +375,45 @@
       (onClick [this view]
         (android.util.Log/d tag "Refresh button clicked")
         (check-permissions))))
+  
+  ;; Set up activity lifecycle hooks
+  (.addOnAttachStateChangeListener content
+    (proxy [android.view.View$OnAttachStateChangeListener] []
+      (onViewAttachedToWindow [v]
+        (android.util.Log/d tag "View attached")
+        (reset! destroyed false))  ;; Reset destroyed flag when attached
+      (onViewDetachedFromWindow [v]
+        (android.util.Log/d tag "View detached - cleaning up weather app")
+        (cleanup))))  ;; Call cleanup when detached
+  
+  ;; Add activity lifecycle listener
+  (.registerActivityLifecycleCallbacks
+    (.getApplication activity)
+    (proxy [android.app.Application$ActivityLifecycleCallbacks] []
+      (onActivityPreCreated [activity savedInstanceState])
+      (onActivityCreated [activity savedInstanceState])
+      (onActivityPostCreated [activity savedInstanceState])
+      (onActivityPreStarted [activity])
+      (onActivityStarted [activity])
+      (onActivityPostStarted [activity])
+      (onActivityPreResumed [activity])
+      (onActivityResumed [activity])
+      (onActivityPostResumed [activity])
+      (onActivityPrePaused [activity])
+      (onActivityPaused [activity])
+      (onActivityPostPaused [activity])
+      (onActivityPreStopped [activity])
+      (onActivityStopped [activity])
+      (onActivityPostStopped [activity])
+      (onActivityPreSaveInstanceState [activity outState])
+      (onActivitySaveInstanceState [activity outState])
+      (onActivityPostSaveInstanceState [activity outState])
+      (onActivityPreDestroyed [activity])
+      (onActivityDestroyed [a]
+        (when (= a activity)
+          (android.util.Log/d tag "Activity destroyed - cleaning up weather app")
+          (cleanup)))
+      (onActivityPostDestroyed [activity])))
   
   ;; Initial weather check
   (android.util.Log/d tag "Starting initial weather check")
