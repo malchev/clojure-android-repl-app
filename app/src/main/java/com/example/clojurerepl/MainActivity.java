@@ -787,11 +787,43 @@ public class MainActivity extends AppCompatActivity {
         header.setTypeface(Typeface.DEFAULT_BOLD);
         header.setPadding(16, 16, 16, 8);
         
-        // Create a container for header and spinner
+        // Create buttons
+        LinearLayout buttonRow = new LinearLayout(this);
+        buttonRow.setOrientation(LinearLayout.HORIZONTAL);
+        buttonRow.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        buttonRow.setPadding(16, 8, 16, 8);
+        
+        Button clearTimingsButton = new Button(this);
+        clearTimingsButton.setText("Clear Timings");
+        clearTimingsButton.setOnClickListener(v -> clearCurrentProgramTimings());
+        
+        Button deleteProgramButton = new Button(this);
+        deleteProgramButton.setText("Delete Program");
+        deleteProgramButton.setOnClickListener(v -> deleteCurrentProgram());
+        
+        // Add equal weight to buttons
+        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1
+        );
+        buttonParams.setMargins(0, 0, 8, 0);  // Add margin between buttons
+        
+        clearTimingsButton.setLayoutParams(buttonParams);
+        deleteProgramButton.setLayoutParams(new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1
+        ));
+        
+        buttonRow.addView(clearTimingsButton);
+        buttonRow.addView(deleteProgramButton);
+        
+        // Create a container for all elements
         LinearLayout spinnerContainer = new LinearLayout(this);
         spinnerContainer.setOrientation(LinearLayout.VERTICAL);
         spinnerContainer.addView(header);
         spinnerContainer.addView(programSpinner);
+        spinnerContainer.addView(buttonRow);
         
         // Add spinner container at the top of the layout
         LinearLayout root = findViewById(R.id.root_layout);
@@ -817,6 +849,63 @@ public class MainActivity extends AppCompatActivity {
         spinnerAdapter.clear();
         spinnerAdapter.addAll(programs.keySet());
         spinnerAdapter.notifyDataSetChanged();
+    }
+
+    private void clearCurrentProgramTimings() {
+        if (currentProgram == null) {
+            Log.w(TAG, "No program selected to clear timings");
+            return;
+        }
+        
+        // Clear timings from the current program
+        currentProgram.getTimingRuns().clear();
+        
+        // Clear the UI
+        clearTimingsTable();
+        
+        // Save the state
+        saveState();
+        
+        Log.d(TAG, "Cleared timings for program: " + currentProgram.getName());
+    }
+
+    private void deleteCurrentProgram() {
+        if (currentProgram == null) {
+            Log.w(TAG, "No program selected to delete");
+            return;
+        }
+        
+        String programName = currentProgram.getName();
+        
+        // Remove from programs map
+        programs.remove(programName);
+        
+        // Update spinner
+        updateSpinnerItems();
+        
+        // If we have other programs, switch to the first one
+        if (!programs.isEmpty()) {
+            String firstProgram = spinnerAdapter.getItem(0);
+            currentProgram = programs.get(firstProgram);
+            replInput.setText(currentProgram.getCode());
+            programSpinner.setSelection(0);
+            
+            // Update timings table
+            clearTimingsTable();
+            for (String timing : currentProgram.getTimingRuns()) {
+                updateTimingsTable(timing);
+            }
+        } else {
+            // No programs left
+            currentProgram = null;
+            replInput.setText("");
+            clearTimingsTable();
+        }
+        
+        // Save the state
+        saveState();
+        
+        Log.d(TAG, "Deleted program: " + programName);
     }
 
     @Override
