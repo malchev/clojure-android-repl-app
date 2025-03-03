@@ -39,6 +39,14 @@ import android.view.ViewParent;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Arrays;
+import android.widget.Spinner;
+import android.widget.ArrayAdapter;
+import android.widget.AdapterView;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import java.lang.reflect.Type;
+import java.util.HashMap;
+import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "ClojureREPL";
@@ -61,6 +69,12 @@ public class MainActivity extends AppCompatActivity {
     private DynamicClassLoader clojureClassLoader;
     private LinearLayout[] stageRows; // Array to keep track of stage label columns
     private LinearLayout[] dataRows;  // Array to keep track of data columns
+    private Map<String, ClojureProgram> programs = new HashMap<>();
+    private ClojureProgram currentProgram;
+    private Spinner programSpinner;
+    private ArrayAdapter<String> spinnerAdapter;
+    private static final String KEY_PROGRAMS = "saved_programs";
+    private static final String KEY_CURRENT_PROGRAM = "current_program";
 
     @Override
     protected void attachBaseContext(Context base) {
@@ -92,6 +106,7 @@ public class MainActivity extends AppCompatActivity {
         statsView.setTypeface(Typeface.MONOSPACE);
         
         setupTimingsUI();
+        setupProgramSpinner();
         
         // Now restore saved state after UI is initialized
         restoreSavedState();
@@ -225,9 +240,11 @@ public class MainActivity extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == 1001 && resultCode == RESULT_OK && data != null) {
             String timings = data.getStringExtra("timings");
-            if (timings != null) {
+            if (timings != null && currentProgram != null) {
                 runCount++;
+                currentProgram.addTimingRun(timings);
                 updateTimingsTable(timings);
+                saveState();
             }
         }
     }
@@ -420,12 +437,8 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // Clear timing table and data for new code
-        clearTimingsTable();
-        timingData.setLength(0);  // Clear timing data for new code
-
-        String code = null;
         String encoding = intent.getStringExtra("encoding");
+        final String code;  // Make code final
 
         if ("base64".equals(encoding)) {
             String base64Code = intent.getStringExtra("code");
@@ -437,6 +450,8 @@ public class MainActivity extends AppCompatActivity {
                     updateStats("Error decoding", null, null);
                     return;
                 }
+            } else {
+                code = null;
             }
         } else {
             code = intent.getStringExtra("code");
@@ -448,67 +463,84 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // Show the code in the input field and save state
-        final String finalCode = code;
+        // Create new program instance
+        ClojureProgram newProgram = new ClojureProgram(code);
+        
+        // Check if program already exists
+        for (ClojureProgram existing : programs.values()) {
+            if (existing.equals(newProgram)) {
+                // Clear timings for existing program
+                existing.getTimingRuns().clear();
+                currentProgram = existing;
+                clearTimingsTable();
+                final String finalCode = code;  // Create final copy for lambda
+                runOnUiThread(() -> {
+                    replInput.setText(finalCode);
+                    programSpinner.setSelection(
+                        spinnerAdapter.getPosition(existing.getName())
+                    );
+                });
+                saveState();
+                return;
+            }
+        }
+        
+        // Add new program
+        programs.put(newProgram.getName(), newProgram);
+        currentProgram = newProgram;
+        
+        final String finalCode = code;  // Create final copy for lambda
         runOnUiThread(() -> {
             replInput.setText(finalCode);
-            saveState(true);  // Save with clearing timing data
+            updateSpinnerItems();
+            programSpinner.setSelection(
+                spinnerAdapter.getPosition(newProgram.getName())
+            );
         });
+        
+        saveState();
     }
 
     private void saveState() {
-        saveState(false);  // Default to not clearing timing data
-    }
-
-    private void saveState(boolean clearTimings) {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();
         
-        // Save code
-        String currentCode = replInput.getText().toString();
-        editor.putString(KEY_SAVED_CODE, currentCode);
+        Gson gson = new Gson();
+        String programsJson = gson.toJson(programs);
+        editor.putString(KEY_PROGRAMS, programsJson);
         
-        // Save timings data if available and not clearing
-        if (!clearTimings && timingData.length() > 0) {
-            editor.putString(KEY_SAVED_TIMINGS, timingData.toString());
-        } else if (clearTimings) {
-            // Clear saved timing data when loading new code
-            editor.remove(KEY_SAVED_TIMINGS);
+        if (currentProgram != null) {
+            editor.putString(KEY_CURRENT_PROGRAM, currentProgram.getName());
         }
         
         editor.apply();
-        Log.d(TAG, "State saved: code length=" + currentCode.length() + 
-              (clearTimings ? " (timings cleared)" : ""));
     }
 
     private void restoreSavedState() {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         
-        // Restore code
-        String savedCode = prefs.getString(KEY_SAVED_CODE, null);
-        if (savedCode != null && !savedCode.isEmpty()) {
-            replInput.setText(savedCode);
-            Log.d(TAG, "Restored saved code: length=" + savedCode.length());
-        }
-        
-        // Restore timings if available and UI is initialized
-        String savedTimings = prefs.getString(KEY_SAVED_TIMINGS, null);
-        if (savedTimings != null && !savedTimings.isEmpty() && timingsTableView != null) {
-            // Split saved timings into individual runs
-            String[] runs = savedTimings.split(TIMING_RUN_SEPARATOR);
+        Gson gson = new Gson();
+        String programsJson = prefs.getString(KEY_PROGRAMS, null);
+        if (programsJson != null) {
+            Type type = new TypeToken<HashMap<String, ClojureProgram>>(){}.getType();
+            programs = gson.fromJson(programsJson, type);
             
-            // Directly set the timing data and runs
-            timingData.setLength(0);
-            timingData.append(savedTimings);
+            String currentProgramName = prefs.getString(KEY_CURRENT_PROGRAM, null);
+            if (currentProgramName != null && programs.containsKey(currentProgramName)) {
+                currentProgram = programs.get(currentProgramName);
+                replInput.setText(currentProgram.getCode());
+                
+                // Rebuild timing table
+                clearTimingsTable();
+                for (String timing : currentProgram.getTimingRuns()) {
+                    updateTimingsTable(timing);
+                }
+            }
             
-            timingRuns.clear();
-            timingRuns.addAll(Arrays.asList(runs));
-            runCount = timingRuns.size();
-            
-            // Rebuild the table UI
-            rebuildTimingsTable();
-            
-            Log.d(TAG, "Restored saved timings: " + runCount + " runs");
+            updateSpinnerItems();
+            if (currentProgramName != null) {
+                programSpinner.setSelection(spinnerAdapter.getPosition(currentProgramName));
+            }
         }
     }
 
@@ -695,6 +727,96 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout root = findViewById(R.id.root_layout);
         root.addView(statsView, 0);
         root.addView(timingsLayout, 1);
+    }
+
+    private void setupProgramSpinner() {
+        programSpinner = new Spinner(this);
+        
+        // Style the spinner itself
+        programSpinner.setBackgroundColor(Color.parseColor("#F5F5F5"));
+        programSpinner.setPadding(16, 8, 16, 8);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.setMargins(16, 16, 16, 16);
+        programSpinner.setLayoutParams(params);
+        
+        // Create adapter with custom layout for both spinner and dropdown
+        spinnerAdapter = new ArrayAdapter<String>(this, 
+            android.R.layout.simple_spinner_item, 
+            new ArrayList<>()) {
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+                TextView view = (TextView) super.getView(position, convertView, parent);
+                view.setTextColor(Color.parseColor("#263238")); // Dark text
+                view.setTypeface(Typeface.DEFAULT_BOLD);
+                view.setPadding(8, 8, 8, 8);
+                return view;
+            }
+            
+            @Override
+            public View getDropDownView(int position, View convertView, ViewGroup parent) {
+                TextView view = (TextView) super.getDropDownView(position, convertView, parent);
+                view.setTextColor(Color.parseColor("#263238")); // Dark text
+                view.setBackgroundColor(Color.parseColor("#F5F5F5")); // Light gray background
+                view.setPadding(16, 16, 16, 16);
+                return view;
+            }
+        };
+        
+        // Set the dropdown layout style
+        spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        programSpinner.setAdapter(spinnerAdapter);
+        
+        programSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                String programName = (String) parent.getItemAtPosition(position);
+                switchToProgram(programName);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {}
+        });
+
+        // Add a title/header above the spinner
+        TextView header = new TextView(this);
+        header.setText("Select Program");
+        header.setTextColor(Color.parseColor("#1976D2")); // Blue color
+        header.setTypeface(Typeface.DEFAULT_BOLD);
+        header.setPadding(16, 16, 16, 8);
+        
+        // Create a container for header and spinner
+        LinearLayout spinnerContainer = new LinearLayout(this);
+        spinnerContainer.setOrientation(LinearLayout.VERTICAL);
+        spinnerContainer.addView(header);
+        spinnerContainer.addView(programSpinner);
+        
+        // Add spinner container at the top of the layout
+        LinearLayout root = findViewById(R.id.root_layout);
+        root.addView(spinnerContainer, 0);
+    }
+
+    private void switchToProgram(String programName) {
+        if (programName == null || !programs.containsKey(programName)) return;
+        
+        currentProgram = programs.get(programName);
+        replInput.setText(currentProgram.getCode());
+        
+        // Clear and rebuild timing table
+        clearTimingsTable();
+        for (String timing : currentProgram.getTimingRuns()) {
+            updateTimingsTable(timing);
+        }
+        
+        saveState();
+    }
+
+    private void updateSpinnerItems() {
+        spinnerAdapter.clear();
+        spinnerAdapter.addAll(programs.keySet());
+        spinnerAdapter.notifyDataSetChanged();
     }
 
     @Override

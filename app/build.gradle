@@ -75,4 +75,5 @@ dependencies {
     implementation 'com.android.tools:r8:8.2.47'
     implementation 'androidx.multidex:multidex:2.0.1'
     implementation 'com.google.android.gms:play-services-location:21.1.0'
+    implementation 'com.google.code.gson:gson:2.8.9'
 }
