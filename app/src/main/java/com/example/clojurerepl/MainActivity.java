@@ -47,6 +47,7 @@ import com.google.gson.reflect.TypeToken;
 import java.lang.reflect.Type;
 import java.util.HashMap;
 import java.util.Map;
+import android.widget.Toast;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "ClojureREPL";
@@ -75,6 +76,7 @@ public class MainActivity extends AppCompatActivity {
     private ArrayAdapter<String> spinnerAdapter;
     private static final String KEY_PROGRAMS = "saved_programs";
     private static final String KEY_CURRENT_PROGRAM = "current_program";
+    private BytecodeCache bytecodeCache;
 
     @Override
     protected void attachBaseContext(Context base) {
@@ -139,6 +141,25 @@ public class MainActivity extends AppCompatActivity {
             replOutput.setText("Error initializing Clojure: " + e.getMessage());
             updateStats("Error", null, null);
         }
+        
+        bytecodeCache = BytecodeCache.getInstance(this);
+        
+        // Add a clear cache button somewhere in your UI, for example:
+        Button clearCacheButton = new Button(this);
+        clearCacheButton.setText("Clear Bytecode Cache");
+        clearCacheButton.setOnClickListener(v -> {
+            bytecodeCache.clearCache();
+            Toast.makeText(this, "Bytecode cache cleared", Toast.LENGTH_SHORT).show();
+        });
+        
+        // Add to your layout
+        // ...
+
+        // Add this to onCreate in MainActivity
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            Log.e(TAG, "Uncaught exception", throwable);
+            // You can also send this to a crash reporting service
+        });
     }
 
     private void updateStats(String status, Integer codeLines, Long timeMs) {
@@ -204,34 +225,46 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void launchRenderActivity() {
-        String code = replInput.getText().toString();
-        if (code.trim().isEmpty()) {
-            replOutput.setText("Please enter some code first");
-            updateStats("No code", 0, 0L);
-            return;
-        }
-
-        final int lineCount = code.split("\n").length;
-        final long startTime = System.currentTimeMillis();
-        
-        updateStats("Compiling...", lineCount, null);
-
         try {
-            Intent renderIntent = new Intent(MainActivity.this, RenderActivity.class);
-            Log.d(TAG, "Creating intent for RenderActivity with code length: " + code.length());
-            renderIntent.putExtra("code", code);
-            Log.d(TAG, "Starting RenderActivity...");
-            startActivityForResult(renderIntent, 1001); // Use request code 1001 for render activity
-            Log.d(TAG, "RenderActivity started");
-            replOutput.setText("Launching render activity...");
+            String code = replInput.getText().toString();
+            if (code.trim().isEmpty()) {
+                replOutput.setText("Please enter some code first");
+                updateStats("No code", 0, 0L);
+                return;
+            }
+
+            if (code.length() > 500000) {
+                Log.e(TAG, "Code too large for intent: " + code.length() + " bytes");
+                replOutput.setText("Error: Code too large for intent");
+                return;
+            }
+
+            final int lineCount = code.split("\n").length;
+            final long startTime = System.currentTimeMillis();
             
-            // Update stats with final timing
-            long totalTime = System.currentTimeMillis() - startTime;
-            updateStats("Compiled successfully", lineCount, totalTime);
-        } catch (Exception e) {
-            Log.e(TAG, "Error launching RenderActivity", e);
-            replOutput.setText("Error: " + e.getMessage());
-            updateStats("Compilation error", lineCount, null);
+            updateStats("Compiling...", lineCount, null);
+
+            try {
+                Intent renderIntent = new Intent(MainActivity.this, RenderActivity.class);
+                Log.d(TAG, "Creating intent for RenderActivity with code length: " + code.length());
+                renderIntent.putExtra("code", code);
+                Log.d(TAG, "Starting RenderActivity...");
+                startActivityForResult(renderIntent, 1001); // Use request code 1001 for render activity
+                Log.d(TAG, "RenderActivity started");
+                replOutput.setText("Launching render activity...");
+                
+                // Update stats with final timing
+                long totalTime = System.currentTimeMillis() - startTime;
+                updateStats("Compiled successfully", lineCount, totalTime);
+            } catch (Exception e) {
+                Log.e(TAG, "Error launching RenderActivity", e);
+                replOutput.setText("Error: " + e.getMessage());
+                updateStats("Compilation error", lineCount, null);
+            }
+        } catch (Throwable t) {
+            // Catch absolutely everything
+            Log.e(TAG, "Critical error in launchRenderActivity", t);
+            Toast.makeText(this, "Critical error: " + t.getMessage(), Toast.LENGTH_LONG).show();
         }
     }
 

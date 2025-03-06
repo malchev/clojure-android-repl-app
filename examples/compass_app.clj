@@ -381,4 +381,5 @@
   "Compass initialized")
 
 ;; Entry point
-(initialize-compass *context* *content-layout*) 
+(defn -main []
+  (initialize-compass *context* *content-layout*))
