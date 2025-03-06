@@ -15,6 +15,10 @@ import clojure.lang.Symbol;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.widget.TextView;
+import java.io.PushbackReader;
+import java.io.StringReader;
+import clojure.lang.LispReader;
+import clojure.lang.Compiler;
 
 public class RenderActivity extends AppCompatActivity {
     private static final String TAG = "ClojureRender";
@@ -264,86 +268,81 @@ public class RenderActivity extends AppCompatActivity {
         }
     }
 
-    private void renderCode(final String code) {
+    private void renderCode(String code) {
         Log.d(TAG, "Starting renderCode with code length: " + code.length());
-        // Clear existing views on UI thread
-        runOnUiThread(() -> contentLayout.removeAllViews());
         
-        // Create and store the evaluation thread
-        evaluationThread = new Thread(() -> {
-            Log.d(TAG, "Starting evaluation thread");
-            long evalStartTime = System.currentTimeMillis();
-            try {
-                if (isDestroyed) {  // Check if already destroyed
-                    Log.d(TAG, "Activity destroyed, abandoning evaluation");
-                    return;
-                }
-
-                // Ensure classloader is set
-                Thread.currentThread().setContextClassLoader(clojureClassLoader);
-                Log.d(TAG, "ClassLoader set for evaluation thread");
-                
-                // Push thread bindings for this thread
-                Log.d(TAG, "Setting up thread bindings");
-                Var.pushThreadBindings(RT.map(
-                    nsVar, RT.var("clojure.core", "find-ns").invoke(RT.var("clojure.core", "symbol").invoke("user")),
-                    contextVar, RenderActivity.this,
-                    contentLayoutVar, new UiSafeViewGroup(contentLayout)
-                ));
-                Log.d(TAG, "Thread bindings established");
-                
+        // Start evaluation in a separate thread
+        evaluationThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
                 try {
-                    // Read and evaluate the code
+                    Log.d(TAG, "Starting evaluation thread");
+                    // Set the classloader for this thread
+                    Thread.currentThread().setContextClassLoader(clojureClassLoader);
+                    Log.d(TAG, "ClassLoader set for evaluation thread");
+                    
+                    // Setup thread bindings for Clojure - use UiSafeViewGroup wrapper for content layout
+                    Var.pushThreadBindings(RT.map(
+                        Var.intern(RT.CLOJURE_NS, Symbol.intern("*context*")), RenderActivity.this,
+                        Var.intern(RT.CLOJURE_NS, Symbol.intern("*content-layout*")), 
+                        new UiSafeViewGroup((LinearLayout)findViewById(R.id.content_layout))
+                    ));
+                    Log.d(TAG, "Thread bindings established");
+                    
+                    // Read the code string into Clojure forms
                     Log.d(TAG, "Reading code string");
-                    long parseStartTime = System.currentTimeMillis();
-                    Object form = RT.var("clojure.core", "read-string").invoke(code);
-                    long parseTime = System.currentTimeMillis() - parseStartTime;
-                    Log.d(TAG, "Code parsed in " + parseTime + "ms");
-                    updateTimings("Parse", parseTime);
+                    long startTime = System.currentTimeMillis();
                     
-                    if (isDestroyed) {  // Check again before evaluation
-                        Log.d(TAG, "Activity destroyed before evaluation, abandoning");
-                        return;
-                    }
-
-                    Log.d(TAG, "Starting evaluation");
-                    long execStartTime = System.currentTimeMillis();
-                    Object result = RT.var("clojure.core", "eval").invoke(form);
-                    long execTime = System.currentTimeMillis() - execStartTime;
-                    Log.i(TAG, "Render result: " + result);
-                    Log.d(TAG, "Code executed in " + execTime + "ms");
-                    updateTimings("Execute", execTime);
+                    // Use PushbackReader to read all forms
+                    PushbackReader pushbackReader = new PushbackReader(new StringReader(code));
+                    Object lastResult = null;
                     
-                    if (!isDestroyed) {  // Only update total time if not destroyed
-                        long totalTime = System.currentTimeMillis() - activityStartTime;
-                        updateTimings("Total", totalTime);
-                    }
-                } finally {
                     try {
-                        Log.d(TAG, "Cleaning up thread bindings");
-                        Var.popThreadBindings();
+                        while (!isDestroyed) {
+                            // Read next form (returns EOF at end of input)
+                            Object form = LispReader.read(pushbackReader, false, EOF, false);
+                            if (form == EOF) {
+                                break;
+                            }
+                            
+                            // Evaluate the form
+                            if (lastResult == null) {
+                                Log.d(TAG, "Starting evaluation");
+                            }
+                            lastResult = Compiler.eval(form);
+                        }
                     } catch (Exception e) {
-                        Log.w(TAG, "Error cleaning up thread bindings in renderCode", e);
+                        Log.e(TAG, "Error reading/evaluating Clojure code", e);
+                        lastResult = "Error: " + e.getMessage();
+                        
+                        // Show the error in the UI
+                        final String errorMessage = e.getMessage();
+                        runOnUiThread(() -> showError(errorMessage));
                     }
-                }
-            } catch (Exception e) {
-                if (!isDestroyed) {  // Only show error if not destroyed
-                    Log.e(TAG, "Error rendering code", e);
-                    Log.e(TAG, "Stack trace: ", e);
-                    long errorTime = System.currentTimeMillis() - evalStartTime;
-                    updateTimings("Error", errorTime);
-                    runOnUiThread(() -> {
-                        // Show error in UI
-                        android.widget.TextView errorView = new android.widget.TextView(RenderActivity.this);
-                        errorView.setText("Error: " + e.getMessage());
-                        errorView.setTextColor(Color.parseColor("#D32F2F"));
-                        errorView.setBackgroundColor(Color.parseColor("#FFEBEE"));
-                        errorView.setPadding(16, 16, 16, 16);
-                        contentLayout.addView(errorView);
-                    });
+                    
+                    Log.d(TAG, "Code parsed in " + (System.currentTimeMillis() - startTime) + "ms");
+                    
+                    // Get the result
+                    final Object result = lastResult;
+                    Log.i(TAG, "Render result: " + result);
+                    
+                    long executionTime = System.currentTimeMillis() - startTime;
+                    Log.d(TAG, "Code executed in " + executionTime + "ms");
+                    
+                    // Update timing information
+                    runOnUiThread(() -> updateTimings("Code execution", executionTime));
+                    
+                } catch (Exception e) {
+                    Log.e(TAG, "Error in evaluation thread", e);
+                    final String errorMessage = e.getMessage();
+                    runOnUiThread(() -> showError("Thread error: " + errorMessage));
+                } finally {
+                    Log.d(TAG, "Cleaning up thread bindings");
+                    Var.popThreadBindings();
                 }
             }
         });
+        
         evaluationThread.start();
     }
 
@@ -379,4 +378,7 @@ public class RenderActivity extends AppCompatActivity {
         super.onDestroy();
         Log.d(TAG, "RenderActivity destroyed");
     }
+
+    // Define EOF object for detecting end of input
+    private static final Object EOF = new Object();
 } 

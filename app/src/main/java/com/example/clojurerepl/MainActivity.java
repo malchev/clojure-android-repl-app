@@ -249,156 +249,67 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void updateTimingsTable(String newTimings) {
-        if (newTimings == null || newTimings.isEmpty()) {
-            Log.w(TAG, "Attempted to update timings table with null or empty data");
+    private void updateTimingsTable(String timingsData) {
+        // If the timings table hasn't been initialized yet, do nothing
+        if (stageRows == null || stageRows.length == 0) {
+            // Initialize the table with the first set of timings
+            rebuildTimingsTable();
             return;
         }
-
-        // Add new timing data to the history only if it's not already there
-        if (!timingRuns.contains(newTimings)) {
-            timingRuns.add(newTimings);
-            
-            // Update the complete timing data string
-            timingData.setLength(0);
-            for (int i = 0; i < timingRuns.size(); i++) {
-                if (i > 0) timingData.append(TIMING_RUN_SEPARATOR);
-                timingData.append(timingRuns.get(i));
-            }
+        
+        // Parse timings data
+        String[] lines = timingsData.split("\n");
+        
+        // Add this timing data to the list of runs
+        if (!timingRuns.contains(timingsData)) {
+            timingRuns.add(timingsData);
         }
         
-        // Parse the timings into rows and find the maximum number of stages across all runs
-        int maxStages = 0;
-        List<String> allStageNames = new ArrayList<>();
+        // Handle case where we need to create a new column for a new run
+        runCount = Math.max(runCount, timingRuns.size());
         
-        // First pass: collect all unique stage names and find max stages
-        for (String run : timingRuns) {
-            String[] runRows = run.split(TIMING_LINE_SEPARATOR);
-            for (String row : runRows) {
-                String[] parts = row.split(":");
-                if (parts.length >= 1) {
-                    String stageName = parts[0].trim();
-                    if (!allStageNames.contains(stageName)) {
-                        allStageNames.add(stageName);
+        // Make sure we have enough rows before trying to update
+        int rowsToParse = Math.min(lines.length, stageRows.length - 1);
+        
+        for (int i = 0; i < rowsToParse; i++) {
+            String line = lines[i];
+            if (line.contains(":")) {
+                String[] parts = line.split(":");
+                String stage = parts[0].trim();
+                String time = parts[1].trim();
+                
+                // Update the stage label in the first column if it's not already set
+                TextView stageLabel = null;
+                if (stageRows[i+1].getChildCount() > 0) {
+                    View view = stageRows[i+1].getChildAt(0);
+                    if (view instanceof TextView) {
+                        stageLabel = (TextView) view;
+                        if (stageLabel.getText().toString().isEmpty()) {
+                            stageLabel.setText(stage);
+                        }
+                    }
+                }
+                
+                // Add timing to this run's column
+                int runIndex = runCount - 1;
+                if (dataRows[i+1].getChildCount() <= runIndex) {
+                    // Create a new cell for this timing
+                    TextView timeCell = new TextView(this);
+                    timeCell.setTypeface(Typeface.MONOSPACE);
+                    timeCell.setTextColor(Color.parseColor("#263238"));
+                    timeCell.setLayoutParams(new LinearLayout.LayoutParams(
+                        150, LinearLayout.LayoutParams.WRAP_CONTENT));
+                    timeCell.setPadding(4, 4, 4, 4);
+                    timeCell.setText(time);
+                    dataRows[i+1].addView(timeCell);
+                } else {
+                    // Update existing cell
+                    View view = dataRows[i+1].getChildAt(runIndex);
+                    if (view instanceof TextView) {
+                        ((TextView) view).setText(time);
                     }
                 }
             }
-            maxStages = Math.max(maxStages, runRows.length);
-        }
-        
-        // Always ensure we have at least these stages
-        String[] requiredStages = {"RT init", "ClassLoader", "Vars setup", "Env init", "Parse", "Execute", "Total"};
-        for (String stage : requiredStages) {
-            if (!allStageNames.contains(stage)) {
-                allStageNames.add(stage);
-                maxStages = Math.max(maxStages, allStageNames.size());
-            }
-        }
-        
-        if (maxStages == 0) {
-            Log.w(TAG, "No timing rows to display");
-            return;
-        }
-
-        // Initialize arrays if needed
-        if (stageRows == null || dataRows == null || stageRows.length < maxStages + 1) {
-            stageRows = new LinearLayout[maxStages + 1]; // +1 for header
-            dataRows = new LinearLayout[maxStages + 1];
-        }
-
-        // Get the labels column and data container
-        ViewParent parent = timingsTableView.getParent();
-        if (parent == null || !(parent.getParent() instanceof ViewGroup)) {
-            Log.e(TAG, "Invalid timings table view hierarchy");
-            return;
-        }
-        ViewGroup container = (ViewGroup) parent.getParent();
-        LinearLayout labelsColumn = (LinearLayout) container.getChildAt(0);
-        
-        // Clear existing views
-        timingsTableView.removeAllViews();
-        labelsColumn.removeAllViews();
-        
-        // Create header row
-        stageRows[0] = new LinearLayout(this);
-        dataRows[0] = new LinearLayout(this);
-        stageRows[0].setOrientation(LinearLayout.HORIZONTAL);
-        dataRows[0].setOrientation(LinearLayout.HORIZONTAL);
-        
-        // Add "Stage" column header to fixed column
-        TextView stageHeader = new TextView(this);
-        stageHeader.setText("Stage");
-        stageHeader.setTypeface(Typeface.DEFAULT_BOLD);
-        stageHeader.setTextColor(Color.parseColor("#1976D2"));
-        stageHeader.setLayoutParams(new LinearLayout.LayoutParams(
-            250, LinearLayout.LayoutParams.WRAP_CONTENT));
-        stageHeader.setPadding(4, 4, 4, 4);
-        stageRows[0].addView(stageHeader);
-        
-        // Add run number headers
-        for (int run = 0; run < timingRuns.size(); run++) {
-            TextView runHeader = new TextView(this);
-            runHeader.setText("Run " + (run + 1));
-            runHeader.setTypeface(Typeface.DEFAULT_BOLD);
-            runHeader.setTextColor(Color.parseColor("#1976D2"));
-            runHeader.setLayoutParams(new LinearLayout.LayoutParams(
-                150, LinearLayout.LayoutParams.WRAP_CONTENT));
-            runHeader.setPadding(4, 4, 4, 4);
-            dataRows[0].addView(runHeader);
-        }
-        
-        // Add header rows to the layouts
-        labelsColumn.addView(stageRows[0]);
-        timingsTableView.addView(dataRows[0]);
-        
-        // Create data rows
-        for (int i = 0; i < allStageNames.size(); i++) {
-            String stageName = allStageNames.get(i);
-            
-            // Create stage label row
-            stageRows[i + 1] = new LinearLayout(this);
-            stageRows[i + 1].setOrientation(LinearLayout.HORIZONTAL);
-            
-            TextView stageLabel = new TextView(this);
-            stageLabel.setText(stageName);
-            stageLabel.setTypeface(Typeface.MONOSPACE);
-            stageLabel.setTextColor(Color.parseColor("#263238"));
-            stageLabel.setLayoutParams(new LinearLayout.LayoutParams(
-                250, LinearLayout.LayoutParams.WRAP_CONTENT));
-            stageLabel.setPadding(4, 4, 4, 4);
-            stageRows[i + 1].addView(stageLabel);
-            
-            // Create data row
-            dataRows[i + 1] = new LinearLayout(this);
-            dataRows[i + 1].setOrientation(LinearLayout.HORIZONTAL);
-            
-            // Add timing cells for each run
-            for (String runData : timingRuns) {
-                String[] runRows = runData.split(TIMING_LINE_SEPARATOR);
-                TextView timeCell = new TextView(this);
-                timeCell.setTypeface(Typeface.MONOSPACE);
-                timeCell.setTextColor(Color.parseColor("#263238"));
-                timeCell.setLayoutParams(new LinearLayout.LayoutParams(
-                    150, LinearLayout.LayoutParams.WRAP_CONTENT));
-                timeCell.setPadding(4, 4, 4, 4);
-                
-                // Find timing for this stage in the current run
-                String timing = "N/A";
-                for (String row : runRows) {
-                    String[] parts = row.split(":");
-                    if (parts.length >= 2 && parts[0].trim().equals(stageName)) {
-                        timing = parts[1].trim();
-                        break;
-                    }
-                }
-                timeCell.setText(timing);
-                
-                dataRows[i + 1].addView(timeCell);
-            }
-            
-            // Add rows to their containers
-            labelsColumn.addView(stageRows[i + 1]);
-            timingsTableView.addView(dataRows[i + 1]);
         }
     }
 
