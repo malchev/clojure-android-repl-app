@@ -29,14 +29,14 @@
                                      android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                      android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
                    (.setTextSize 16.0)
-                   (.setTextColor android.graphics.Color/BLACK))
+                   (.setTextColor android.graphics.Color/DKGRAY))
       
       temp-text (doto (android.widget.TextView. activity)
                  (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                    android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                    android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
                  (.setTextSize 48.0)
-                 (.setTextColor android.graphics.Color/BLACK)
+                 (.setTextColor android.graphics.Color/DKGRAY)
                  (.setGravity android.view.Gravity/CENTER))
       
       desc-text (doto (android.widget.TextView. activity)
@@ -44,7 +44,7 @@
                                    android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                    android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
                  (.setTextSize 20.0)
-                 (.setTextColor android.graphics.Color/BLACK)
+                 (.setTextColor android.graphics.Color/DKGRAY)
                  (.setGravity android.view.Gravity/CENTER))
       
       weather-icon (doto (android.widget.TextView. activity)
@@ -59,7 +59,7 @@
                                    android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                    android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
                  (.setTextSize 16.0)
-                 (.setTextColor android.graphics.Color/BLACK)
+                 (.setTextColor android.graphics.Color/DKGRAY)
                  (.setGravity android.view.Gravity/CENTER))
       
       humidity-text (doto (android.widget.TextView. activity)
@@ -67,7 +67,7 @@
                                       android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                       android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
                      (.setTextSize 16.0)
-                     (.setTextColor android.graphics.Color/BLACK)
+                     (.setTextColor android.graphics.Color/DKGRAY)
                      (.setGravity android.view.Gravity/CENTER))
       
       forecast-scroll (doto (android.widget.HorizontalScrollView. activity)
@@ -197,7 +197,7 @@
           name-text (doto (android.widget.TextView. activity)
                      (.setText (:name forecast))
                      (.setTextSize 14.0)
-                     (.setTextColor android.graphics.Color/BLACK)
+                     (.setTextColor android.graphics.Color/DKGRAY)
                      (.setGravity android.view.Gravity/CENTER))
           icon-text (doto (android.widget.TextView. activity)
                      (.setText (get-weather-symbol (:description forecast)))
@@ -206,7 +206,7 @@
           temp-text (doto (android.widget.TextView. activity)
                      (.setText (format "%d°F" (:temp forecast)))
                      (.setTextSize 14.0)
-                     (.setTextColor android.graphics.Color/BLACK)
+                     (.setTextColor android.graphics.Color/DKGRAY)
                      (.setGravity android.view.Gravity/CENTER))]
       (doto day-container
         (.addView name-text)

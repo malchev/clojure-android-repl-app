@@ -20,13 +20,15 @@
                                     android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
                   (.setText "Strava Running Progress")
                   (.setTextSize 24.0)
+                  (.setTextColor android.graphics.Color/DKGRAY)
                   (.setGravity android.view.Gravity/CENTER))
       
       status-text (doto (android.widget.TextView. activity)
                    (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                      android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                      android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
-                   (.setTextSize 16.0))
+                   (.setTextSize 16.0)
+                   (.setTextColor android.graphics.Color/DKGRAY))
       
       token-input (doto (android.widget.EditText. activity)
                    (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
@@ -54,13 +56,15 @@
                            (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                             android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                             android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
-                           (.setTextSize 16.0))
+                           (.setTextSize 16.0)
+                           (.setTextColor android.graphics.Color/DKGRAY))
       
       avg-pace-text (doto (android.widget.TextView. activity)
                      (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                       android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                       android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
-                     (.setTextSize 16.0))
+                     (.setTextSize 16.0)
+                     (.setTextColor android.graphics.Color/DKGRAY))
       
       auth-button (doto (android.widget.Button. activity)
                    (.setText "Connect with Strava")
@@ -112,15 +116,15 @@
                                    (.setStyle android.graphics.Paint$Style/STROKE)
                                    (.setAntiAlias true))
                             text-paint (doto (android.graphics.Paint.)
-                                       (.setColor android.graphics.Color/WHITE)
+                                       (.setColor android.graphics.Color/DKGRAY)
                                        (.setTextSize 30)
                                        (.setAntiAlias true))
                             title-paint (doto (android.graphics.Paint.)
-                                         (.setColor android.graphics.Color/WHITE)
+                                         (.setColor android.graphics.Color/DKGRAY)
                                          (.setTextSize 40)
                                          (.setAntiAlias true))
                             axis-paint (doto (android.graphics.Paint.)
-                                       (.setColor android.graphics.Color/WHITE)
+                                       (.setColor android.graphics.Color/DKGRAY)
                                        (.setStrokeWidth 2)
                                        (.setStyle android.graphics.Paint$Style/STROKE)
                                        (.setAntiAlias true))
