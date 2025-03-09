@@ -8,7 +8,7 @@ pluginManagement {
 
 include ':app'
 include ':clojure-android'
-rootProject.name = "ClojureRepl"
+rootProject.name = "clojure-android-repl-app"
 
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
