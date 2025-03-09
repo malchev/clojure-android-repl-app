@@ -41,8 +41,7 @@ public class RenderActivity extends AppCompatActivity {
     private volatile boolean isDestroyed = false;
     private Thread evaluationThread = null;
     private BytecodeCache bytecodeCache;
-    private Map<String, byte[]> compiledClasses = new HashMap<>();
-    private static Map<String, byte[]> allCompiledClasses = new HashMap<>();
+    public static Set<String> allCompiledClassNames = new HashSet<>();
     private String currentCode; // Store current code as a field
     private IFn readerEval;
 
@@ -377,7 +376,7 @@ public class RenderActivity extends AppCompatActivity {
      */
     private void compileAndExecute(String code, String codeHash, boolean hasMainFunction) {
         // Clear previous compiled classes
-        allCompiledClasses.clear();
+        allCompiledClassNames.clear();
         
         // Start capturing DEX
         AndroidClassLoaderDelegate.startCapturingDex();
@@ -493,7 +492,7 @@ public class RenderActivity extends AppCompatActivity {
                                     bytecodeCache.saveEntryPointClass(codeHash, className);
                                     
                                     // Now that we have the entry point class name, also save dependency info
-                                    Set<String> allClasses = new HashSet<>(allCompiledClasses.keySet());
+                                    Set<String> allClasses = new HashSet<>(allCompiledClassNames);
                                     bytecodeCache.saveClassDependencies(codeHash, className, allClasses);
                                     
                                     Log.d(TAG, "Saved DEX and entry point class: " + className);
@@ -564,18 +563,14 @@ public class RenderActivity extends AppCompatActivity {
     private static final Object EOF = new Object();
 
     // Add a custom ClassLoader that can use our cached bytecode
-    private class CachingClassLoader extends ClassLoader 
-            implements ClassBytecodeCollector {
+    public static class CachingClassLoader extends ClassLoader {
         private final DynamicClassLoader parent;
         private final Map<String, byte[]> cachedClasses;
-        private final Map<String, byte[]> collectedClasses = new HashMap<>();
-        private final boolean collectClasses;
         
-        public CachingClassLoader(DynamicClassLoader parent, Map<String, byte[]> cachedClasses, boolean collectClasses) {
+        public CachingClassLoader(DynamicClassLoader parent, Map<String, byte[]> cachedClasses, boolean unused) {
             super(parent);
             this.parent = parent;
             this.cachedClasses = cachedClasses;
-            this.collectClasses = collectClasses;
         }
         
         @Override
@@ -606,32 +601,18 @@ public class RenderActivity extends AppCompatActivity {
             throw new ClassNotFoundException(name);
         }
         
-        public Map<String, byte[]> getCollectedClasses() {
-            return collectedClasses;
-        }
-        
-        @Override
-        public boolean isCollectingClasses() {
-            return collectClasses;
-        }
-        
-        @Override
-        public void collectClass(String className, byte[] bytecode) {
-            if (collectClasses && className.startsWith("clojure.core$")) {
-                Log.d(TAG, "Directly collected bytecode for class: " + className);
-                collectedClasses.put(className, bytecode);
-                // Also add to our static collection
-                allCompiledClasses.put(className, bytecode);
-            }
-            else {
-                Log.d(TAG, "Not collecting class: " + className);
+        public static void recordClassName(String className) {
+            if (className.startsWith("clojure.core$")) {
+                Log.d(TAG, "Recording class name: " + className);
+                // Add to our static collection of class names
+                allCompiledClassNames.add(className);
             }
         }
     }
 
     private String findLastGeneratedClassName() {
         // First priority: Find a class with "-main" in the name
-        for (String className : allCompiledClasses.keySet()) {
+        for (String className : allCompiledClassNames) {
             if (className.contains("-main")) {
                 Log.d(TAG, "Found -main entry point class: " + className);
                 return className;
@@ -642,7 +623,7 @@ public class RenderActivity extends AppCompatActivity {
         String evalClassName = null;
         int highestEvalNumber = -1;
         
-        for (String className : allCompiledClasses.keySet()) {
+        for (String className : allCompiledClassNames) {
             // Look for eval classes
             if (className.startsWith("clojure.core$eval")) {
                 try {
@@ -671,10 +652,10 @@ public class RenderActivity extends AppCompatActivity {
         }
         
         // If still not found, just use the last compiled class as a fallback
-        if (!allCompiledClasses.isEmpty()) {
+        if (!allCompiledClassNames.isEmpty()) {
             // Get the last entry in the map
             String lastClass = null;
-            for (String className : allCompiledClasses.keySet()) {
+            for (String className : allCompiledClassNames) {
                 lastClass = className;
             }
             Log.d(TAG, "Using last compiled class as entry point: " + lastClass);

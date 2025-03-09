@@ -36,6 +36,7 @@ public class AndroidClassLoaderDelegate {
     private static Map<String, Integer> dexClassMap = new HashMap<>();
     
     public AndroidClassLoaderDelegate(Context context, ClassLoader parent) {
+        super(); // Explicitly invoke Object constructor
         this.context = context;
         this.parent = parent;
         this.classCache = new ConcurrentHashMap<>();
@@ -116,24 +117,13 @@ public class AndroidClassLoaderDelegate {
                     return existing;
                 }
             } catch (ClassNotFoundException ignored) {
+                Log.d(TAG, "(Expected) Class not found in current loader (type " + contextLoader.getClass().getName() + "): " + name);
                 // Expected - will proceed with defining the class
             }
             
-            // If not found, collect this class if we're in collection mode
-            if (contextLoader instanceof ClassBytecodeCollector) {
-                Log.d(TAG, "Collector is a ClassBytecodeCollector, class is " + contextLoader.getClass().getName());
-                ClassBytecodeCollector collector = (ClassBytecodeCollector)contextLoader;
-                if (collector.isCollectingClasses()) {
-                    collector.collectClass(name, bytes);
-                    Log.d(TAG, "Collected class bytecode for: " + name);
-                }
-                else {
-                    Log.d(TAG, "Not collecting class: " + name + " because collector is not collecting classes");
-                }
-            }
-            else {
-                Log.d(TAG, "Not collecting class: " + name + " because collector is not a ClassBytecodeCollector, it is a " + contextLoader.getClass().getName());
-            }
+            // Record this class name
+            com.example.clojurerepl.RenderActivity.CachingClassLoader.recordClassName(name);
+            Log.d(TAG, "Recorded class name: " + name);
             
             // Proceed with normal class definition...
             // Convert JVM bytecode to DEX using D8

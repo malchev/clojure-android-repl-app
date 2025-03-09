@@ -109,22 +109,7 @@ public class CompiledDexRunner {
                         Log.d(TAG, "Invoking -main function with no arguments");
                         return fn.invoke();
                     } else {
-                        // For other functions, try different argument combinations
-                        Log.d(TAG, "Trying to invoke with different arg combinations");
-                        try {
-                            return fn.invoke();
-                        } catch (clojure.lang.ArityException e0) {
-                            try {
-                                return fn.invoke(context);
-                            } catch (clojure.lang.ArityException e1) {
-                                try {
-                                    return fn.invoke(context, contentLayout);
-                                } catch (clojure.lang.ArityException e2) {
-                                    throw new RuntimeException("Function " + functionName + 
-                                        " rejects all common arg combinations. Original error: " + e0.getMessage());
-                                }
-                            }
-                        }
+                        throw new RuntimeException("Expected a -main function but found: " + functionName);
                     }
                 } finally {
                     Var.popThreadBindings();
@@ -148,10 +133,6 @@ public class CompiledDexRunner {
                     "clojure.lang.Var",
                     // Try some specific classes with wildcards
                     "clojure.core$eval",
-                    "clojure.core$initialize",
-                    // Try with number patterns
-                    "clojure.core$initialize_compass",
-                    "clojure.core$initialize_compass$fn"
                 };
                 
                 for (String className : classesToCheck) {
