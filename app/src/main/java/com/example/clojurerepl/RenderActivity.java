@@ -565,7 +565,7 @@ public class RenderActivity extends AppCompatActivity {
 
     // Add a custom ClassLoader that can use our cached bytecode
     private class CachingClassLoader extends ClassLoader 
-            implements ClassBytecodeCollector, CachedClassProvider {
+            implements ClassBytecodeCollector {
         private final DynamicClassLoader parent;
         private final Map<String, byte[]> cachedClasses;
         private final Map<String, byte[]> collectedClasses = new HashMap<>();
@@ -626,47 +626,6 @@ public class RenderActivity extends AppCompatActivity {
             else {
                 Log.d(TAG, "Not collecting class: " + className);
             }
-        }
-        
-        @Override
-        public byte[] findSimilarClass(String className) {
-            // Log our attempt to find a similar class
-            Log.d(TAG, "Looking for similar class for: " + className);
-            
-            // Extract normalized pattern from the class name
-            String normalizedName = normalizeClassName(className);
-            Log.d(TAG, "Normalized name: " + normalizedName);
-            
-            // Look for a match in both our static cache and this class's cache
-            // First check in the current instance's cache
-            for (Map.Entry<String, byte[]> entry : cachedClasses.entrySet()) {
-                String cachedName = entry.getKey();
-                if (normalizeClassName(cachedName).equals(normalizedName)) {
-                    Log.d(TAG, "Found similar class in instance cache: " + cachedName);
-                    return entry.getValue();
-                }
-            }
-            
-            // Also check the global static cache
-            for (Map.Entry<String, byte[]> entry : allCompiledClasses.entrySet()) {
-                String cachedName = entry.getKey();
-                if (normalizeClassName(cachedName).equals(normalizedName)) {
-                    Log.d(TAG, "Found similar class in global cache: " + cachedName);
-                    byte[] bytes = entry.getValue();
-                    // Also add to our local cache for future use
-                    cachedClasses.put(cachedName, bytes);
-                    return bytes;
-                }
-            }
-            
-            Log.d(TAG, "No similar class found for: " + className);
-            return null;
-        }
-        
-        @Override
-        public String normalizeClassName(String className) {
-            // Replace sequences of digits with placeholders
-            return className.replaceAll("\\d+", "X");
         }
     }
 

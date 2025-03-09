@@ -119,21 +119,7 @@ public class AndroidClassLoaderDelegate {
                 // Expected - will proceed with defining the class
             }
             
-            // Check if we have a similar class in the cache 
-            if (contextLoader instanceof CachedClassProvider) {
-                CachedClassProvider provider = (CachedClassProvider)contextLoader;
-                byte[] cachedBytes = provider.findSimilarClass(name);
-                if (cachedBytes != null) {
-                    Log.d(TAG, "Using cached bytecode for similar class: " + name);
-                    
-                    // Define the class with the new name but using the cached bytecode
-                    Class<?> clazz = fromByteArray(name, cachedBytes);
-                    classCache.put(name, clazz);
-                    return clazz;
-                }
-            }
-            
-            // If no similar class found, collect this class if we're in collection mode
+            // If not found, collect this class if we're in collection mode
             if (contextLoader instanceof ClassBytecodeCollector) {
                 Log.d(TAG, "Collector is a ClassBytecodeCollector, class is " + contextLoader.getClass().getName());
                 ClassBytecodeCollector collector = (ClassBytecodeCollector)contextLoader;
@@ -244,4 +230,4 @@ public class AndroidClassLoaderDelegate {
         capturedDexFiles.clear();
         dexClassMap.clear();
     }
-} 
+}
