@@ -26,6 +26,7 @@ import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.HashSet;
 import java.util.Set;
+import clojure.lang.LineNumberingPushbackReader;
 
 public class RenderActivity extends AppCompatActivity {
     private static final String TAG = "ClojureRender";
@@ -413,7 +414,7 @@ public class RenderActivity extends AppCompatActivity {
                     
                     // Read and evaluate code
                     long startTime = System.currentTimeMillis();
-                    PushbackReader pushbackReader = new PushbackReader(new StringReader(code));
+                    LineNumberingPushbackReader pushbackReader = new LineNumberingPushbackReader(new StringReader(code));
                     Object lastResult = null;
                     
                     try {
@@ -529,12 +530,71 @@ public class RenderActivity extends AppCompatActivity {
     private void showError(String message) {
         Log.e(TAG, "Showing error: " + message);
         runOnUiThread(() -> {
-            android.widget.TextView errorView = new android.widget.TextView(this);
-            errorView.setText(message);
-            errorView.setTextColor(Color.parseColor("#D32F2F")); // Material Red
-            errorView.setBackgroundColor(Color.parseColor("#FFEBEE")); // Light Red
-            errorView.setPadding(16, 16, 16, 16);
-            contentLayout.addView(errorView);
+            LinearLayout errorContainer = new LinearLayout(this);
+            errorContainer.setOrientation(LinearLayout.VERTICAL);
+            errorContainer.setBackgroundColor(Color.parseColor("#FFEBEE")); // Light Red
+            errorContainer.setPadding(16, 16, 16, 16);
+
+            // Create error header
+            TextView errorHeaderView = new TextView(this);
+            errorHeaderView.setText("Error:");
+            errorHeaderView.setTextColor(Color.parseColor("#D32F2F")); // Material Red
+            errorHeaderView.setTypeface(null, Typeface.BOLD);
+            errorHeaderView.setTextSize(16);
+            errorContainer.addView(errorHeaderView);
+
+            // Create main error message
+            TextView errorMsgView = new TextView(this);
+
+            // Parse the message to separate main message, location, and source code
+            String mainMessage = message;
+            String locationInfo = "";
+            String sourceCode = "";
+
+            // Extract location information
+            int atIndex = message.indexOf(" at (");
+            if (atIndex > 0) {
+                mainMessage = message.substring(0, atIndex);
+                int endLocIndex = message.indexOf(")", atIndex);
+                if (endLocIndex > 0) {
+                    locationInfo = message.substring(atIndex, endLocIndex + 1);
+
+                    // Check if there's source code info after the location
+                    int sourceIndex = message.indexOf("\nProblematic code:", endLocIndex);
+                    if (sourceIndex > 0) {
+                        sourceCode = message.substring(sourceIndex + 1);
+                    }
+                }
+            }
+
+            // Set main message
+            errorMsgView.setText(mainMessage);
+            errorMsgView.setTextColor(Color.parseColor("#D32F2F")); // Material Red
+            errorMsgView.setPadding(0, 8, 0, 8);
+            errorContainer.addView(errorMsgView);
+
+            // Add location information if present
+            if (!locationInfo.isEmpty()) {
+                TextView locationView = new TextView(this);
+                locationView.setText(locationInfo);
+                locationView.setTypeface(Typeface.MONOSPACE);
+                locationView.setTextColor(Color.parseColor("#1976D2")); // Material Blue
+                locationView.setPadding(8, 4, 0, 4);
+                errorContainer.addView(locationView);
+            }
+
+            // Add source code if present
+            if (!sourceCode.isEmpty()) {
+                TextView sourceView = new TextView(this);
+                sourceView.setText(sourceCode);
+                sourceView.setTypeface(Typeface.MONOSPACE);
+                sourceView.setTextSize(14);
+                sourceView.setBackgroundColor(Color.parseColor("#F5F5F5")); // Light Gray
+                sourceView.setPadding(16, 8, 16, 8);
+                errorContainer.addView(sourceView);
+            }
+
+            contentLayout.addView(errorContainer);
         });
     }
 
@@ -665,4 +725,136 @@ public class RenderActivity extends AppCompatActivity {
         Log.w(TAG, "No suitable entry point class found");
         return null;
     }
-} 
+
+    /**
+     * Format an exception with line and column information
+     * @param exception The exception to format
+     * @param sourceCode The source code being evaluated
+     * @param reader The reader used for compilation (may contain line/column info)
+     * @return A formatted error message
+     */
+    private String formatErrorWithLineInfo(Throwable exception, String sourceCode, LineNumberingPushbackReader reader) {
+        try {
+            // Get the root cause of the exception
+            Throwable rootCause = getRootCause(exception);
+            String message = rootCause.getMessage();
+
+            // Try to extract line and column from compiler exception first
+            int[] lineAndColumn = extractLineColumnFromException(rootCause);
+            int line = (lineAndColumn != null && lineAndColumn[0] > 0) ? lineAndColumn[0] : reader.getLineNumber();
+            int column = (lineAndColumn != null && lineAndColumn[1] > 0) ? lineAndColumn[1] : reader.getColumnNumber();
+
+            // Check if the message already has line/column info
+            if (message != null && message.contains("at (")) {
+                // Try to extract the actual line/column from the message if it has zeros
+                if (message.contains("at (0:0)")) {
+                    String updatedMessage = message.replace("at (0:0)", "at (" + line + ":" + column + ")");
+                    Log.d(TAG, "Updated error message with line/column: " + updatedMessage);
+
+                    // Try to include the problematic line of code
+                    if (line > 0 && sourceCode != null) {
+                        String[] lines = sourceCode.split("\n");
+                        if (line <= lines.length) {
+                            String sourceLine = lines[line - 1].trim();
+                            updatedMessage += "\nProblematic code: " + sourceLine;
+                        }
+                    }
+
+                    return updatedMessage;
+                }
+                return message; // Already has non-zero line/column info
+            }
+
+            // No line/column info at all, add it
+            StringBuilder enhancedMessage = new StringBuilder(message != null ? message : rootCause.toString());
+            enhancedMessage.append(" at (").append(line).append(":").append(column).append(")");
+
+            // Try to include the problematic line of code
+            if (line > 0 && sourceCode != null) {
+                String[] lines = sourceCode.split("\n");
+                if (line <= lines.length) {
+                    String sourceLine = lines[line - 1].trim();
+                    enhancedMessage.append("\nProblematic code: ").append(sourceLine);
+                }
+            }
+
+            return enhancedMessage.toString();
+        } catch (Exception e) {
+            // If anything goes wrong in our error formatting, fall back to the original message
+            Log.e(TAG, "Error formatting exception", e);
+            return exception.getMessage();
+        }
+    }
+
+    /**
+     * Get the root cause of an exception
+     */
+    private Throwable getRootCause(Throwable t) {
+        Throwable cause = t;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        return cause;
+    }
+
+    /**
+     * Extract line and column information from a Clojure compiler exception
+     * @param ex The exception to extract information from
+     * @return int array with [line, column] or null if not found
+     */
+    private int[] extractLineColumnFromException(Throwable ex) {
+        try {
+            // Check if it's a CompilerException which might have line info
+            if (ex.getClass().getName().equals("clojure.lang.Compiler$CompilerException")) {
+                // Try to access line and column fields using reflection
+                try {
+                    // Get the line field
+                    java.lang.reflect.Field lineField = ex.getClass().getDeclaredField("line");
+                    lineField.setAccessible(true);
+                    int line = (Integer) lineField.get(ex);
+
+                    // Get the column field
+                    java.lang.reflect.Field columnField = ex.getClass().getDeclaredField("column");
+                    columnField.setAccessible(true);
+                    int column = (Integer) columnField.get(ex);
+
+                    Log.d(TAG, "Extracted from CompilerException - line: " + line + ", column: " + column);
+                    return new int[] {line, column};
+                } catch (Exception e) {
+                    Log.w(TAG, "Failed to extract line/column via reflection", e);
+                }
+            }
+
+            // Check for "at (line:column)" pattern in the message
+            String message = ex.getMessage();
+            if (message != null) {
+                // Look for patterns like "at (123:45)" or "at line 123, column 45"
+                java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("at \\((\\d+):(\\d+)\\)");
+                java.util.regex.Matcher matcher = pattern.matcher(message);
+
+                if (matcher.find()) {
+                    int line = Integer.parseInt(matcher.group(1));
+                    int column = Integer.parseInt(matcher.group(2));
+                    Log.d(TAG, "Extracted from message pattern - line: " + line + ", column: " + column);
+                    return new int[] {line, column};
+                }
+
+                // Try alternative pattern
+                pattern = java.util.regex.Pattern.compile("at line (\\d+), column (\\d+)");
+                matcher = pattern.matcher(message);
+
+                if (matcher.find()) {
+                    int line = Integer.parseInt(matcher.group(1));
+                    int column = Integer.parseInt(matcher.group(2));
+                    Log.d(TAG, "Extracted from alt message pattern - line: " + line + ", column: " + column);
+                    return new int[] {line, column};
+                }
+            }
+
+            return null;
+        } catch (Exception e) {
+            Log.e(TAG, "Error extracting line/column info", e);
+            return null;
+        }
+    }
+}
