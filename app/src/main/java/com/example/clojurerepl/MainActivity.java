@@ -10,16 +10,9 @@ import android.view.ViewGroup;
 import android.view.View;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.multidex.MultiDex;
-import clojure.java.api.Clojure;
-import clojure.lang.IFn;
-import clojure.lang.RT;
 import android.util.Log;
 import android.util.Base64;
-import clojure.lang.Symbol;
-import clojure.lang.Var;
-import clojure.lang.Compiler;
 import java.lang.reflect.Field;
-import clojure.lang.DynamicClassLoader;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import dalvik.system.DexFile;
@@ -67,7 +60,6 @@ public class MainActivity extends AppCompatActivity {
     private TextView timingsHeaderView;
     private LinearLayout timingsTableView;
     private int runCount = 0;
-    private DynamicClassLoader clojureClassLoader;
     private LinearLayout[] stageRows; // Array to keep track of stage label columns
     private LinearLayout[] dataRows;  // Array to keep track of data columns
     private Map<String, ClojureProgram> programs = new HashMap<>();
@@ -120,16 +112,7 @@ public class MainActivity extends AppCompatActivity {
         updateStats("Initializing...", null, null);
         
         try {
-            // Disable spec checking before any Clojure initialization
-            System.setProperty("clojure.spec.skip-macros", "true");
-            System.setProperty("clojure.spec.compile-asserts", "false");
-            
             long startTime = System.currentTimeMillis();
-            setupClojureClassLoader();
-            RT.init();
-            long initTime = System.currentTimeMillis() - startTime;
-            
-            updateStats("Ready", 0, initTime);
             
             // Only handle intent if it's not the initial launch
             Intent intent = getIntent();
@@ -197,30 +180,6 @@ public class MainActivity extends AppCompatActivity {
         if (start >= 0) {
             spannableString.setSpan(new StyleSpan(Typeface.BOLD), start, start + label.length(), 0);
             spannableString.setSpan(new ForegroundColorSpan(Color.parseColor("#1976D2")), start, start + label.length(), 0);  // Darker blue
-        }
-    }
-
-    private void setupClojureClassLoader() {
-        try {
-            // Create a custom class loader that can handle dynamic classes
-            clojureClassLoader = new DynamicClassLoader(getClass().getClassLoader());
-            
-            // Set up the Android delegate
-            AndroidClassLoaderDelegate delegate = new AndroidClassLoaderDelegate(
-                getApplicationContext(),
-                clojureClassLoader
-            );
-            
-            // Set the delegate via reflection since we're using our own implementation
-            Field delegateField = DynamicClassLoader.class.getDeclaredField("androidDelegate");
-            delegateField.setAccessible(true);
-            delegateField.set(null, delegate);
-            
-            // Set the context class loader
-            Thread.currentThread().setContextClassLoader(clojureClassLoader);
-        } catch (Exception e) {
-            Log.e(TAG, "Error setting up class loader", e);
-            throw new RuntimeException(e);
         }
     }
 
