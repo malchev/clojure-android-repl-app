@@ -1,0 +1,9 @@
+{
+  "java.project.sourcePaths": [
+    "app/src/main/java"
+  ],
+  "java.project.referencedLibraries": [
+    "clojure/clojure.jar"
+  ],
+  "java.configuration.updateBuildConfiguration": "automatic",
+}

@@ -1,5 +1,5 @@
 plugins {
-    id 'base'
+    id 'java-library'
 }
 
 task buildClojure(type: Exec) {
