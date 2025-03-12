@@ -3,7 +3,60 @@
     "app/src/main/java"
   ],
   "java.project.referencedLibraries": [
-    "clojure/clojure.jar"
+    "clojure/target/clojure-1.11.1.jar",
+    "lib/**/*.jar",
+    "app/libs/**/*.jar",
+    "${env:ANDROID_HOME}/platforms/android-34/android.jar",
   ],
   "java.configuration.updateBuildConfiguration": "automatic",
+  "java.project.outputPath": "app/build/intermediates/javac/debug/classes",
+  "java.project.exportJar.targetPath": "${workspaceFolder}/app/build/libs/app.jar",
+  "java.completion.importOrder": [
+    "java",
+    "javax",
+    "com",
+    "org",
+    "android",
+    "clojure"
+  ],
+  "java.configuration.runtimes": [
+    {
+      "name": "JavaSE-17",
+      "path": "${env:JAVA_HOME}",
+      "default": true
+    }
+  ],
+  "java.jdt.ls.vmargs": "-XX:+UseParallelGC -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90 -Dsun.zip.disableMemoryMapping=true -Xmx2G -Xms100m -Xlog:disable",
+  "java.import.gradle.enabled": true,
+  "java.import.gradle.wrapper.enabled": true,
+  "java.import.gradle.home": "",
+  "java.project.resourceFilters": [
+    "node_modules",
+    ".git",
+    "build"
+  ],
+  "java.compile.nullAnalysis.mode": "automatic",
+  "java.debug.settings.enableRunDebugCodeLens": true,
+  "java.dependency.packagePresentation": "hierarchical",
+  "java.dependency.syncWithFolderExplorer": true,
+  "java.project.explorer.showNonJavaResources": true,
+  "java.configuration.maven.userSettings": "",
+  "java.maven.downloadSources": true,
+  "java.project.importOnFirstTimeStartup": "automatic",
+  "java.project.importHint": true,
+  "java.jdt.ls.java.home": "${env:JAVA_HOME}",
+  "java.import.gradle.java.home": "${env:JAVA_HOME}",
+  "java.project.referencedLibraries.exclude": [
+    "**/.gradle/**"
+  ],
+  "java.autobuild.enabled": true,
+  "java.server.launchMode": "Standard",
+  "java.configuration.workspaceCacheLimit": 90,
+  "java.inlayHints.parameterNames.enabled": "all",
+  "files.exclude": {
+    "**/.classpath": true,
+    "**/.project": true,
+    "**/.settings": true,
+    "**/.factorypath": true
+  }
 }
