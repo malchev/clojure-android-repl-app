@@ -47,37 +47,37 @@ public class RenderActivity extends AppCompatActivity {
     private IFn readerEval;
 
     private class UiSafeViewGroup extends LinearLayout {
-        private final LinearLayout delegate;
+        private final LinearLayout layoutDelegate;
 
-        public UiSafeViewGroup(LinearLayout delegate) {
-            super(delegate.getContext());
-            this.delegate = delegate;
+        public UiSafeViewGroup(LinearLayout layoutDelegate) {
+            super(layoutDelegate.getContext());
+            this.layoutDelegate = layoutDelegate;
         }
 
         @Override
         public void addView(android.view.View child) {
             if (Thread.currentThread() == android.os.Looper.getMainLooper().getThread()) {
-                delegate.addView(child);
+                layoutDelegate.addView(child);
             } else {
-                runOnUiThread(() -> delegate.addView(child));
+                runOnUiThread(() -> layoutDelegate.addView(child));
             }
         }
 
         @Override
         public void addView(android.view.View child, android.view.ViewGroup.LayoutParams params) {
             if (Thread.currentThread() == android.os.Looper.getMainLooper().getThread()) {
-                delegate.addView(child, params);
+                layoutDelegate.addView(child, params);
             } else {
-                runOnUiThread(() -> delegate.addView(child, params));
+                runOnUiThread(() -> layoutDelegate.addView(child, params));
             }
         }
 
         @Override
         public void removeAllViews() {
             if (Thread.currentThread() == android.os.Looper.getMainLooper().getThread()) {
-                delegate.removeAllViews();
+                layoutDelegate.removeAllViews();
             } else {
-                runOnUiThread(() -> delegate.removeAllViews());
+                runOnUiThread(() -> layoutDelegate.removeAllViews());
             }
         }
     }
@@ -111,8 +111,6 @@ public class RenderActivity extends AppCompatActivity {
                 long rtStartTime = System.currentTimeMillis();
                 // Initialize RT before any Clojure operations
                 Log.d(TAG, "Initializing RT");
-                System.setProperty("clojure.spec.skip-macros", "true");
-                System.setProperty("clojure.spec.compile-asserts", "false");
                 RT.init();
                 long rtTime = System.currentTimeMillis() - rtStartTime;
                 Log.d(TAG, "RT initialized successfully in " + rtTime + "ms");
