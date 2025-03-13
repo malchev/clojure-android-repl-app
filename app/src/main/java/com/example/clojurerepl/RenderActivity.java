@@ -42,7 +42,6 @@ public class RenderActivity extends AppCompatActivity {
     private volatile boolean isDestroyed = false;
     private Thread evaluationThread = null;
     private BytecodeCache bytecodeCache;
-    public static Set<String> allCompiledClassNames = new HashSet<>();
     private String currentCode; // Store current code as a field
     private IFn readerEval;
 
@@ -89,7 +88,7 @@ public class RenderActivity extends AppCompatActivity {
             Log.d(TAG, "RenderActivity onCreate started");
             super.onCreate(savedInstanceState);
             setContentView(R.layout.activity_render);
-            
+
             // Add timing view at the top
             timingView = new TextView(this);
             timingView.setTextSize(12);
@@ -97,16 +96,16 @@ public class RenderActivity extends AppCompatActivity {
             timingView.setTypeface(Typeface.MONOSPACE);
             timingView.setTextColor(Color.parseColor("#1976D2")); // Material Blue
             timingView.setBackgroundColor(Color.parseColor("#F5F5F5")); // Light Gray
-            
+
             contentLayout = findViewById(R.id.content_layout);
             LinearLayout root = (LinearLayout) contentLayout.getParent();
             root.addView(timingView, 0);
-            
+
             // Set content layout background for better contrast
             contentLayout.setBackgroundColor(Color.WHITE);
-            
+
             Log.d(TAG, "Content layout found: " + (contentLayout != null));
-            
+
             try {
                 long rtStartTime = System.currentTimeMillis();
                 // Initialize RT before any Clojure operations
@@ -115,30 +114,30 @@ public class RenderActivity extends AppCompatActivity {
                 long rtTime = System.currentTimeMillis() - rtStartTime;
                 Log.d(TAG, "RT initialized successfully in " + rtTime + "ms");
                 updateTimings("RT init", rtTime);
-                
+
                 long classLoaderStartTime = System.currentTimeMillis();
                 Log.d(TAG, "Setting up Clojure class loader");
                 setupClojureClassLoader();
                 long classLoaderTime = System.currentTimeMillis() - classLoaderStartTime;
                 Log.d(TAG, "Class loader setup completed in " + classLoaderTime + "ms");
                 updateTimings("ClassLoader", classLoaderTime);
-                
+
                 long varsStartTime = System.currentTimeMillis();
                 Log.d(TAG, "Setting up Clojure vars");
                 setupClojureVars();
                 long varsTime = System.currentTimeMillis() - varsStartTime;
                 Log.d(TAG, "Vars setup completed in " + varsTime + "ms");
                 updateTimings("Vars setup", varsTime);
-                
+
                 long envStartTime = System.currentTimeMillis();
                 Log.d(TAG, "Initializing Clojure environment");
                 initializeClojureEnvironment();
                 long envTime = System.currentTimeMillis() - envStartTime;
                 Log.d(TAG, "Clojure environment setup complete in " + envTime + "ms");
                 updateTimings("Env init", envTime);
-                
+
                 bytecodeCache = BytecodeCache.getInstance(this);
-                
+
                 // Get the code from the intent
                 Intent intent = getIntent();
                 if (intent == null) {
@@ -146,10 +145,10 @@ public class RenderActivity extends AppCompatActivity {
                     showError("No intent provided");
                     return;
                 }
-                
+
                 String code = intent.getStringExtra("code");
                 Log.d(TAG, "Received intent with code: " + (code != null ? "length=" + code.length() : "null"));
-                
+
                 if (code != null && !code.trim().isEmpty()) {
                     Log.d(TAG, "About to render code");
                     renderCode(code);
@@ -173,7 +172,7 @@ public class RenderActivity extends AppCompatActivity {
             String entry = String.format("%s: %dms\n", stage, timeMs);
             timingData.append(entry);
             timingView.setText(timingData.toString());
-            
+
             // Send timing data back to MainActivity
             Intent resultIntent = new Intent();
             resultIntent.putExtra("timings", timingData.toString());
@@ -185,7 +184,7 @@ public class RenderActivity extends AppCompatActivity {
     public void onBackPressed() {
         Log.d(TAG, "Back button pressed, marking activity as destroyed");
         isDestroyed = true;
-        
+
         // Interrupt the evaluation thread if it's running
         if (evaluationThread != null && evaluationThread.isAlive()) {
             Log.d(TAG, "Interrupting evaluation thread");
@@ -202,7 +201,7 @@ public class RenderActivity extends AppCompatActivity {
         Intent resultIntent = new Intent();
         resultIntent.putExtra("timings", timingData.toString());
         setResult(RESULT_OK, resultIntent);
-        
+
         super.onBackPressed();
     }
 
@@ -210,18 +209,19 @@ public class RenderActivity extends AppCompatActivity {
         try {
             // Create a custom class loader that can handle dynamic classes
             clojureClassLoader = new DynamicClassLoader(getClass().getClassLoader());
-            
+
             // Set up the Android delegate
             AndroidClassLoaderDelegate delegate = new AndroidClassLoaderDelegate(
                 getApplicationContext(),
                 clojureClassLoader
             );
-            
+
             // Set the delegate via reflection since we're using our own implementation
+            // See patches/0002-Patch-DynamicClassLoader.patch for where this is used.
             Field delegateField = DynamicClassLoader.class.getDeclaredField("androidDelegate");
             delegateField.setAccessible(true);
             delegateField.set(null, delegate);
-            
+
             // Set the context class loader
             Thread.currentThread().setContextClassLoader(clojureClassLoader);
         } catch (Exception e) {
@@ -236,18 +236,18 @@ public class RenderActivity extends AppCompatActivity {
             nsVar = RT.var("clojure.core", "*ns*");
             contextVar = RT.var("clojure.core", "*context*");
             contentLayoutVar = RT.var("clojure.core", "*content-layout*");
-            
+
             // Initialize the readerEval function
             // This will use clojure.core/load-string which reads and evaluates code from a string
             readerEval = Clojure.var("clojure.core", "load-string");
-            
+
             contextVar.setDynamic(true);
             contentLayoutVar.setDynamic(true);
-            
+
             // Bind these vars permanently, using the UI-safe wrapper for contentLayout
             contextVar.bindRoot(this);
             contentLayoutVar.bindRoot(new UiSafeViewGroup(contentLayout));
-            
+
             Log.d(TAG, "Clojure vars initialized");
         } catch (Exception e) {
             Log.e(TAG, "Error setting up Clojure vars", e);
@@ -263,13 +263,13 @@ public class RenderActivity extends AppCompatActivity {
                 // Create the namespace if it doesn't exist
                 userNS = RT.var("clojure.core", "create-ns").invoke(RT.var("clojure.core", "symbol").invoke("user"));
             }
-            
+
             // Switch to user namespace and set it up
             Var.pushThreadBindings(RT.map(nsVar, userNS));
             try {
                 // Refer all clojure.core functions
                 RT.var("clojure.core", "refer").invoke(RT.var("clojure.core", "symbol").invoke("clojure.core"));
-                
+
                 // Define the vars in the user namespace
                 RT.var("clojure.core", "intern").invoke(
                     userNS,
@@ -281,12 +281,12 @@ public class RenderActivity extends AppCompatActivity {
                     Symbol.intern("*content-layout*"),
                     new UiSafeViewGroup(contentLayout)
                 );
-                
+
                 Log.d(TAG, "Vars defined in user namespace");
             } finally {
                 Var.popThreadBindings();
             }
-            
+
             Log.d(TAG, "Clojure environment initialized");
         } catch (Exception e) {
             Log.e(TAG, "Error initializing Clojure environment", e);
@@ -296,29 +296,29 @@ public class RenderActivity extends AppCompatActivity {
 
     private boolean containsMainFunction(String code) {
         // Simple check for defn -main in the code
-        return code != null && 
-               (code.contains("(defn -main") || 
-                code.contains("(defn\n-main") || 
+        return code != null &&
+               (code.contains("(defn -main") ||
+                code.contains("(defn\n-main") ||
                 code.contains("(defn ^:export -main"));
     }
 
     private void renderCode(String code) {
         this.currentCode = code;
         Log.d(TAG, "Starting renderCode with code length: " + code.length());
-        
+
         // Check if code contains a -main function
         boolean hasMainFunction = containsMainFunction(code);
         Log.d(TAG, "Code contains -main function: " + hasMainFunction);
-        
+
         // Generate hash for the code
         String codeHash = bytecodeCache.getCodeHash(code);
-        
+
         // Only use cache if the code has a -main function
         if (hasMainFunction) {
-            // Check if we have a complete cached version 
+            // Check if we have a complete cached version
             boolean hasCompleteCache = bytecodeCache.hasCompleteCache(codeHash);
             Log.d(TAG, "Code hash: " + codeHash + ", hasCompleteCache: " + hasCompleteCache);
-            
+
             if (hasCompleteCache) {
                 // Execute from cache (existing code for using the cache)
                 ByteBuffer[] dexBuffers = bytecodeCache.loadDexCaches(codeHash);
@@ -327,7 +327,7 @@ public class RenderActivity extends AppCompatActivity {
                     compileAndExecute(code, codeHash, hasMainFunction);
                     return;
                 }
-                
+
                 // Get the entry point class name
                 String entryClassName = bytecodeCache.loadEntryPointClass(codeHash);
                 if (entryClassName == null) {
@@ -335,13 +335,13 @@ public class RenderActivity extends AppCompatActivity {
                     compileAndExecute(code, codeHash, hasMainFunction);
                     return;
                 }
-                
+
                 Log.d(TAG, "About to execute DEX with entry point class: " + entryClassName);
-                
+
                 // IMPORTANT: Create runner with UI-safe content layout
                 UiSafeViewGroup safeLayout = new UiSafeViewGroup(contentLayout);
                 CompiledDexRunner runner = new CompiledDexRunner(this, safeLayout);
-                
+
                 // Execute on the main thread to avoid threading issues with UI
                 runOnUiThread(() -> {
                     try {
@@ -365,7 +365,7 @@ public class RenderActivity extends AppCompatActivity {
                 bytecodeCache.clearCacheForHash(codeHash);
             }
         }
-        
+
         // Either no -main function or no cache available, compile and execute
         compileAndExecute(code, codeHash, hasMainFunction);
     }
@@ -374,61 +374,47 @@ public class RenderActivity extends AppCompatActivity {
      * Compile and execute Clojure code, and save the compiled program for future use
      */
     private void compileAndExecute(String code, String codeHash, boolean hasMainFunction) {
-        // Clear previous compiled classes
-        allCompiledClassNames.clear();
-        
-        // Start capturing DEX
-        AndroidClassLoaderDelegate.startCapturingDex();
-        
-        // Create caching class loader
-        CachingClassLoader cachingLoader = new CachingClassLoader(
-            clojureClassLoader, 
-            new HashMap<>(),  // Empty cache since we're compiling
-            true  // Collect all classes
-        );
-        
+        // Reset the static fields in the class loader delegate
+        AndroidClassLoaderDelegate.reset();
+
         // Start evaluation in a separate thread
         evaluationThread = new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
                     Log.d(TAG, "Starting compilation thread");
-                    
-                    // Set context class loader
-                    Thread.currentThread().setContextClassLoader(cachingLoader);
-                    Log.d(TAG, "ClassLoader set for compilation thread");
-                    
+
                     // Setup thread bindings for Clojure
                     Var.pushThreadBindings(RT.map(
                         Var.intern(RT.CLOJURE_NS, Symbol.intern("*context*")), RenderActivity.this,
-                        Var.intern(RT.CLOJURE_NS, Symbol.intern("*content-layout*")), 
+                        Var.intern(RT.CLOJURE_NS, Symbol.intern("*content-layout*")),
                         new UiSafeViewGroup((LinearLayout)findViewById(R.id.content_layout))
                     ));
                     Log.d(TAG, "Thread bindings established");
-                    
+
                     // Tracking for function capturing
                     IFn lastFunction = null;
                     String lastClassName = null;
-                    
+
                     // Read and evaluate code
                     long startTime = System.currentTimeMillis();
                     LineNumberingPushbackReader pushbackReader = new LineNumberingPushbackReader(new StringReader(code));
                     Object lastResult = null;
-                    
+
                     try {
                         while (!isDestroyed) {
                             Object form = LispReader.read(pushbackReader, false, EOF, false);
                             if (form == EOF) {
                                 break;
                             }
-                            
+
                             if (lastResult == null) {
                                 Log.d(TAG, "Starting evaluation");
                             }
-                            
+
                             lastResult = Compiler.eval(form);
                         }
-                        
+
                         // If code has a -main function, try to call it directly
                         if (hasMainFunction) {
                             try {
@@ -451,20 +437,20 @@ public class RenderActivity extends AppCompatActivity {
                     } catch (Exception e) {
                         Log.e(TAG, "Error in Clojure compilation", e);
                         lastResult = "Error: " + e.getMessage();
-                        
+
                         final String errorMessage = e.getMessage();
                         runOnUiThread(() -> showError(errorMessage));
                     }
-                    
+
                     // Get the result and show it
                     final Object result = lastResult;
                     Log.i(TAG, "Compilation result: " + result);
-                    
+
                     long executionTime = System.currentTimeMillis() - startTime;
                     Log.d(TAG, "Code compiled and executed in " + executionTime + "ms");
-                    
+
                     runOnUiThread(() -> updateTimings("Code compilation", executionTime));
-                    
+
                 } catch (Exception e) {
                     Log.e(TAG, "Error in compilation thread", e);
                     final String errorMessage = e.getMessage();
@@ -472,56 +458,45 @@ public class RenderActivity extends AppCompatActivity {
                 } finally {
                     Log.d(TAG, "Cleaning up thread bindings");
                     Var.popThreadBindings();
-                    
+
                     // Save DEX file for class loading, but only if code has a -main function
                     if (hasMainFunction) {
                         List<byte[]> dexFiles = AndroidClassLoaderDelegate.getAllCapturedDex();
                         if (dexFiles != null && !dexFiles.isEmpty()) {
                             Log.d(TAG, "Saving " + dexFiles.size() + " captured DEX files to cache");
                             bytecodeCache.saveMultipleDexCaches(codeHash, dexFiles);
-                            
+
                             // Try to find -main function
                             try {
                                 // Find the actual program entry point function
                                 Object mainFn = RT.var("clojure.core", "-main").deref();
                                 if (mainFn instanceof IFn) {
                                     String className = mainFn.getClass().getName();
-                                    
+
                                     // Save the entry point class name
                                     bytecodeCache.saveEntryPointClass(codeHash, className);
-                                    
+
                                     // Now that we have the entry point class name, also save dependency info
-                                    Set<String> allClasses = new HashSet<>(allCompiledClassNames);
+                                    Set<String> allClasses = new HashSet<>(AndroidClassLoaderDelegate.allCompiledClassNames);
                                     bytecodeCache.saveClassDependencies(codeHash, className, allClasses);
-                                    
+
                                     Log.d(TAG, "Saved DEX and entry point class: " + className);
-                                } else {
-                                    // Fall back to generic entry point detection
-                                    bytecodeCache.saveEntryPointClass(codeHash, findLastGeneratedClassName());
-                                    Log.w(TAG, "-main var exists but is not a function");
                                 }
                             } catch (Exception e) {
-                                // If we can't find -main, use fallback entry point detection
-                                String entryPointClassName = findLastGeneratedClassName();
-                                if (entryPointClassName != null) {
-                                    bytecodeCache.saveEntryPointClass(codeHash, entryPointClassName);
-                                    Log.d(TAG, "Saved DEX and fallback entry point class: " + entryPointClassName);
-                                } else {
-                                    Log.w(TAG, "No suitable entry point class found");
-                                }
+                                Log.w(TAG, "No -main function found");
                             }
                         } else {
                             Log.e(TAG, "No DEX files captured. Caching will not work for this code.");
                         }
                     } else {
                         // If no -main function, don't save the cache
-                        AndroidClassLoaderDelegate.cleanup();
                         Log.d(TAG, "Not caching DEX for code without -main function");
                     }
                 }
+                AndroidClassLoaderDelegate.reset();
             }
         });
-        
+
         evaluationThread.start();
     }
 
@@ -619,110 +594,6 @@ public class RenderActivity extends AppCompatActivity {
 
     // Define EOF object for detecting end of input
     private static final Object EOF = new Object();
-
-    // Add a custom ClassLoader that can use our cached bytecode
-    public static class CachingClassLoader extends ClassLoader {
-        private final DynamicClassLoader parent;
-        private final Map<String, byte[]> cachedClasses;
-        
-        public CachingClassLoader(DynamicClassLoader parent, Map<String, byte[]> cachedClasses, boolean unused) {
-            super(parent);
-            this.parent = parent;
-            this.cachedClasses = cachedClasses;
-        }
-        
-        @Override
-        public Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
-            // First check our cache
-            byte[] cachedBytes = cachedClasses.get(name);
-            if (cachedBytes != null) {
-                try {
-                    Log.d(TAG, "Loading class from cache: " + name);
-                    Class<?> cls = defineClass(name, cachedBytes, 0, cachedBytes.length);
-                    if (resolve) {
-                        resolveClass(cls);
-                    }
-                    return cls;
-                } catch (Exception e) {
-                    Log.e(TAG, "Error loading class from cache: " + name, e);
-                    // Fall through to normal loading
-                }
-            }
-            
-            // Normal class loading
-            return super.loadClass(name, resolve);
-        }
-        
-        // Simplified findClass to avoid circular call
-        @Override
-        protected Class<?> findClass(String name) throws ClassNotFoundException {
-            throw new ClassNotFoundException(name);
-        }
-        
-        public static void recordClassName(String className) {
-            if (className.startsWith("clojure.core$")) {
-                Log.d(TAG, "Recording class name: " + className);
-                // Add to our static collection of class names
-                allCompiledClassNames.add(className);
-            }
-        }
-    }
-
-    private String findLastGeneratedClassName() {
-        // First priority: Find a class with "-main" in the name
-        for (String className : allCompiledClassNames) {
-            if (className.contains("-main")) {
-                Log.d(TAG, "Found -main entry point class: " + className);
-                return className;
-            }
-        }
-        
-        // Second priority: Look for classes with the pattern clojure.core$eval###
-        String evalClassName = null;
-        int highestEvalNumber = -1;
-        
-        for (String className : allCompiledClassNames) {
-            // Look for eval classes
-            if (className.startsWith("clojure.core$eval")) {
-                try {
-                    // Extract the number part
-                    String numberPart = className.substring("clojure.core$eval".length());
-                    int evalNumber = Integer.parseInt(numberPart);
-                    
-                    // Keep track of the highest numbered eval class
-                    if (evalNumber > highestEvalNumber) {
-                        highestEvalNumber = evalNumber;
-                        evalClassName = className;
-                    }
-                } catch (NumberFormatException e) {
-                    // If the suffix isn't a clean number, just check if this is the last one
-                    if (evalClassName == null) {
-                        evalClassName = className;
-                    }
-                }
-            }
-        }
-        
-        // If we found an eval class, use it
-        if (evalClassName != null) {
-            Log.d(TAG, "Found entry point class: " + evalClassName);
-            return evalClassName;
-        }
-        
-        // If still not found, just use the last compiled class as a fallback
-        if (!allCompiledClassNames.isEmpty()) {
-            // Get the last entry in the map
-            String lastClass = null;
-            for (String className : allCompiledClassNames) {
-                lastClass = className;
-            }
-            Log.d(TAG, "Using last compiled class as entry point: " + lastClass);
-            return lastClass;
-        }
-        
-        Log.w(TAG, "No suitable entry point class found");
-        return null;
-    }
 
     /**
      * Format an exception with line and column information
