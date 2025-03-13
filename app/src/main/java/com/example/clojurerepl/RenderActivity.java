@@ -110,6 +110,8 @@ public class RenderActivity extends AppCompatActivity {
                 long rtStartTime = System.currentTimeMillis();
                 // Initialize RT before any Clojure operations
                 Log.d(TAG, "Initializing RT");
+                System.setProperty("clojure.spec.skip-macros", "true");
+                System.setProperty("clojure.spec.compile-asserts", "false");
                 RT.init();
                 long rtTime = System.currentTimeMillis() - rtStartTime;
                 Log.d(TAG, "RT initialized successfully in " + rtTime + "ms");
