@@ -20,7 +20,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 public class AndroidClassLoaderDelegate {
-    private static final String TAG = "ClojureREPL";
+    private static final String TAG = "ClojureREPLClassCallback";
     private final Context context;
     private final ClassLoader parent;
     private final Map<String, Class<?>> classCache;

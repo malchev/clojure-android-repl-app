@@ -304,6 +304,45 @@ public class RenderActivity extends AppCompatActivity {
                 code.contains("(defn ^:export -main"));
     }
 
+    private boolean executeFromCache(String codeHash) {
+        // Execute from cache (existing code for using the cache)
+        ByteBuffer[] dexBuffers = bytecodeCache.loadDexCaches(codeHash);
+        if (dexBuffers == null || dexBuffers.length == 0) {
+            Log.e(TAG, "Failed to load DEX from cache");
+            return false;
+        }
+
+        // Get the entry point class name
+        String entryClassName = bytecodeCache.loadEntryPointClass(codeHash);
+        if (entryClassName == null) {
+            Log.e(TAG, "Failed to load entry point class name");
+            return false;
+        }
+
+        Log.d(TAG, "About to execute DEX with entry point class: " + entryClassName);
+
+        // IMPORTANT: Create runner with UI-safe content layout
+        UiSafeViewGroup safeLayout = new UiSafeViewGroup(contentLayout);
+        CompiledDexRunner runner = new CompiledDexRunner(this, safeLayout);
+
+        // Execute on the main thread to avoid threading issues with UI
+        runOnUiThread(() -> {
+            try {
+                long startTime = System.currentTimeMillis();
+                Object result = runner.execute(dexBuffers, entryClassName, codeHash);
+                long executionTime = System.currentTimeMillis() - startTime;
+                updateTimings("Direct execution", executionTime);
+            } catch (Exception e) {
+                Log.e(TAG, "Error in direct execution", e);
+                showError("Direct execution error: " + e.getMessage());
+                // Fall back to compilation instead of running on a separate thread
+                // new Thread(() -> compileAndExecute(code, codeHash, hasMainFunction)).start();
+            }
+        });
+
+        return true;
+    }
+
     private void renderCode(String code) {
         this.currentCode = code;
         Log.d(TAG, "Starting renderCode with code length: " + code.length());
@@ -315,56 +354,13 @@ public class RenderActivity extends AppCompatActivity {
         // Generate hash for the code
         String codeHash = bytecodeCache.getCodeHash(code);
 
+        boolean hasCompleteCache = bytecodeCache.hasCompleteCache(codeHash);
+
         // Only use cache if the code has a -main function
-        if (hasMainFunction) {
-            // Check if we have a complete cached version
-            boolean hasCompleteCache = bytecodeCache.hasCompleteCache(codeHash);
-            Log.d(TAG, "Code hash: " + codeHash + ", hasCompleteCache: " + hasCompleteCache);
-
-            if (hasCompleteCache) {
-                // Execute from cache (existing code for using the cache)
-                ByteBuffer[] dexBuffers = bytecodeCache.loadDexCaches(codeHash);
-                if (dexBuffers == null || dexBuffers.length == 0) {
-                    Log.e(TAG, "Failed to load DEX from cache");
-                    compileAndExecute(code, codeHash, hasMainFunction);
-                    return;
-                }
-
-                // Get the entry point class name
-                String entryClassName = bytecodeCache.loadEntryPointClass(codeHash);
-                if (entryClassName == null) {
-                    Log.e(TAG, "Failed to load entry point class name");
-                    compileAndExecute(code, codeHash, hasMainFunction);
-                    return;
-                }
-
-                Log.d(TAG, "About to execute DEX with entry point class: " + entryClassName);
-
-                // IMPORTANT: Create runner with UI-safe content layout
-                UiSafeViewGroup safeLayout = new UiSafeViewGroup(contentLayout);
-                CompiledDexRunner runner = new CompiledDexRunner(this, safeLayout);
-
-                // Execute on the main thread to avoid threading issues with UI
-                runOnUiThread(() -> {
-                    try {
-                        long startTime = System.currentTimeMillis();
-                        Object result = runner.execute(dexBuffers, entryClassName, codeHash);
-                        long executionTime = System.currentTimeMillis() - startTime;
-                        updateTimings("Direct execution", executionTime);
-                    } catch (Exception e) {
-                        Log.e(TAG, "Error in direct execution", e);
-                        showError("Direct execution error: " + e.getMessage());
-                        // Fall back to compilation instead of running on a separate thread
-                        new Thread(() -> compileAndExecute(code, codeHash, hasMainFunction)).start();
-                    }
-                });
-                return; // Skip the compileAndExecute below since we're handling everything
-            }
-        } else {
-            // No -main function, clear any existing cache for this code
-            if (bytecodeCache.hasCompleteCache(codeHash)) {
-                Log.d(TAG, "Clearing cache for code without -main function");
-                bytecodeCache.clearCacheForHash(codeHash);
+        if (hasCompleteCache) {
+            Log.d(TAG, "Code hash: " + codeHash + "hasCompleteCache: " + hasCompleteCache);
+            if (executeFromCache(codeHash)) {
+                return;
             }
         }
 
@@ -404,18 +400,16 @@ public class RenderActivity extends AppCompatActivity {
                     Object lastResult = null;
 
                     try {
+                        Log.d(TAG, "Starting evaluation");
                         while (!isDestroyed) {
                             Object form = LispReader.read(pushbackReader, false, EOF, false);
                             if (form == EOF) {
                                 break;
                             }
-
-                            if (lastResult == null) {
-                                Log.d(TAG, "Starting evaluation");
-                            }
-
+                            Log.d(TAG, "Evaluatng form: " + form);
                             lastResult = Compiler.eval(form);
                         }
+                        Log.d(TAG, "Done with evaluation");
 
                         // If code has a -main function, try to call it directly
                         if (hasMainFunction) {
