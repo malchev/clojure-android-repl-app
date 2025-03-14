@@ -149,44 +149,4 @@ public class AndroidClassLoaderDelegate {
             throw new RuntimeException("Failed to define class: " + name, e);
         }
     }
-
-    // Helper method to define a class from bytes
-    private Class<?> fromByteArray(String name, byte[] bytes) {
-        try {
-            // Convert JVM bytecode to DEX using D8
-            D8Command command = D8Command.builder()
-                .addClassProgramData(bytes, Origin.unknown())
-                .setMode(CompilationMode.DEBUG)
-                .setOutput(context.getCacheDir().toPath(), OutputMode.DexIndexed)
-                .build();
-
-            D8.run(command);
-
-            // Read the generated DEX file
-            Path dexPath = context.getCacheDir().toPath().resolve("classes.dex");
-            byte[] dexBytes = Files.readAllBytes(dexPath);
-
-            // Create a ByteBuffer containing the DEX bytes
-            ByteBuffer buffer = ByteBuffer.allocate(dexBytes.length);
-            buffer.put(dexBytes);
-            buffer.position(0);
-
-            // Update class loader with new DEX
-            dexBuffers.add(buffer);
-            ByteBuffer[] buffers = dexBuffers.toArray(new ByteBuffer[0]);
-            currentLoader = new InMemoryDexClassLoader(buffers, parent);
-            Thread.currentThread().setContextClassLoader(currentLoader);
-
-            // Load the class from the updated loader
-            Class<?> clazz = currentLoader.loadClass(name);
-
-            // Clean up
-            Files.delete(dexPath);
-
-            return clazz;
-        } catch (Exception e) {
-            Log.e(TAG, "Error defining class from byte array: " + name, e);
-            throw new RuntimeException("Failed to define class from byte array: " + name, e);
-        }
-    }
 }
