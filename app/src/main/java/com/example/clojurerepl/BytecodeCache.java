@@ -211,23 +211,6 @@ public class BytecodeCache {
         Log.d(TAG, "Cleared " + count + " files from cache");
     }
     
-    // For backward compatibility - these methods are now deprecated
-    @Deprecated
-    public boolean hasCache(String codeHash) {
-        return hasDexCache(codeHash);
-    }
-    
-    @Deprecated
-    public Map<String, byte[]> loadCache(String codeHash) {
-        // Return empty map - we're not using individual class caching anymore
-        return new HashMap<>();
-    }
-    
-    @Deprecated
-    public void saveCache(String codeHash, Map<String, byte[]> classData) {
-        Log.d(TAG, "Ignoring saveCache call - using DEX caching instead");
-    }
-    
     public void saveEntryPointClass(String codeHash, String entryPointClassName) {
         if (entryPointClassName == null || entryPointClassName.isEmpty()) {
             Log.e(TAG, "Attempted to save null or empty entry point class name for hash: " + codeHash);
@@ -549,4 +532,4 @@ public class BytecodeCache {
         }
         return null;
     }
-} 
+}
