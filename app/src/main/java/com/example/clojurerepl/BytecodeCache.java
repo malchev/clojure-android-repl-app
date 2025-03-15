@@ -470,19 +470,12 @@ public class BytecodeCache {
         }
     }
     
-    // Add method to save class dependency info
-    public void saveClassDependencies(String codeHash, String entryPointClassName, Set<String> classNames) {
-        // Save using both code hash and entry point for redundancy
-        saveClassDependenciesInternal(codeHash, classNames);
-        saveClassDependenciesInternal(entryPointClassName, classNames);
-    }
-    
-    private void saveClassDependenciesInternal(String key, Set<String> classNames) {
-        File depFile = new File(cacheDir, key + ".deps");
+    public void saveClassDependencies(String codeHash, Set<String> classNames) {
+        File depFile = new File(cacheDir, codeHash + ".deps");
         try (FileOutputStream fos = new FileOutputStream(depFile);
              ObjectOutputStream oos = new ObjectOutputStream(fos)) {
             oos.writeObject(new ArrayList<>(classNames));
-            Log.d(TAG, "Saved " + classNames.size() + " class dependencies for " + key);
+            Log.d(TAG, "Saved " + classNames.size() + " class dependencies for " + codeHash);
         } catch (IOException e) {
             Log.e(TAG, "Error saving class dependencies", e);
         }

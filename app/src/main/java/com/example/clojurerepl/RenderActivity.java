@@ -482,7 +482,7 @@ public class RenderActivity extends AppCompatActivity {
 
                                     // Now that we have the entry point class name, also save dependency info
                                     Set<String> allClasses = new HashSet<>(AndroidClassLoaderDelegate.allCompiledClassNames);
-                                    bytecodeCache.saveClassDependencies(codeHash, className, allClasses);
+                                    bytecodeCache.saveClassDependencies(codeHash, allClasses);
 
                                     Log.d(TAG, "Saved DEX and entry point class: " + className);
                                 }
