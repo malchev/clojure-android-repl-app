@@ -335,8 +335,9 @@ public class RenderActivity extends AppCompatActivity {
             } catch (Exception e) {
                 Log.e(TAG, "Error in direct execution", e);
                 showError("Direct execution error: " + e.getMessage());
-                // Fall back to compilation instead of running on a separate thread
-                // new Thread(() -> compileAndExecute(code, codeHash, hasMainFunction)).start();
+                // Clear the cache to force the next execution to recompile
+                Log.d(TAG, "Clearing cache for hash: " + codeHash);
+                bytecodeCache.clearCacheForHash(codeHash);
             }
         });
 
