@@ -40,7 +40,6 @@ public class RenderActivity extends AppCompatActivity {
     private TextView timingView;
     private StringBuilder timingData = new StringBuilder();
     private volatile boolean isDestroyed = false;
-    private Thread evaluationThread = null;
     private BytecodeCache bytecodeCache;
     private String currentCode; // Store current code as a field
     private IFn readerEval;
@@ -85,7 +84,7 @@ public class RenderActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         try {
             activityStartTime = System.currentTimeMillis();
-            Log.d(TAG, "RenderActivity onCreate started");
+            Log.d(TAG, "RenderActivity onCreate started in process: " + android.os.Process.myPid());
             super.onCreate(savedInstanceState);
             setContentView(R.layout.activity_render);
 
@@ -164,7 +163,6 @@ public class RenderActivity extends AppCompatActivity {
             }
         } catch (Throwable t) {
             Log.e(TAG, "Fatal error in RenderActivity onCreate", t);
-            // Show error to user
             Toast.makeText(this, "Fatal error: " + t.getMessage(), Toast.LENGTH_LONG).show();
         }
     }
@@ -186,18 +184,6 @@ public class RenderActivity extends AppCompatActivity {
     public void onBackPressed() {
         Log.d(TAG, "Back button pressed, marking activity as destroyed");
         isDestroyed = true;
-
-        // Interrupt the evaluation thread if it's running
-        if (evaluationThread != null && evaluationThread.isAlive()) {
-            Log.d(TAG, "Interrupting evaluation thread");
-            evaluationThread.interrupt();
-            try {
-                // Wait briefly for the thread to clean up
-                evaluationThread.join(1000);
-            } catch (InterruptedException e) {
-                Log.w(TAG, "Interrupted while waiting for evaluation thread to finish");
-            }
-        }
 
         // Ensure final timing data is sent back
         Intent resultIntent = new Intent();
@@ -364,137 +350,102 @@ public class RenderActivity extends AppCompatActivity {
         // Reset the static fields in the class loader delegate
         AndroidClassLoaderDelegate.reset();
 
-        // Start evaluation in a separate thread
-        evaluationThread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                // We set this to true after compiling the code below.  The
-                // variable is accessed in the finally block as a key to save
-                // the cached values (which we save only for code that has a
-                // -main function as a way to give some flexibility and avoid
-                // cache-related bugs from affecting Clojure code.)
-                boolean hasMainFunction = false;
+        try {
+            Log.d(TAG, "Starting compilation in process: " + android.os.Process.myPid());
 
-                try {
-                    Log.d(TAG, "Starting compilation thread");
+            // Setup thread bindings for Clojure
+            Var.pushThreadBindings(RT.map(
+                Var.intern(RT.CLOJURE_NS, Symbol.intern("*context*")), RenderActivity.this,
+                Var.intern(RT.CLOJURE_NS, Symbol.intern("*content-layout*")),
+                new UiSafeViewGroup((LinearLayout)findViewById(R.id.content_layout))
+            ));
 
-                    // Setup thread bindings for Clojure
-                    Var.pushThreadBindings(RT.map(
-                        Var.intern(RT.CLOJURE_NS, Symbol.intern("*context*")), RenderActivity.this,
-                        Var.intern(RT.CLOJURE_NS, Symbol.intern("*content-layout*")),
-                        new UiSafeViewGroup((LinearLayout)findViewById(R.id.content_layout))
-                    ));
-                    Log.d(TAG, "Thread bindings established");
+            Log.d(TAG, "Thread bindings established");
 
-                    // Read and evaluate code
-                    long startTime = System.currentTimeMillis();
-                    LineNumberingPushbackReader pushbackReader = new LineNumberingPushbackReader(new StringReader(code));
-                    Object lastResult = null;
+            // Read and evaluate code
+            long startTime = System.currentTimeMillis();
+            LineNumberingPushbackReader pushbackReader = new LineNumberingPushbackReader(new StringReader(code));
+            Object lastResult = null;
 
+            try {
+                Log.d(TAG, "Starting evaluation");
+                while (!isDestroyed) {
+                    Object form = LispReader.read(pushbackReader, false, EOF, false);
+                    if (form == EOF) {
+                        break;
+                    }
+                    Log.d(TAG, "Evaluating form: " + form);
+                    lastResult = Compiler.eval(form);
+                    Log.d(TAG, "Last result class: " + lastResult.getClass().getName());
+                }
+                Log.d(TAG, "Done with evaluation");
+
+                // Check for -main function
+                boolean hasMainFunction = AndroidClassLoaderDelegate.allCompiledClassNames.contains("clojure.core$_main");
+                Log.d(TAG, "Code contains -main function: " + hasMainFunction);
+
+                if (hasMainFunction) {
                     try {
-                        Log.d(TAG, "Starting evaluation");
-                        while (!isDestroyed) {
-                            Object form = LispReader.read(pushbackReader, false, EOF, false);
-                            if (form == EOF) {
-                                break;
-                            }
-                            Log.d(TAG, "Evaluatng form: " + form);
-                            lastResult = Compiler.eval(form);
-                            Log.d(TAG, "Last result class: " + lastResult.getClass().getName());
-                        }
-                        Log.d(TAG, "Done with evaluation");
-
-                        // Check if code contains a -main function.  At this
-                        // point we have already compiled the code, and have
-                        // collected all the class names via
-                        // AndroidClassLoaderDelegate.  The -main function is
-                        // "clojure.core$_main"
-                        hasMainFunction =
-                            AndroidClassLoaderDelegate.allCompiledClassNames.contains("clojure.core$_main");
-                        Log.d(TAG, "Code contains -main function: " + hasMainFunction);
-
-                        // If code has a -main function, try to call it
-                        // directly.  If it does not have a -main function, the
-                        // expectation is that it would be running by now as
-                        // part of the form eval.
-                        if (hasMainFunction) {
-                            try {
-                                Log.d(TAG, "Code has -main function, trying to invoke it directly");
-                                // Try to get the -main function
-                                Object mainFn = RT.var("clojure.core", "-main").deref();
-                                if (mainFn instanceof IFn) {
-                                    Log.d(TAG, "Found -main function, invoking it");
-                                    // Call the -main function with no args
-                                    lastResult = ((IFn)mainFn).invoke();
-                                    Log.d(TAG, "Successfully called -main function, result: " + lastResult);
-                                } else {
-                                    Log.d(TAG, "-main var exists but is not a function");
-                                }
-                            } catch (Exception e) {
-                                Log.w(TAG, "Error invoking -main function directly: " + e.getMessage());
-                                // Continue with the existing evaluation result
-                            }
+                        Log.d(TAG, "Code has -main function, trying to invoke it directly");
+                        Object mainFn = RT.var("clojure.core", "-main").deref();
+                        if (mainFn instanceof IFn) {
+                            Log.d(TAG, "Found -main function, invoking it");
+                            lastResult = ((IFn)mainFn).invoke();
+                            Log.d(TAG, "Successfully called -main function, result: " + lastResult);
+                        } else {
+                            Log.d(TAG, "-main var exists but is not a function");
                         }
                     } catch (Exception e) {
-                        Log.e(TAG, "Error in Clojure compilation", e);
-                        lastResult = "Error: " + e.getMessage();
-
-                        final String errorMessage = e.getMessage();
-                        runOnUiThread(() -> showError(errorMessage));
-                    }
-
-                    // Get the result and show it
-                    final Object result = lastResult;
-                    Log.i(TAG, "Compilation result: " + result);
-
-                    long executionTime = System.currentTimeMillis() - startTime;
-                    Log.d(TAG, "Code compiled and executed in " + executionTime + "ms");
-
-                    runOnUiThread(() -> updateTimings("Code compilation", executionTime));
-
-                } catch (Exception e) {
-                    Log.e(TAG, "Error in compilation thread", e);
-                    final String errorMessage = e.getMessage();
-                    runOnUiThread(() -> showError("Thread error: " + errorMessage));
-                } finally {
-                    Log.d(TAG, "Cleaning up thread bindings");
-                    Var.popThreadBindings();
-
-                    // Save DEX file for class loading, but only if code has a -main function
-                    if (hasMainFunction) {
-                        List<byte[]> dexFiles = AndroidClassLoaderDelegate.getAllCapturedDex();
-                        if (dexFiles != null && !dexFiles.isEmpty()) {
-                            Log.d(TAG, "Saving " + dexFiles.size() + " captured DEX files to cache");
-                            bytecodeCache.saveMultipleDexCaches(codeHash, dexFiles);
-
-                            // Try to find -main function
-                            try {
-                                // Find the actual program entry point function
-                                Object mainFn = RT.var("clojure.core", "-main").deref();
-                                if (mainFn instanceof IFn) {
-                                    String className = mainFn.getClass().getName();
-
-                                    // Save the entry point class name
-                                    bytecodeCache.saveEntryPointClass(codeHash, className);
-
-                                    Log.d(TAG, "Saved DEX and entry point class: " + className);
-                                }
-                            } catch (Exception e) {
-                                Log.w(TAG, "No -main function found");
-                            }
-                        } else {
-                            Log.e(TAG, "No DEX files captured. Caching will not work for this code.");
-                        }
-                    } else {
-                        // If no -main function, don't save the cache
-                        Log.d(TAG, "Not caching DEX for code without -main function");
+                        Log.w(TAG, "Error invoking -main function directly: " + e.getMessage());
                     }
                 }
-                AndroidClassLoaderDelegate.reset();
-            }
-        });
 
-        evaluationThread.start();
+                // Get the result and show it
+                final Object result = lastResult;
+                Log.i(TAG, "Compilation result: " + result);
+
+                long executionTime = System.currentTimeMillis() - startTime;
+                Log.d(TAG, "Code compiled and executed in " + executionTime + "ms");
+
+                updateTimings("Code compilation", executionTime);
+
+                // Save DEX file for class loading, but only if code has a -main function
+                if (hasMainFunction) {
+                    List<byte[]> dexFiles = AndroidClassLoaderDelegate.getAllCapturedDex();
+                    if (dexFiles != null && !dexFiles.isEmpty()) {
+                        Log.d(TAG, "Saving " + dexFiles.size() + " captured DEX files to cache");
+                        bytecodeCache.saveMultipleDexCaches(codeHash, dexFiles);
+
+                        // Try to find -main function
+                        try {
+                            Object mainFn = RT.var("clojure.core", "-main").deref();
+                            if (mainFn instanceof IFn) {
+                                String className = mainFn.getClass().getName();
+                                bytecodeCache.saveEntryPointClass(codeHash, className);
+                                Log.d(TAG, "Saved DEX and entry point class: " + className);
+                            }
+                        } catch (Exception e) {
+                            Log.w(TAG, "No -main function found");
+                        }
+                    }
+                }
+
+            } catch (Exception e) {
+                Log.e(TAG, "Error in Clojure compilation", e);
+                lastResult = "Error: " + e.getMessage();
+                final String errorMessage = e.getMessage();
+                runOnUiThread(() -> showError(errorMessage));
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error in compilation", e);
+            final String errorMessage = e.getMessage();
+            runOnUiThread(() -> showError("Error: " + errorMessage));
+        } finally {
+            Log.d(TAG, "Cleaning up bindings");
+            Var.popThreadBindings();
+            AndroidClassLoaderDelegate.reset();
+        }
     }
 
     private void showError(String message) {
@@ -572,19 +523,6 @@ public class RenderActivity extends AppCompatActivity {
     protected void onDestroy() {
         Log.d(TAG, "onDestroy called");
         isDestroyed = true;
-
-        // Interrupt the evaluation thread if it's running
-        if (evaluationThread != null && evaluationThread.isAlive()) {
-            Log.d(TAG, "Interrupting evaluation thread in onDestroy");
-            evaluationThread.interrupt();
-            try {
-                // Wait briefly for the thread to clean up
-                evaluationThread.join(1000);
-            } catch (InterruptedException e) {
-                Log.w(TAG, "Interrupted while waiting for evaluation thread to finish");
-            }
-        }
-
         super.onDestroy();
         Log.d(TAG, "RenderActivity destroyed");
     }
