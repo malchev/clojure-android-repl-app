@@ -296,14 +296,6 @@ public class RenderActivity extends AppCompatActivity {
         }
     }
 
-    private boolean containsMainFunction(String code) {
-        // Simple check for defn -main in the code
-        return code != null &&
-               (code.contains("(defn -main") ||
-                code.contains("(defn\n-main") ||
-                code.contains("(defn ^:export -main"));
-    }
-
     private boolean executeFromCache(String codeHash) {
         // Execute from cache (existing code for using the cache)
         ByteBuffer[] dexBuffers = bytecodeCache.loadDexCaches(codeHash);
@@ -348,10 +340,6 @@ public class RenderActivity extends AppCompatActivity {
         this.currentCode = code;
         Log.d(TAG, "Starting renderCode with code length: " + code.length());
 
-        // Check if code contains a -main function
-        boolean hasMainFunction = containsMainFunction(code);
-        Log.d(TAG, "Code contains -main function: " + hasMainFunction);
-
         // Generate hash for the code
         String codeHash = bytecodeCache.getCodeHash(code);
 
@@ -366,13 +354,13 @@ public class RenderActivity extends AppCompatActivity {
         }
 
         // Either no -main function or no cache available, compile and execute
-        compileAndExecute(code, codeHash, hasMainFunction);
+        compileAndExecute(code, codeHash);
     }
 
     /**
      * Compile and execute Clojure code, and save the compiled program for future use
      */
-    private void compileAndExecute(String code, String codeHash, boolean hasMainFunction) {
+    private void compileAndExecute(String code, String codeHash) {
         // Reset the static fields in the class loader delegate
         AndroidClassLoaderDelegate.reset();
 
@@ -380,6 +368,13 @@ public class RenderActivity extends AppCompatActivity {
         evaluationThread = new Thread(new Runnable() {
             @Override
             public void run() {
+                // We set this to true after compiling the code below.  The
+                // variable is accessed in the finally block as a key to save
+                // the cached values (which we save only for code that has a
+                // -main function as a way to give some flexibility and avoid
+                // cache-related bugs from affecting Clojure code.)
+                boolean hasMainFunction = false;
+
                 try {
                     Log.d(TAG, "Starting compilation thread");
 
@@ -412,7 +407,19 @@ public class RenderActivity extends AppCompatActivity {
                         }
                         Log.d(TAG, "Done with evaluation");
 
-                        // If code has a -main function, try to call it directly
+                        // Check if code contains a -main function.  At this
+                        // point we have already compiled the code, and have
+                        // collected all the class names via
+                        // AndroidClassLoaderDelegate.  The -main function is
+                        // "clojure.core$_main"
+                        hasMainFunction =
+                            AndroidClassLoaderDelegate.allCompiledClassNames.contains("clojure.core$_main");
+                        Log.d(TAG, "Code contains -main function: " + hasMainFunction);
+
+                        // If code has a -main function, try to call it
+                        // directly.  If it does not have a -main function, the
+                        // expectation is that it would be running by now as
+                        // part of the form eval.
                         if (hasMainFunction) {
                             try {
                                 Log.d(TAG, "Code has -main function, trying to invoke it directly");
