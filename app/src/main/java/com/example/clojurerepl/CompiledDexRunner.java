@@ -74,25 +74,6 @@ public class CompiledDexRunner {
                 ));
 
                 try {
-                    // Load the dependency information using entry point as key
-                    List<String> dependencies = BytecodeCache.getInstance(context)
-                        .loadClassDependencies(entryPointClassName);
-                    Log.d(TAG, "Found " + dependencies.size() + " class dependencies");
-
-                    // We don't need to instantiate these classes - just having their bytecode
-                    // loaded in the ClassLoader is enough. Simply log that we found them.
-                    for (String className : dependencies) {
-                        try {
-                            // Just check that the class can be loaded - don't instantiate
-                            dexLoader.loadClass(className);
-                            // Success - the class is available in the classloader
-                            Log.d(TAG, "Verified dependency class is available: " + className);
-                        } catch (ClassNotFoundException e) {
-                            // Non-critical error, just log
-                            Log.w(TAG, "Could not find dependency class: " + className);
-                        }
-                    }
-
                     // Now load and instantiate just the entry point function
                     Class<?> fnClass = dexLoader.loadClass(entryPointClassName);
                     Log.d(TAG, "Successfully loaded function class: " + entryPointClassName);

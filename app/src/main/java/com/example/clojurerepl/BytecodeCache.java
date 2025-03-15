@@ -470,37 +470,6 @@ public class BytecodeCache {
         }
     }
     
-    public void saveClassDependencies(String codeHash, Set<String> classNames) {
-        File depFile = new File(cacheDir, codeHash + ".deps");
-        try (FileOutputStream fos = new FileOutputStream(depFile);
-             ObjectOutputStream oos = new ObjectOutputStream(fos)) {
-            oos.writeObject(new ArrayList<>(classNames));
-            Log.d(TAG, "Saved " + classNames.size() + " class dependencies for " + codeHash);
-        } catch (IOException e) {
-            Log.e(TAG, "Error saving class dependencies", e);
-        }
-    }
-    
-    // Add method to load class dependency info
-    @SuppressWarnings("unchecked")
-    public List<String> loadClassDependencies(String codeHash) {
-        File depFile = new File(cacheDir, codeHash + ".deps");
-        if (!depFile.exists()) {
-            Log.d(TAG, "No dependency file found for " + codeHash);
-            return Collections.emptyList();
-        }
-        
-        try (FileInputStream fis = new FileInputStream(depFile);
-             ObjectInputStream ois = new ObjectInputStream(fis)) {
-            List<String> deps = (List<String>) ois.readObject();
-            Log.d(TAG, "Loaded " + deps.size() + " class dependencies for " + codeHash);
-            return deps;
-        } catch (Exception e) {
-            Log.e(TAG, "Error loading class dependencies", e);
-            return Collections.emptyList();
-        }
-    }
-    
     // Add a lookup method to find code hash by entry point class
     public String findCodeHashByEntryPoint(String entryPointClassName) {
         // Search through all .entry files to find matching class name

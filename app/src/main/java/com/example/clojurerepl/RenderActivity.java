@@ -386,10 +386,6 @@ public class RenderActivity extends AppCompatActivity {
                     ));
                     Log.d(TAG, "Thread bindings established");
 
-                    // Tracking for function capturing
-                    IFn lastFunction = null;
-                    String lastClassName = null;
-
                     // Read and evaluate code
                     long startTime = System.currentTimeMillis();
                     LineNumberingPushbackReader pushbackReader = new LineNumberingPushbackReader(new StringReader(code));
@@ -404,6 +400,7 @@ public class RenderActivity extends AppCompatActivity {
                             }
                             Log.d(TAG, "Evaluatng form: " + form);
                             lastResult = Compiler.eval(form);
+                            Log.d(TAG, "Last result class: " + lastResult.getClass().getName());
                         }
                         Log.d(TAG, "Done with evaluation");
 
@@ -479,10 +476,6 @@ public class RenderActivity extends AppCompatActivity {
 
                                     // Save the entry point class name
                                     bytecodeCache.saveEntryPointClass(codeHash, className);
-
-                                    // Now that we have the entry point class name, also save dependency info
-                                    Set<String> allClasses = new HashSet<>(AndroidClassLoaderDelegate.allCompiledClassNames);
-                                    bytecodeCache.saveClassDependencies(codeHash, allClasses);
 
                                     Log.d(TAG, "Saved DEX and entry point class: " + className);
                                 }
