@@ -7,7 +7,7 @@ This document describes how to set up your development environment and build the
 ### For macOS
 
 1. **Android Studio**
-   - Download from https://developer.android.com/studio
+   - Download and install from https://developer.android.com/studio
    - Add to your shell profile:
      ```bash
      echo 'export ANDROID_HOME=~/Library/Android/sdk' >> ~/.zshrc
@@ -39,16 +39,27 @@ This document describes how to set up your development environment and build the
    brew install maven
    ```
 
-### For Linux
+### For Linux/ChromeOS
 
 1. **Android Studio**
    - Download from https://developer.android.com/studio
-   - sudo dpkg -i ~/android-studio-2024.2.2.14-cros.deb # or whatever the download is
-   - run /opt/android-studio/bin/studio.sh, install the Android SDK, accept the licenses
-   - Add to your shell profile:
-     ```bash
-     echo 'export ANDROID_HOME=~/Android/Sdk' >> ~/.bashrc # or wherever it's installed
-     ```
+   - ChromeOS:
+        - download and install Studio:
+        ```
+        sudo dpkg -i ~/android-studio-2024.2.2.14-cros.deb # or whatever the download is
+        /opt/android-studio/bin/studio.sh
+        # install the Android SDK, accept the licenses
+        echo 'export ANDROID_HOME=~/Android/Sdk' >> ~/.bashrc # or wherever it's installed
+        ```
+   - Linux:
+        ```
+        tar xzvf ~/Downloads/android-studio-2024.2.2.14-linux.tar.gz
+        ~/Downloads/android-studio-2024.2.2.14-linux/android-studio/bin/studio.sh
+        # install standard configuration and accept the licenses
+        echo 'export ANDROID_HOME=~/Android/Sdk' >> ~/.bashrc # or wherever it's installed
+        source ~/.bashrc  # Apply changes
+
+        ```
 
 2. **Gradle**
    ```bash
@@ -64,14 +75,26 @@ This document describes how to set up your development environment and build the
 4. **Java 17**
    ```bash
    sudo apt install openjdk-17-jdk
+   ```
+
+   - Now either override calls to java/javac in your shell for everyone:
+
+   ```bash
    echo 'export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64' >> ~/.bashrc
    echo 'export PATH="$JAVA_HOME/bin:$PATH"' >> ~/.bashrc
    source ~/.bashrc  # Apply changes
    ```
+
+   Or use (on Ubuntu) update-java-alternatives:
+
+   ```bash
+   sudo update-java-alternatives -s java-1.17.0-openjdk-amd64
+   ```
+
    - Add to `gradle.properties` or `~/.gradle/gradle.properties`:
-     ```properties
-     org.gradle.java.home=/usr/lib/jvm/java-17-openjdk-amd64
-     ```
+   ```properties
+   org.gradle.java.home=/usr/lib/jvm/java-17-openjdk-amd64
+   ```
 
 5. **Maven**
    ```bash
