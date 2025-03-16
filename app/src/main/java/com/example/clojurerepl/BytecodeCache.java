@@ -67,7 +67,7 @@ public class BytecodeCache {
     }
 
     // Check if a DEX cache exists for this code hash
-    public boolean hasDexCache(String codeHash) {
+    private boolean hasDexCache(String codeHash) {
         // Check for the manifest file first - that's the indicator we have saved
         // multiple DEX files
         File manifestFile = new File(cacheDir, codeHash + ".manifest");
@@ -86,35 +86,9 @@ public class BytecodeCache {
             }
 
             Log.w(TAG, "DEX manifest exists but directory is missing: " + dexDir.getAbsolutePath());
-            return false;
         }
 
-        // Fall back to checking for single DEX file (for backward compatibility)
-        File dexFile = new File(cacheDir, codeHash + ".dex");
-        boolean exists = dexFile.exists();
-        Log.d(TAG, "Single DEX cache file for " + codeHash + " exists: " + exists);
-        return exists;
-    }
-
-    // Save compiled DEX to cache
-    public void saveDexCache(String codeHash, byte[] dexBytes) {
-        if (dexBytes == null || dexBytes.length == 0) {
-            Log.e(TAG, "Attempted to save empty or null DEX for hash: " + codeHash);
-            return;
-        }
-
-        Log.d(TAG, "Saving DEX cache with " + dexBytes.length + " bytes for " + codeHash);
-        File dexFile = new File(cacheDir, codeHash + ".dex");
-
-        try (FileOutputStream fos = new FileOutputStream(dexFile)) {
-            fos.write(dexBytes);
-            fos.flush();
-
-            // Verify the file was written correctly
-            Log.d(TAG, "Saved DEX file, size on disk: " + dexFile.length() + " bytes");
-        } catch (IOException e) {
-            Log.e(TAG, "Error saving DEX cache", e);
-        }
+        return false;
     }
 
     // Load DEX from cache
@@ -255,12 +229,6 @@ public class BytecodeCache {
         }
     }
 
-    // Add this method to save the DEX + Entry Class in one step
-    public void saveDexWithEntry(String codeHash, byte[] dexBytes, String entryClassName) {
-        saveDexCache(codeHash, dexBytes);
-        saveEntryPointClass(codeHash, entryClassName);
-    }
-
     // Add method to check if both DEX and entry point exist
     public boolean hasCompleteCache(String codeHash) {
         boolean hasDex = hasDexCache(codeHash);
@@ -288,15 +256,6 @@ public class BytecodeCache {
 
         Log.d(TAG, "Cache check - DEX: " + hasDex + ", Entry: " + hasEntry);
         return hasDex && hasEntry;
-    }
-
-    // Add a helper method to force save an entry point for testing
-    public void forceEntryPoint(String codeHash, String className) {
-        if (hasDexCache(codeHash)) {
-            Log.d(TAG, "Forcing entry point for existing DEX: " + className);
-            saveEntryPointClass(codeHash, className);
-            Log.d(TAG, "hasCompleteCache after force: " + hasCompleteCache(codeHash));
-        }
     }
 
     // Add this helper method to extract the function name from a class name
@@ -393,30 +352,5 @@ public class BytecodeCache {
         if (programFile.exists() && programFile.delete()) {
             Log.d(TAG, "Deleted program file: " + programFile.getPath());
         }
-    }
-
-    // Add a lookup method to find code hash by entry point class
-    public String findCodeHashByEntryPoint(String entryPointClassName) {
-        // Search through all .entry files to find matching class name
-        File[] files = cacheDir.listFiles((dir, name) -> name.endsWith(".entry"));
-        if (files != null) {
-            for (File file : files) {
-                try (FileInputStream fis = new FileInputStream(file)) {
-                    byte[] buffer = new byte[(int) file.length()];
-                    int bytesRead = fis.read(buffer);
-                    String storedEntry = new String(buffer, 0, bytesRead);
-
-                    if (storedEntry.equals(entryPointClassName)) {
-                        // Found matching entry, extract hash from filename
-                        String filename = file.getName();
-                        String hash = filename.substring(0, filename.length() - 6); // remove .entry
-                        return hash;
-                    }
-                } catch (IOException e) {
-                    // Just continue to next file
-                }
-            }
-        }
-        return null;
     }
 }
