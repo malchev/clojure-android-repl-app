@@ -67,7 +67,7 @@ public class BytecodeCache {
     }
 
     // Check if a DEX cache exists for this code hash
-    private boolean hasDexCache(String codeHash) {
+    boolean hasDexCache(String codeHash) {
         // Check for the manifest file first - that's the indicator we have saved
         // multiple DEX files
         File manifestFile = new File(cacheDir, codeHash + ".manifest");
@@ -185,85 +185,6 @@ public class BytecodeCache {
             }
         }
         Log.d(TAG, "Cleared " + count + " files from cache");
-    }
-
-    public void saveEntryPointClass(String codeHash, String entryPointClassName) {
-        if (entryPointClassName == null || entryPointClassName.isEmpty()) {
-            Log.e(TAG, "Attempted to save null or empty entry point class name for hash: " + codeHash);
-            return;
-        }
-
-        Log.d(TAG, "Saving entry point class: " + entryPointClassName + " for hash: " + codeHash);
-        File entryPointFile = new File(cacheDir, codeHash + ".entry");
-
-        try (FileOutputStream fos = new FileOutputStream(entryPointFile)) {
-            byte[] bytes = entryPointClassName.getBytes();
-            fos.write(bytes);
-            fos.flush();
-            Log.d(TAG, "Entry point saved, file size: " + entryPointFile.length() + " bytes");
-        } catch (IOException e) {
-            Log.e(TAG, "Error saving entry point class", e);
-        }
-    }
-
-    public String loadEntryPointClass(String codeHash) {
-        File entryPointFile = new File(cacheDir, codeHash + ".entry");
-        if (!entryPointFile.exists()) {
-            return null;
-        }
-
-        try (FileInputStream fis = new FileInputStream(entryPointFile)) {
-            byte[] buffer = new byte[(int) entryPointFile.length()];
-            int bytesRead = fis.read(buffer);
-            String entryPointClassName = new String(buffer, 0, bytesRead);
-            Log.d(TAG, "Loaded entry point class: " + entryPointClassName + " for hash: " + codeHash);
-
-            // For proper debugging, also extract the function name
-            String functionName = extractFunctionName(entryPointClassName);
-            Log.d(TAG, "Extracted function name: " + functionName);
-
-            return entryPointClassName;
-        } catch (IOException e) {
-            Log.e(TAG, "Error loading entry point class", e);
-            return null;
-        }
-    }
-
-    // Add method to check if both DEX and entry point exist
-    public boolean hasCompleteCache(String codeHash) {
-        boolean hasDex = hasDexCache(codeHash);
-        boolean hasEntry = false;
-
-        // Check for the entry point file
-        File entryPointFile = new File(cacheDir, codeHash + ".entry");
-        hasEntry = entryPointFile.exists() && entryPointFile.length() > 0;
-
-        if (entryPointFile.exists()) {
-            Log.d(TAG, "Entry file exists, size: " + entryPointFile.length() + " bytes");
-
-            // Try to read the content to verify
-            try (FileInputStream fis = new FileInputStream(entryPointFile)) {
-                byte[] buffer = new byte[(int) entryPointFile.length()];
-                int bytesRead = fis.read(buffer);
-                String entryClassName = new String(buffer, 0, bytesRead);
-                Log.d(TAG, "Entry point class from file: " + entryClassName);
-            } catch (IOException e) {
-                Log.e(TAG, "Error reading entry point file", e);
-            }
-        } else {
-            Log.d(TAG, "Entry file does not exist: " + entryPointFile.getAbsolutePath());
-        }
-
-        Log.d(TAG, "Cache check - DEX: " + hasDex + ", Entry: " + hasEntry);
-        return hasDex && hasEntry;
-    }
-
-    // Add this helper method to extract the function name from a class name
-    public String extractFunctionName(String className) {
-        if (className.startsWith("clojure.core$")) {
-            return className.substring("clojure.core$".length());
-        }
-        return className;
     }
 
     // Update to save multiple DEX files

@@ -206,18 +206,6 @@ public class RenderActivity extends AppCompatActivity {
             // Create a custom class loader that can handle dynamic classes
             clojureClassLoader = new DynamicClassLoader(getClass().getClassLoader());
 
-            // Set up the Android delegate
-            AndroidClassLoaderDelegate delegate = new AndroidClassLoaderDelegate(
-                getApplicationContext(),
-                clojureClassLoader
-            );
-
-            // Set the delegate via reflection since we're using our own implementation
-            // See patches/0002-Patch-DynamicClassLoader.patch for where this is used.
-            Field delegateField = DynamicClassLoader.class.getDeclaredField("androidDelegate");
-            delegateField.setAccessible(true);
-            delegateField.set(null, delegate);
-
             // Set the context class loader
             Thread.currentThread().setContextClassLoader(clojureClassLoader);
         } catch (Exception e) {
@@ -290,46 +278,6 @@ public class RenderActivity extends AppCompatActivity {
         }
     }
 
-    private boolean executeFromCache(String codeHash) {
-        // Execute from cache (existing code for using the cache)
-        ByteBuffer[] dexBuffers = bytecodeCache.loadDexCaches(codeHash);
-        if (dexBuffers == null || dexBuffers.length == 0) {
-            Log.e(TAG, "Failed to load DEX from cache");
-            return false;
-        }
-
-        // Get the entry point class name
-        String entryClassName = bytecodeCache.loadEntryPointClass(codeHash);
-        if (entryClassName == null) {
-            Log.e(TAG, "Failed to load entry point class name");
-            return false;
-        }
-
-        Log.d(TAG, "About to execute DEX with entry point class: " + entryClassName);
-
-        // IMPORTANT: Create runner with UI-safe content layout
-        UiSafeViewGroup safeLayout = new UiSafeViewGroup(contentLayout);
-        CompiledDexRunner runner = new CompiledDexRunner(this, safeLayout);
-
-        // Execute on the main thread to avoid threading issues with UI
-        runOnUiThread(() -> {
-            try {
-                long startTime = System.currentTimeMillis();
-                Object result = runner.execute(dexBuffers, entryClassName, codeHash);
-                long executionTime = System.currentTimeMillis() - startTime;
-                updateTimings("Direct execution", executionTime);
-            } catch (Exception e) {
-                Log.e(TAG, "Error in direct execution", e);
-                showError("Direct execution error: " + e.getMessage());
-                // Clear the cache to force the next execution to recompile
-                Log.d(TAG, "Clearing cache for hash: " + codeHash);
-                bytecodeCache.clearCacheForHash(codeHash);
-            }
-        });
-
-        return true;
-    }
-
     private void renderCode(String code) {
         this.currentCode = code;
         Log.d(TAG, "Starting renderCode with code length: " + code.length());
@@ -337,17 +285,36 @@ public class RenderActivity extends AppCompatActivity {
         // Generate hash for the code
         String codeHash = bytecodeCache.getCodeHash(code);
 
-        boolean hasCompleteCache = bytecodeCache.hasCompleteCache(codeHash);
+        ClassLoader classLoader = clojureClassLoader;
 
-        // Only use cache if the code has a -main function
+        boolean hasCompleteCache = bytecodeCache.hasDexCache(codeHash);
+        Log.d(TAG, "Code hash: " + codeHash + " hasCompleteCache: " + hasCompleteCache);
         if (hasCompleteCache) {
-            Log.d(TAG, "Code hash: " + codeHash + "hasCompleteCache: " + hasCompleteCache);
-            if (executeFromCache(codeHash)) {
-                return;
-            }
+            // if (executeFromCache(codeHash)) {
+            //     return;
+            // }
+            classLoader = bytecodeCache.createClassLoaderFromCache(codeHash, clojureClassLoader);
+            // Set the context class loader
+            Thread.currentThread().setContextClassLoader(classLoader);
         }
 
-        // Either no -main function or no cache available, compile and execute
+        try {
+            // Set up the Android delegate
+            AndroidClassLoaderDelegate delegate = new AndroidClassLoaderDelegate(
+                getApplicationContext(),
+                classLoader
+            );
+
+            // Set the delegate via reflection since we're using our own implementation
+            // See patches/0002-Patch-DynamicClassLoader.patch for where this is used.
+            Field delegateField = DynamicClassLoader.class.getDeclaredField("androidDelegate");
+            delegateField.setAccessible(true);
+            delegateField.set(null, delegate);
+        } catch (Exception e) {
+            Log.e(TAG, "Error setting up class loader", e);
+            throw new RuntimeException(e);
+        }
+
         compileAndExecute(code, codeHash);
     }
 
@@ -389,7 +356,7 @@ public class RenderActivity extends AppCompatActivity {
                 Log.d(TAG, "Done with evaluation");
 
                 // Check for -main function
-                boolean hasMainFunction = AndroidClassLoaderDelegate.allCompiledClassNames.contains("clojure.core$_main");
+                boolean hasMainFunction = RT.var("clojure.core", "-main").deref() instanceof IFn;
                 Log.d(TAG, "Code contains -main function: " + hasMainFunction);
 
                 if (hasMainFunction) {
@@ -418,24 +385,10 @@ public class RenderActivity extends AppCompatActivity {
                 updateTimings("Code compilation", executionTime);
 
                 // Save DEX file for class loading, but only if code has a -main function
-                if (hasMainFunction) {
-                    List<byte[]> dexFiles = AndroidClassLoaderDelegate.getAllCapturedDex();
-                    if (dexFiles != null && !dexFiles.isEmpty()) {
-                        Log.d(TAG, "Saving " + dexFiles.size() + " captured DEX files to cache");
-                        bytecodeCache.saveMultipleDexCaches(codeHash, dexFiles);
-
-                        // Try to find -main function
-                        try {
-                            Object mainFn = RT.var("clojure.core", "-main").deref();
-                            if (mainFn instanceof IFn) {
-                                String className = mainFn.getClass().getName();
-                                bytecodeCache.saveEntryPointClass(codeHash, className);
-                                Log.d(TAG, "Saved DEX and entry point class: " + className);
-                            }
-                        } catch (Exception e) {
-                            Log.w(TAG, "No -main function found");
-                        }
-                    }
+                List<byte[]> dexFiles = AndroidClassLoaderDelegate.getAllCapturedDex();
+                if (dexFiles != null && !dexFiles.isEmpty()) {
+                    Log.d(TAG, "Saving " + dexFiles.size() + " captured DEX files to cache");
+                    bytecodeCache.saveMultipleDexCaches(codeHash, dexFiles);
                 }
 
             } catch (Exception e) {

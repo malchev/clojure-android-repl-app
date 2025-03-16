@@ -26,11 +26,9 @@ public class AndroidClassLoaderDelegate {
     private final Map<String, Class<?>> classCache;
     private final List<ByteBuffer> dexBuffers;
     private ClassLoader currentLoader;
-    public static Set<String> allCompiledClassNames = new HashSet<>();
 
     // Reference to current dex file being built - for caching purposes
     private static byte[] currentDexBytes = null;
-    private static boolean captureDex = false;
 
     // Add fields to track all DEX files
     private static List<byte[]> capturedDexFiles = new ArrayList<>();
@@ -48,11 +46,9 @@ public class AndroidClassLoaderDelegate {
     }
 
     public static void reset() {
-        captureDex = true;
         currentDexBytes = null;
         capturedDexFiles.clear();
         dexClassMap.clear();
-        allCompiledClassNames.clear();
     }
 
     public static List<byte[]> getAllCapturedDex() {
@@ -73,14 +69,6 @@ public class AndroidClassLoaderDelegate {
         Thread.currentThread().setContextClassLoader(currentLoader);
     }
 
-    public void recordClassName(String className) {
-        if (className.startsWith("clojure.core$")) {
-            Log.d(TAG, "Recording class name: " + className);
-            // Add to our static collection of class names
-            allCompiledClassNames.add(className);
-        }
-    }
-
     public Class<?> defineClass(String name, byte[] bytes) {
         ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
 
@@ -97,10 +85,6 @@ public class AndroidClassLoaderDelegate {
                 // Expected - will proceed with defining the class
             }
 
-            // Record this class name
-            recordClassName(name);
-            Log.d(TAG, "Recorded class name: " + name);
-
             // Proceed with normal class definition...
             // Convert JVM bytecode to DEX using D8
             D8Command command = D8Command.builder()
@@ -115,15 +99,14 @@ public class AndroidClassLoaderDelegate {
             Path dexPath = context.getCacheDir().toPath().resolve("classes.dex");
             byte[] dexBytes = Files.readAllBytes(dexPath);
 
-            // If we're capturing DEX for caching, save this
-            if (captureDex) {
-                Log.d(TAG, "Capturing DEX for class: " + name + ", size: " + dexBytes.length + " bytes");
-                int dexIndex = capturedDexFiles.size();
-                capturedDexFiles.add(dexBytes);
-                // Record which DEX file contains this class
-                dexClassMap.put(name, dexIndex);
-                Log.d(TAG, "Added DEX file to collection, total files: " + capturedDexFiles.size());
-            }
+            // Stash the dex bytes, we'll save them all later in the app cache.
+            int dexIndex = capturedDexFiles.size();
+            capturedDexFiles.add(dexBytes);
+            // Record which DEX file contains this class
+            dexClassMap.put(name, dexIndex);
+            Log.d(TAG, "Captured DEX for class: " + name + ", size: " +
+                    dexBytes.length + " bytes (total files: " +
+                    capturedDexFiles.size());
 
             // Create a ByteBuffer containing the DEX bytes
             ByteBuffer buffer = ByteBuffer.allocate(dexBytes.length);
