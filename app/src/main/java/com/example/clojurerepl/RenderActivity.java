@@ -27,6 +27,8 @@ import java.util.List;
 import java.util.HashSet;
 import java.util.Set;
 import clojure.lang.LineNumberingPushbackReader;
+import android.app.ActivityManager;
+import android.content.Context;
 
 public class RenderActivity extends AppCompatActivity {
     private static final String TAG = "ClojureRender";
@@ -191,6 +193,12 @@ public class RenderActivity extends AppCompatActivity {
         setResult(RESULT_OK, resultIntent);
 
         super.onBackPressed();
+
+        // Kill the current process if it's a render process
+        if (isInRenderProcess()) {
+            Log.d(TAG, "Killing render process: " + android.os.Process.myPid());
+            android.os.Process.killProcess(android.os.Process.myPid());
+        }
     }
 
     private void setupClojureClassLoader() {
@@ -525,6 +533,12 @@ public class RenderActivity extends AppCompatActivity {
         isDestroyed = true;
         super.onDestroy();
         Log.d(TAG, "RenderActivity destroyed");
+
+        // Kill the current process if it's a render process
+        if (isInRenderProcess()) {
+            Log.d(TAG, "Killing render process: " + android.os.Process.myPid());
+            android.os.Process.killProcess(android.os.Process.myPid());
+        }
     }
 
     // Define EOF object for detecting end of input
@@ -660,5 +674,18 @@ public class RenderActivity extends AppCompatActivity {
             Log.e(TAG, "Error extracting line/column info", e);
             return null;
         }
+    }
+
+    private boolean isInRenderProcess() {
+        int pid = android.os.Process.myPid();
+        ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+        if (am != null) {
+            for (ActivityManager.RunningAppProcessInfo processInfo : am.getRunningAppProcesses()) {
+                if (processInfo.pid == pid) {
+                    return processInfo.processName.contains(":render");
+                }
+            }
+        }
+        return false;
     }
 }
