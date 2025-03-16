@@ -49,10 +49,10 @@ public class MainActivity extends AppCompatActivity {
     private static final String KEY_SAVED_TIMINGS = "saved_timings";
     private static final String TIMING_RUN_SEPARATOR = "###RUN###";
     private static final String TIMING_LINE_SEPARATOR = "\n";
-    
+
     private List<String> timingRuns = new ArrayList<>();
     private StringBuilder timingData = new StringBuilder();
-    
+
     private TextView replInput;
     private TextView replOutput;
     private TextView statsView;
@@ -61,7 +61,7 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout timingsTableView;
     private int runCount = 0;
     private LinearLayout[] stageRows; // Array to keep track of stage label columns
-    private LinearLayout[] dataRows;  // Array to keep track of data columns
+    private LinearLayout[] dataRows; // Array to keep track of data columns
     private Map<String, ClojureProgram> programs = new HashMap<>();
     private ClojureProgram currentProgram;
     private Spinner programSpinner;
@@ -80,17 +80,17 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        
+
         replInput = findViewById(R.id.repl_input);
         replOutput = findViewById(R.id.repl_output);
-        
+
         // Configure replInput for scrolling
         replInput.setMovementMethod(new android.text.method.ScrollingMovementMethod());
         replInput.setHorizontallyScrolling(true);
         replInput.setHorizontalScrollBarEnabled(true);
         replInput.setVerticalScrollBarEnabled(true);
         replInput.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
-        
+
         // Create and add stats view
         statsView = new TextView(this);
         statsView.setTextSize(14);
@@ -98,22 +98,22 @@ public class MainActivity extends AppCompatActivity {
         statsView.setBackgroundColor(Color.parseColor("#F5F5F5"));
         statsView.setTextColor(Color.parseColor("#263238"));
         statsView.setTypeface(Typeface.MONOSPACE);
-        
+
         setupTimingsUI();
         setupProgramSpinner();
-        
+
         // Now restore saved state after UI is initialized
         restoreSavedState();
-        
+
         // Set up launch button
         Button launchButton = findViewById(R.id.launch_button);
         launchButton.setOnClickListener(v -> launchRenderActivity());
-        
+
         updateStats("Initializing...", null, null);
-        
+
         try {
             long startTime = System.currentTimeMillis();
-            
+
             // Only handle intent if it's not the initial launch
             Intent intent = getIntent();
             if (intent != null && intent.hasExtra("code")) {
@@ -124,19 +124,8 @@ public class MainActivity extends AppCompatActivity {
             replOutput.setText("Error initializing Clojure: " + e.getMessage());
             updateStats("Error", null, null);
         }
-        
+
         bytecodeCache = BytecodeCache.getInstance(this);
-        
-        // Add a clear cache button somewhere in your UI, for example:
-        Button clearCacheButton = new Button(this);
-        clearCacheButton.setText("Clear Bytecode Cache");
-        clearCacheButton.setOnClickListener(v -> {
-            bytecodeCache.clearCache();
-            Toast.makeText(this, "Bytecode cache cleared", Toast.LENGTH_SHORT).show();
-        });
-        
-        // Add to your layout
-        // ...
 
         // Add this to onCreate in MainActivity
         Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
@@ -149,11 +138,11 @@ public class MainActivity extends AppCompatActivity {
         runOnUiThread(() -> {
             StringBuilder stats = new StringBuilder();
             stats.append("Status: ").append(status).append("\n");
-            
+
             if (codeLines != null) {
                 stats.append("Code size: ").append(codeLines).append(" lines\n");
             }
-            
+
             if (timeMs != null) {
                 stats.append("Time: ");
                 if (timeMs < 1000) {
@@ -162,24 +151,25 @@ public class MainActivity extends AppCompatActivity {
                     stats.append(String.format("%.1fs", timeMs / 1000.0));
                 }
             }
-            
+
             SpannableString spannableStats = new SpannableString(stats.toString());
-            
+
             // Style the labels
             String text = stats.toString();
             styleLabel(spannableStats, text, "Status:");
             styleLabel(spannableStats, text, "Code size:");
             styleLabel(spannableStats, text, "Time:");
-            
+
             statsView.setText(spannableStats);
         });
     }
-    
+
     private void styleLabel(SpannableString spannableString, String fullText, String label) {
         int start = fullText.indexOf(label);
         if (start >= 0) {
             spannableString.setSpan(new StyleSpan(Typeface.BOLD), start, start + label.length(), 0);
-            spannableString.setSpan(new ForegroundColorSpan(Color.parseColor("#1976D2")), start, start + label.length(), 0);  // Darker blue
+            spannableString.setSpan(new ForegroundColorSpan(Color.parseColor("#1976D2")), start, start + label.length(),
+                    0); // Darker blue
         }
     }
 
@@ -200,7 +190,7 @@ public class MainActivity extends AppCompatActivity {
 
             final int lineCount = code.split("\n").length;
             final long startTime = System.currentTimeMillis();
-            
+
             updateStats("Compiling...", lineCount, null);
 
             try {
@@ -211,7 +201,7 @@ public class MainActivity extends AppCompatActivity {
                 startActivityForResult(renderIntent, 1001); // Use request code 1001 for render activity
                 Log.d(TAG, "RenderActivity started");
                 replOutput.setText("Launching render activity...");
-                
+
                 // Update stats with final timing
                 long totalTime = System.currentTimeMillis() - startTime;
                 updateStats("Compiled successfully", lineCount, totalTime);
@@ -248,32 +238,32 @@ public class MainActivity extends AppCompatActivity {
             rebuildTimingsTable();
             return;
         }
-        
+
         // Parse timings data
         String[] lines = timingsData.split("\n");
-        
+
         // Add this timing data to the list of runs
         if (!timingRuns.contains(timingsData)) {
             timingRuns.add(timingsData);
         }
-        
+
         // Handle case where we need to create a new column for a new run
         runCount = Math.max(runCount, timingRuns.size());
-        
+
         // Make sure we have enough rows before trying to update
         int rowsToParse = Math.min(lines.length, stageRows.length - 1);
-        
+
         for (int i = 0; i < rowsToParse; i++) {
             String line = lines[i];
             if (line.contains(":")) {
                 String[] parts = line.split(":");
                 String stage = parts[0].trim();
                 String time = parts[1].trim();
-                
+
                 // Update the stage label in the first column if it's not already set
                 TextView stageLabel = null;
-                if (stageRows[i+1].getChildCount() > 0) {
-                    View view = stageRows[i+1].getChildAt(0);
+                if (stageRows[i + 1].getChildCount() > 0) {
+                    View view = stageRows[i + 1].getChildAt(0);
                     if (view instanceof TextView) {
                         stageLabel = (TextView) view;
                         if (stageLabel.getText().toString().isEmpty()) {
@@ -281,22 +271,22 @@ public class MainActivity extends AppCompatActivity {
                         }
                     }
                 }
-                
+
                 // Add timing to this run's column
                 int runIndex = runCount - 1;
-                if (dataRows[i+1].getChildCount() <= runIndex) {
+                if (dataRows[i + 1].getChildCount() <= runIndex) {
                     // Create a new cell for this timing
                     TextView timeCell = new TextView(this);
                     timeCell.setTypeface(Typeface.MONOSPACE);
                     timeCell.setTextColor(Color.parseColor("#263238"));
                     timeCell.setLayoutParams(new LinearLayout.LayoutParams(
-                        150, LinearLayout.LayoutParams.WRAP_CONTENT));
+                            150, LinearLayout.LayoutParams.WRAP_CONTENT));
                     timeCell.setPadding(4, 4, 4, 4);
                     timeCell.setText(time);
-                    dataRows[i+1].addView(timeCell);
+                    dataRows[i + 1].addView(timeCell);
                 } else {
                     // Update existing cell
-                    View view = dataRows[i+1].getChildAt(runIndex);
+                    View view = dataRows[i + 1].getChildAt(runIndex);
                     if (view instanceof TextView) {
                         ((TextView) view).setText(time);
                     }
@@ -314,10 +304,10 @@ public class MainActivity extends AppCompatActivity {
     private void clearTimingsTable() {
         runCount = 0;
         timingRuns.clear();
-        timingData.setLength(0);  // Also clear the timing data string
+        timingData.setLength(0); // Also clear the timing data string
         if (timingsTableView != null) {
             timingsTableView.removeAllViews();
-            
+
             // Safely clear the labels column if it exists
             ViewParent parent = timingsTableView.getParent();
             if (parent != null && parent.getParent() instanceof ViewGroup) {
@@ -341,7 +331,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         String encoding = intent.getStringExtra("encoding");
-        final String code;  // Make code final
+        final String code; // Make code final
 
         if ("base64".equals(encoding)) {
             String base64Code = intent.getStringExtra("code");
@@ -368,7 +358,7 @@ public class MainActivity extends AppCompatActivity {
 
         // Create new program instance
         ClojureProgram newProgram = new ClojureProgram(code);
-        
+
         // Check if program already exists
         for (ClojureProgram existing : programs.values()) {
             if (existing.equals(newProgram)) {
@@ -376,70 +366,69 @@ public class MainActivity extends AppCompatActivity {
                 existing.getTimingRuns().clear();
                 currentProgram = existing;
                 clearTimingsTable();
-                final String finalCode = code;  // Create final copy for lambda
+                final String finalCode = code; // Create final copy for lambda
                 runOnUiThread(() -> {
                     replInput.setText(finalCode);
                     programSpinner.setSelection(
-                        spinnerAdapter.getPosition(existing.getName())
-                    );
+                            spinnerAdapter.getPosition(existing.getName()));
                 });
                 saveState();
                 return;
             }
         }
-        
+
         // Add new program
         programs.put(newProgram.getName(), newProgram);
         currentProgram = newProgram;
-        
-        final String finalCode = code;  // Create final copy for lambda
+
+        final String finalCode = code; // Create final copy for lambda
         runOnUiThread(() -> {
             replInput.setText(finalCode);
             updateSpinnerItems();
             programSpinner.setSelection(
-                spinnerAdapter.getPosition(newProgram.getName())
-            );
+                    spinnerAdapter.getPosition(newProgram.getName()));
         });
-        
+
         saveState();
     }
 
     private void saveState() {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();
-        
+
         Gson gson = new Gson();
         String programsJson = gson.toJson(programs);
         editor.putString(KEY_PROGRAMS, programsJson);
-        
+
         if (currentProgram != null) {
             editor.putString(KEY_CURRENT_PROGRAM, currentProgram.getName());
         }
-        
+
         editor.apply();
     }
 
     private void restoreSavedState() {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        
+
         Gson gson = new Gson();
         String programsJson = prefs.getString(KEY_PROGRAMS, null);
         if (programsJson != null) {
-            Type type = new TypeToken<HashMap<String, ClojureProgram>>(){}.getType();
+            Type type = new TypeToken<HashMap<String, ClojureProgram>>() {
+            }.getType();
             programs = gson.fromJson(programsJson, type);
-            
+
             String currentProgramName = prefs.getString(KEY_CURRENT_PROGRAM, null);
             if (currentProgramName != null && programs.containsKey(currentProgramName)) {
                 currentProgram = programs.get(currentProgramName);
                 replInput.setText(currentProgram.getCode());
-                
+
                 // Rebuild timing table
                 clearTimingsTable();
                 for (String timing : currentProgram.getTimingRuns()) {
                     updateTimingsTable(timing);
                 }
             }
-            
+
             updateSpinnerItems();
             if (currentProgramName != null) {
                 programSpinner.setSelection(spinnerAdapter.getPosition(currentProgramName));
@@ -460,15 +449,16 @@ public class MainActivity extends AppCompatActivity {
         }
         ViewGroup container = (ViewGroup) parent.getParent();
         LinearLayout labelsColumn = (LinearLayout) container.getChildAt(0);
-        
+
         // Clear existing views
         timingsTableView.removeAllViews();
         labelsColumn.removeAllViews();
 
-        // Parse the timings into rows and find the maximum number of stages across all runs
+        // Parse the timings into rows and find the maximum number of stages across all
+        // runs
         int maxStages = 0;
         List<String> allStageNames = new ArrayList<>();
-        
+
         // First pass: collect all unique stage names and find max stages
         for (String run : timingRuns) {
             String[] runRows = run.split(TIMING_LINE_SEPARATOR);
@@ -483,16 +473,16 @@ public class MainActivity extends AppCompatActivity {
             }
             maxStages = Math.max(maxStages, runRows.length);
         }
-        
+
         // Always ensure we have at least these stages
-        String[] requiredStages = {"RT init", "ClassLoader", "Vars setup", "Env init", "Parse", "Execute", "Total"};
+        String[] requiredStages = { "RT init", "ClassLoader", "Vars setup", "Env init", "Parse", "Execute", "Total" };
         for (String stage : requiredStages) {
             if (!allStageNames.contains(stage)) {
                 allStageNames.add(stage);
                 maxStages = Math.max(maxStages, allStageNames.size());
             }
         }
-        
+
         if (maxStages == 0) {
             Log.w(TAG, "No timing rows to display");
             return;
@@ -508,17 +498,17 @@ public class MainActivity extends AppCompatActivity {
         dataRows[0] = new LinearLayout(this);
         stageRows[0].setOrientation(LinearLayout.HORIZONTAL);
         dataRows[0].setOrientation(LinearLayout.HORIZONTAL);
-        
+
         // Add "Stage" column header to fixed column
         TextView stageHeader = new TextView(this);
         stageHeader.setText("Stage");
         stageHeader.setTypeface(Typeface.DEFAULT_BOLD);
         stageHeader.setTextColor(Color.parseColor("#1976D2"));
         stageHeader.setLayoutParams(new LinearLayout.LayoutParams(
-            250, LinearLayout.LayoutParams.WRAP_CONTENT));
+                250, LinearLayout.LayoutParams.WRAP_CONTENT));
         stageHeader.setPadding(4, 4, 4, 4);
         stageRows[0].addView(stageHeader);
-        
+
         // Add run number headers
         for (int run = 0; run < timingRuns.size(); run++) {
             TextView runHeader = new TextView(this);
@@ -526,36 +516,36 @@ public class MainActivity extends AppCompatActivity {
             runHeader.setTypeface(Typeface.DEFAULT_BOLD);
             runHeader.setTextColor(Color.parseColor("#1976D2"));
             runHeader.setLayoutParams(new LinearLayout.LayoutParams(
-                150, LinearLayout.LayoutParams.WRAP_CONTENT));
+                    150, LinearLayout.LayoutParams.WRAP_CONTENT));
             runHeader.setPadding(4, 4, 4, 4);
             dataRows[0].addView(runHeader);
         }
-        
+
         // Add header rows to the layouts
         labelsColumn.addView(stageRows[0]);
         timingsTableView.addView(dataRows[0]);
-        
+
         // Create data rows
         for (int i = 0; i < allStageNames.size(); i++) {
             String stageName = allStageNames.get(i);
-            
+
             // Create stage label row
             stageRows[i + 1] = new LinearLayout(this);
             stageRows[i + 1].setOrientation(LinearLayout.HORIZONTAL);
-            
+
             TextView stageLabel = new TextView(this);
             stageLabel.setText(stageName);
             stageLabel.setTypeface(Typeface.MONOSPACE);
             stageLabel.setTextColor(Color.parseColor("#263238"));
             stageLabel.setLayoutParams(new LinearLayout.LayoutParams(
-                250, LinearLayout.LayoutParams.WRAP_CONTENT));
+                    250, LinearLayout.LayoutParams.WRAP_CONTENT));
             stageLabel.setPadding(4, 4, 4, 4);
             stageRows[i + 1].addView(stageLabel);
-            
+
             // Create data row
             dataRows[i + 1] = new LinearLayout(this);
             dataRows[i + 1].setOrientation(LinearLayout.HORIZONTAL);
-            
+
             // Add timing cells for each run
             for (String runData : timingRuns) {
                 String[] runRows = runData.split(TIMING_LINE_SEPARATOR);
@@ -563,9 +553,9 @@ public class MainActivity extends AppCompatActivity {
                 timeCell.setTypeface(Typeface.MONOSPACE);
                 timeCell.setTextColor(Color.parseColor("#263238"));
                 timeCell.setLayoutParams(new LinearLayout.LayoutParams(
-                    150, LinearLayout.LayoutParams.WRAP_CONTENT));
+                        150, LinearLayout.LayoutParams.WRAP_CONTENT));
                 timeCell.setPadding(4, 4, 4, 4);
-                
+
                 // Find timing for this stage in the current run
                 String timing = "N/A";
                 for (String row : runRows) {
@@ -576,10 +566,10 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
                 timeCell.setText(timing);
-                
+
                 dataRows[i + 1].addView(timeCell);
             }
-            
+
             // Add rows to their containers
             labelsColumn.addView(stageRows[i + 1]);
             timingsTableView.addView(dataRows[i + 1]);
@@ -612,20 +602,20 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout labelsColumn = new LinearLayout(this);
         labelsColumn.setOrientation(LinearLayout.VERTICAL);
         labelsColumn.setLayoutParams(new LinearLayout.LayoutParams(
-            250, LinearLayout.LayoutParams.WRAP_CONTENT));
+                250, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         // Create a horizontal scroll view for the data
         HorizontalScrollView scrollView = new HorizontalScrollView(this);
         scrollView.setLayoutParams(new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 
-            LinearLayout.LayoutParams.WRAP_CONTENT));
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
 
         // Add views to container
         horizontalContainer.addView(labelsColumn);
         horizontalContainer.addView(scrollView);
         scrollView.addView(timingsTableView);
         timingsLayout.addView(horizontalContainer);
-        
+
         // Add timings layout to root
         LinearLayout root = findViewById(R.id.root_layout);
         root.addView(statsView, 0);
@@ -634,21 +624,20 @@ public class MainActivity extends AppCompatActivity {
 
     private void setupProgramSpinner() {
         programSpinner = new Spinner(this);
-        
+
         // Style the spinner itself
         programSpinner.setBackgroundColor(Color.parseColor("#F5F5F5"));
         programSpinner.setPadding(16, 8, 16, 8);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        );
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
         params.setMargins(16, 16, 16, 16);
         programSpinner.setLayoutParams(params);
-        
+
         // Create adapter with custom layout for both spinner and dropdown
-        spinnerAdapter = new ArrayAdapter<String>(this, 
-            android.R.layout.simple_spinner_item, 
-            new ArrayList<>()) {
+        spinnerAdapter = new ArrayAdapter<String>(this,
+                android.R.layout.simple_spinner_item,
+                new ArrayList<>()) {
             @Override
             public View getView(int position, View convertView, ViewGroup parent) {
                 TextView view = (TextView) super.getView(position, convertView, parent);
@@ -657,7 +646,7 @@ public class MainActivity extends AppCompatActivity {
                 view.setPadding(8, 8, 8, 8);
                 return view;
             }
-            
+
             @Override
             public View getDropDownView(int position, View convertView, ViewGroup parent) {
                 TextView view = (TextView) super.getDropDownView(position, convertView, parent);
@@ -667,11 +656,11 @@ public class MainActivity extends AppCompatActivity {
                 return view;
             }
         };
-        
+
         // Set the dropdown layout style
         spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         programSpinner.setAdapter(spinnerAdapter);
-        
+
         programSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
@@ -680,7 +669,8 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @Override
-            public void onNothingSelected(AdapterView<?> parent) {}
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
         });
 
         // Add a title/header above the spinner
@@ -689,62 +679,68 @@ public class MainActivity extends AppCompatActivity {
         header.setTextColor(Color.parseColor("#1976D2")); // Blue color
         header.setTypeface(Typeface.DEFAULT_BOLD);
         header.setPadding(16, 16, 16, 8);
-        
+
         // Create buttons
         LinearLayout buttonRow = new LinearLayout(this);
         buttonRow.setOrientation(LinearLayout.HORIZONTAL);
         buttonRow.setLayoutParams(new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ));
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
         buttonRow.setPadding(16, 8, 16, 8);
-        
+
         Button clearTimingsButton = new Button(this);
         clearTimingsButton.setText("Clear Timings");
         clearTimingsButton.setOnClickListener(v -> clearCurrentProgramTimings());
-        
+
         Button deleteProgramButton = new Button(this);
-        deleteProgramButton.setText("Delete Program");
+        deleteProgramButton.setText("Delete");
         deleteProgramButton.setOnClickListener(v -> deleteCurrentProgram());
-        
-        // Add equal weight to buttons
+
+        Button clearCacheButton = new Button(this);
+        clearCacheButton.setText("Clear Cache");
+        clearCacheButton.setOnClickListener(v -> {
+            bytecodeCache.clearCache();
+            Toast.makeText(this, "Bytecode cache cleared", Toast.LENGTH_SHORT).show();
+        });
+
+        // Update button weights to accommodate three buttons
         LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1
-        );
-        buttonParams.setMargins(0, 0, 8, 0);  // Add margin between buttons
-        
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        buttonParams.setMargins(0, 0, 8, 0); // Add margin between buttons
+
         clearTimingsButton.setLayoutParams(buttonParams);
-        deleteProgramButton.setLayoutParams(new LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1
-        ));
-        
+        deleteProgramButton.setLayoutParams(buttonParams);
+        clearCacheButton.setLayoutParams(buttonParams);
+
         buttonRow.addView(clearTimingsButton);
+        buttonRow.addView(clearCacheButton);
         buttonRow.addView(deleteProgramButton);
-        
+
         // Create a container for all elements
         LinearLayout spinnerContainer = new LinearLayout(this);
         spinnerContainer.setOrientation(LinearLayout.VERTICAL);
         spinnerContainer.addView(header);
         spinnerContainer.addView(programSpinner);
         spinnerContainer.addView(buttonRow);
-        
+
         // Add spinner container at the top of the layout
         LinearLayout root = findViewById(R.id.root_layout);
         root.addView(spinnerContainer, 0);
     }
 
     private void switchToProgram(String programName) {
-        if (programName == null || !programs.containsKey(programName)) return;
-        
+        if (programName == null || !programs.containsKey(programName))
+            return;
+
         currentProgram = programs.get(programName);
         replInput.setText(currentProgram.getCode());
-        
+
         // Clear and rebuild timing table
         clearTimingsTable();
         for (String timing : currentProgram.getTimingRuns()) {
             updateTimingsTable(timing);
         }
-        
+
         saveState();
     }
 
@@ -759,16 +755,16 @@ public class MainActivity extends AppCompatActivity {
             Log.w(TAG, "No program selected to clear timings");
             return;
         }
-        
+
         // Clear timings from the current program
         currentProgram.getTimingRuns().clear();
-        
+
         // Clear the UI
         clearTimingsTable();
-        
+
         // Save the state
         saveState();
-        
+
         Log.d(TAG, "Cleared timings for program: " + currentProgram.getName());
     }
 
@@ -777,22 +773,22 @@ public class MainActivity extends AppCompatActivity {
             Log.w(TAG, "No program selected to delete");
             return;
         }
-        
+
         String programName = currentProgram.getName();
-        
+
         // Remove from programs map
         programs.remove(programName);
-        
+
         // Update spinner
         updateSpinnerItems();
-        
+
         // If we have other programs, switch to the first one
         if (!programs.isEmpty()) {
             String firstProgram = spinnerAdapter.getItem(0);
             currentProgram = programs.get(firstProgram);
             replInput.setText(currentProgram.getCode());
             programSpinner.setSelection(0);
-            
+
             // Update timings table
             clearTimingsTable();
             for (String timing : currentProgram.getTimingRuns()) {
@@ -804,10 +800,10 @@ public class MainActivity extends AppCompatActivity {
             replInput.setText("");
             clearTimingsTable();
         }
-        
+
         // Save the state
         saveState();
-        
+
         Log.d(TAG, "Deleted program: " + programName);
     }
 
