@@ -4,4 +4,7 @@ cmdline=""
 for tag in ${tags}; do
 	cmdline="${cmdline} -s ${tag}";
 done
+for arg in "$@"; do
+    cmdline="${cmdline} -s ${arg}"
+done
 echo adb logcat -s DEBUG -s AndroidRuntime ${cmdline}
