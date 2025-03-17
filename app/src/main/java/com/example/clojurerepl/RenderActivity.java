@@ -31,20 +31,27 @@ import android.app.ActivityManager;
 import android.content.Context;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.io.File;
 
 public class RenderActivity extends AppCompatActivity {
     private static final String TAG = "ClojureRender";
-    private static final boolean DEBUG_CACHE = true;
+    private static final String CLOJURE_APP_CACHE_DIR = "clojure_app_cache";
+    // Define EOF object for detecting end of input
+    private static final Object EOF = new Object();
+
     private LinearLayout contentLayout;
     private Var contextVar;
     private Var contentLayoutVar;
+    private Var cacheDirVar;
     private Var nsVar;
     private DynamicClassLoader clojureClassLoader;
     private long activityStartTime;
     private TextView timingView;
     private StringBuilder timingData = new StringBuilder();
     private volatile boolean isDestroyed = false;
-    private IFn readerEval;
+    private File appCacheDir;
+    private String code;
+    private String codeHash;
 
     private class UiSafeViewGroup extends LinearLayout {
         private final LinearLayout layoutDelegate;
@@ -100,6 +107,21 @@ public class RenderActivity extends AppCompatActivity {
         }
     }
 
+    public File getAppCacheDir() {
+        if (appCacheDir == null) {
+            File baseDir = new File(getCacheDir(), CLOJURE_APP_CACHE_DIR);
+            appCacheDir = new File(baseDir, codeHash);
+            if (!appCacheDir.exists()) {
+                if (!appCacheDir.mkdirs()) {
+                    Log.e(TAG, "Failed to create app cache directory");
+                    throw new RuntimeException("Failed to create app cache directory");
+                }
+            }
+            Log.d(TAG, "App cache directory created: " + appCacheDir.getAbsolutePath());
+        }
+        return appCacheDir;
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         try {
@@ -126,37 +148,6 @@ public class RenderActivity extends AppCompatActivity {
             Log.d(TAG, "Content layout found: " + (contentLayout != null));
 
             try {
-                long rtStartTime = System.currentTimeMillis();
-                // Initialize RT before any Clojure operations
-                Log.d(TAG, "Initializing RT");
-                System.setProperty("clojure.spec.skip-macros", "true");
-                System.setProperty("clojure.spec.compile-asserts", "false");
-                RT.init();
-                long rtTime = System.currentTimeMillis() - rtStartTime;
-                Log.d(TAG, "RT initialized successfully in " + rtTime + "ms");
-                updateTimings("RT init", rtTime);
-
-                long classLoaderStartTime = System.currentTimeMillis();
-                Log.d(TAG, "Setting up Clojure class loader");
-                setupClojureClassLoader();
-                long classLoaderTime = System.currentTimeMillis() - classLoaderStartTime;
-                Log.d(TAG, "Class loader setup completed in " + classLoaderTime + "ms");
-                updateTimings("ClassLoader", classLoaderTime);
-
-                long varsStartTime = System.currentTimeMillis();
-                Log.d(TAG, "Setting up Clojure vars");
-                setupClojureVars();
-                long varsTime = System.currentTimeMillis() - varsStartTime;
-                Log.d(TAG, "Vars setup completed in " + varsTime + "ms");
-                updateTimings("Vars setup", varsTime);
-
-                long envStartTime = System.currentTimeMillis();
-                Log.d(TAG, "Initializing Clojure environment");
-                initializeClojureEnvironment();
-                long envTime = System.currentTimeMillis() - envStartTime;
-                Log.d(TAG, "Clojure environment setup complete in " + envTime + "ms");
-                updateTimings("Env init", envTime);
-
                 // Get the code from the intent
                 Intent intent = getIntent();
                 if (intent == null) {
@@ -165,12 +156,47 @@ public class RenderActivity extends AppCompatActivity {
                     return;
                 }
 
-                String code = intent.getStringExtra("code");
+                // Store code in class member instead of local variable
+                code = intent.getStringExtra("code");
                 Log.d(TAG, "Received intent with code: " + (code != null ? "length=" + code.length() : "null"));
 
                 if (code != null && !code.trim().isEmpty()) {
+                    // Calculate and store codeHash as class member
+                    codeHash = getCodeHash(code);
+
+                    long rtStartTime = System.currentTimeMillis();
+                    // Initialize RT before any Clojure operations
+                    Log.d(TAG, "Initializing RT");
+                    System.setProperty("clojure.spec.skip-macros", "true");
+                    System.setProperty("clojure.spec.compile-asserts", "false");
+                    RT.init();
+                    long rtTime = System.currentTimeMillis() - rtStartTime;
+                    Log.d(TAG, "RT initialized successfully in " + rtTime + "ms");
+                    updateTimings("RT init", rtTime);
+
+                    long classLoaderStartTime = System.currentTimeMillis();
+                    Log.d(TAG, "Setting up Clojure class loader");
+                    setupClojureClassLoader();
+                    long classLoaderTime = System.currentTimeMillis() - classLoaderStartTime;
+                    Log.d(TAG, "Class loader setup completed in " + classLoaderTime + "ms");
+                    updateTimings("ClassLoader", classLoaderTime);
+
+                    long varsStartTime = System.currentTimeMillis();
+                    Log.d(TAG, "Setting up Clojure vars");
+                    setupClojureVars();
+                    long varsTime = System.currentTimeMillis() - varsStartTime;
+                    Log.d(TAG, "Vars setup completed in " + varsTime + "ms");
+                    updateTimings("Vars setup", varsTime);
+
+                    long envStartTime = System.currentTimeMillis();
+                    Log.d(TAG, "Initializing Clojure environment");
+                    initializeClojureEnvironment();
+                    long envTime = System.currentTimeMillis() - envStartTime;
+                    Log.d(TAG, "Clojure environment setup complete in " + envTime + "ms");
+                    updateTimings("Env init", envTime);
+
                     Log.d(TAG, "About to render code");
-                    renderCode(code);
+                    renderCode();
                 } else {
                     Log.w(TAG, "No code provided in intent");
                     showError("No code provided in intent");
@@ -236,18 +262,16 @@ public class RenderActivity extends AppCompatActivity {
             nsVar = RT.var("clojure.core", "*ns*");
             contextVar = RT.var("clojure.core", "*context*");
             contentLayoutVar = RT.var("clojure.core", "*content-layout*");
-
-            // Initialize the readerEval function
-            // This will use clojure.core/load-string which reads and evaluates code from a
-            // string
-            readerEval = Clojure.var("clojure.core", "load-string");
+            cacheDirVar = RT.var("clojure.core", "*cache-dir*");
 
             contextVar.setDynamic(true);
             contentLayoutVar.setDynamic(true);
+            cacheDirVar.setDynamic(true);
 
             // Bind these vars permanently, using the UI-safe wrapper for contentLayout
             contextVar.bindRoot(this);
             contentLayoutVar.bindRoot(new UiSafeViewGroup(contentLayout));
+            cacheDirVar.bindRoot(getAppCacheDir().getAbsolutePath());
 
             Log.d(TAG, "Clojure vars initialized");
         } catch (Exception e) {
@@ -280,6 +304,10 @@ public class RenderActivity extends AppCompatActivity {
                         userNS,
                         Symbol.intern("*content-layout*"),
                         new UiSafeViewGroup(contentLayout));
+                RT.var("clojure.core", "intern").invoke(
+                        userNS,
+                        Symbol.intern("*cache-dir*"),
+                        getAppCacheDir().getAbsolutePath());
 
                 Log.d(TAG, "Vars defined in user namespace");
             } finally {
@@ -293,10 +321,9 @@ public class RenderActivity extends AppCompatActivity {
         }
     }
 
-    private void renderCode(String code) {
+    private void renderCode() {
         Log.d(TAG, "Starting renderCode with code length: " + code.length());
 
-        String codeHash = getCodeHash(code);
         BytecodeCache bytecodeCache = BytecodeCache.getInstance(this, codeHash);
 
         ClassLoader classLoader = clojureClassLoader;
@@ -324,7 +351,7 @@ public class RenderActivity extends AppCompatActivity {
             delegateField.setAccessible(true);
             delegateField.set(null, delegate);
 
-            compileAndExecute(delegate, bytecodeCache, code, codeHash, hasCompleteCache);
+            compileAndExecute(delegate, bytecodeCache, hasCompleteCache);
         } catch (Exception e) {
             Log.e(TAG, "Error setting up class loader", e);
             throw new RuntimeException(e);
@@ -335,8 +362,8 @@ public class RenderActivity extends AppCompatActivity {
      * Compile and execute Clojure code, and save the compiled program for future
      * use
      */
-    private void compileAndExecute(AndroidClassLoaderDelegate delegate, BytecodeCache bytecodeCache, String code,
-            String codeHash, boolean hasCompleteCache) {
+    private void compileAndExecute(AndroidClassLoaderDelegate delegate, BytecodeCache bytecodeCache,
+            boolean hasCompleteCache) {
         try {
             Log.d(TAG, "Starting compilation in process: " + android.os.Process.myPid());
 
@@ -508,9 +535,6 @@ public class RenderActivity extends AppCompatActivity {
             android.os.Process.killProcess(android.os.Process.myPid());
         }
     }
-
-    // Define EOF object for detecting end of input
-    private static final Object EOF = new Object();
 
     /**
      * Format an exception with line and column information
