@@ -29,6 +29,8 @@ import java.util.Set;
 import clojure.lang.LineNumberingPushbackReader;
 import android.app.ActivityManager;
 import android.content.Context;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 public class RenderActivity extends AppCompatActivity {
     private static final String TAG = "ClojureRender";
@@ -42,8 +44,6 @@ public class RenderActivity extends AppCompatActivity {
     private TextView timingView;
     private StringBuilder timingData = new StringBuilder();
     private volatile boolean isDestroyed = false;
-    private BytecodeCache bytecodeCache;
-    private String currentCode; // Store current code as a field
     private IFn readerEval;
 
     private class UiSafeViewGroup extends LinearLayout {
@@ -79,6 +79,24 @@ public class RenderActivity extends AppCompatActivity {
             } else {
                 runOnUiThread(() -> layoutDelegate.removeAllViews());
             }
+        }
+    }
+
+    public static String getCodeHash(String code) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(code.getBytes());
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : hash) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1)
+                    hexString.append('0');
+                hexString.append(hex);
+            }
+            return hexString.toString();
+        } catch (NoSuchAlgorithmException e) {
+            Log.e(TAG, "Error generating hash", e);
+            return String.valueOf(code.hashCode());
         }
     }
 
@@ -138,8 +156,6 @@ public class RenderActivity extends AppCompatActivity {
                 long envTime = System.currentTimeMillis() - envStartTime;
                 Log.d(TAG, "Clojure environment setup complete in " + envTime + "ms");
                 updateTimings("Env init", envTime);
-
-                bytecodeCache = BytecodeCache.getInstance(this);
 
                 // Get the code from the intent
                 Intent intent = getIntent();
@@ -222,7 +238,8 @@ public class RenderActivity extends AppCompatActivity {
             contentLayoutVar = RT.var("clojure.core", "*content-layout*");
 
             // Initialize the readerEval function
-            // This will use clojure.core/load-string which reads and evaluates code from a string
+            // This will use clojure.core/load-string which reads and evaluates code from a
+            // string
             readerEval = Clojure.var("clojure.core", "load-string");
 
             contextVar.setDynamic(true);
@@ -256,15 +273,13 @@ public class RenderActivity extends AppCompatActivity {
 
                 // Define the vars in the user namespace
                 RT.var("clojure.core", "intern").invoke(
-                    userNS,
-                    Symbol.intern("*context*"),
-                    this
-                );
+                        userNS,
+                        Symbol.intern("*context*"),
+                        this);
                 RT.var("clojure.core", "intern").invoke(
-                    userNS,
-                    Symbol.intern("*content-layout*"),
-                    new UiSafeViewGroup(contentLayout)
-                );
+                        userNS,
+                        Symbol.intern("*content-layout*"),
+                        new UiSafeViewGroup(contentLayout));
 
                 Log.d(TAG, "Vars defined in user namespace");
             } finally {
@@ -279,20 +294,16 @@ public class RenderActivity extends AppCompatActivity {
     }
 
     private void renderCode(String code) {
-        this.currentCode = code;
         Log.d(TAG, "Starting renderCode with code length: " + code.length());
 
-        // Generate hash for the code
-        String codeHash = bytecodeCache.getCodeHash(code);
+        String codeHash = getCodeHash(code);
+        BytecodeCache bytecodeCache = BytecodeCache.getInstance(this, codeHash);
 
         ClassLoader classLoader = clojureClassLoader;
 
         boolean hasCompleteCache = bytecodeCache.hasDexCache(codeHash);
         Log.d(TAG, "Code hash: " + codeHash + " hasCompleteCache: " + hasCompleteCache);
         if (hasCompleteCache) {
-            // if (executeFromCache(codeHash)) {
-            //     return;
-            // }
             classLoader = bytecodeCache.createClassLoaderFromCache(codeHash, clojureClassLoader);
             // Set the context class loader
             Thread.currentThread().setContextClassLoader(classLoader);
@@ -301,39 +312,39 @@ public class RenderActivity extends AppCompatActivity {
         try {
             // Set up the Android delegate
             AndroidClassLoaderDelegate delegate = new AndroidClassLoaderDelegate(
-                getApplicationContext(),
-                classLoader
-            );
+                    getApplicationContext(),
+                    classLoader,
+                    bytecodeCache,
+                    hasCompleteCache,
+                    codeHash);
 
             // Set the delegate via reflection since we're using our own implementation
             // See patches/0002-Patch-DynamicClassLoader.patch for where this is used.
             Field delegateField = DynamicClassLoader.class.getDeclaredField("androidDelegate");
             delegateField.setAccessible(true);
             delegateField.set(null, delegate);
+
+            compileAndExecute(delegate, bytecodeCache, code, codeHash, hasCompleteCache);
         } catch (Exception e) {
             Log.e(TAG, "Error setting up class loader", e);
             throw new RuntimeException(e);
         }
-
-        compileAndExecute(code, codeHash);
     }
 
     /**
-     * Compile and execute Clojure code, and save the compiled program for future use
+     * Compile and execute Clojure code, and save the compiled program for future
+     * use
      */
-    private void compileAndExecute(String code, String codeHash) {
-        // Reset the static fields in the class loader delegate
-        AndroidClassLoaderDelegate.reset();
-
+    private void compileAndExecute(AndroidClassLoaderDelegate delegate, BytecodeCache bytecodeCache, String code,
+            String codeHash, boolean hasCompleteCache) {
         try {
             Log.d(TAG, "Starting compilation in process: " + android.os.Process.myPid());
 
             // Setup thread bindings for Clojure
             Var.pushThreadBindings(RT.map(
-                Var.intern(RT.CLOJURE_NS, Symbol.intern("*context*")), RenderActivity.this,
-                Var.intern(RT.CLOJURE_NS, Symbol.intern("*content-layout*")),
-                new UiSafeViewGroup((LinearLayout)findViewById(R.id.content_layout))
-            ));
+                    Var.intern(RT.CLOJURE_NS, Symbol.intern("*context*")), RenderActivity.this,
+                    Var.intern(RT.CLOJURE_NS, Symbol.intern("*content-layout*")),
+                    new UiSafeViewGroup((LinearLayout) findViewById(R.id.content_layout))));
 
             Log.d(TAG, "Thread bindings established");
 
@@ -365,7 +376,7 @@ public class RenderActivity extends AppCompatActivity {
                         Object mainFn = RT.var("clojure.core", "-main").deref();
                         if (mainFn instanceof IFn) {
                             Log.d(TAG, "Found -main function, invoking it");
-                            lastResult = ((IFn)mainFn).invoke();
+                            lastResult = ((IFn) mainFn).invoke();
                             Log.d(TAG, "Successfully called -main function, result: " + lastResult);
                         } else {
                             Log.d(TAG, "-main var exists but is not a function");
@@ -384,13 +395,14 @@ public class RenderActivity extends AppCompatActivity {
 
                 updateTimings("Code compilation", executionTime);
 
-                // Save DEX file for class loading, but only if code has a -main function
-                List<byte[]> dexFiles = AndroidClassLoaderDelegate.getAllCapturedDex();
-                if (dexFiles != null && !dexFiles.isEmpty()) {
-                    Log.d(TAG, "Saving " + dexFiles.size() + " captured DEX files to cache");
-                    bytecodeCache.saveMultipleDexCaches(codeHash, dexFiles);
+                // Save DEX file for class loading, but only if we are generating the cache now.
+                // The cache should exist on subsequent invocations of this activity.
+                if (!hasCompleteCache) {
+                    List<String> generatedClasses = delegate.getGeneratedClasses();
+                    bytecodeCache.generateManifest(codeHash, generatedClasses);
+                    Log.d(TAG,
+                            "Generated manifest for " + generatedClasses.size() + " classes for hash: " + codeHash);
                 }
-
             } catch (Exception e) {
                 Log.e(TAG, "Error in Clojure compilation", e);
                 lastResult = "Error: " + e.getMessage();
@@ -405,7 +417,6 @@ public class RenderActivity extends AppCompatActivity {
         } finally {
             Log.d(TAG, "Cleaning up bindings");
             Var.popThreadBindings();
-            AndroidClassLoaderDelegate.reset();
         }
     }
 
@@ -499,9 +510,11 @@ public class RenderActivity extends AppCompatActivity {
 
     /**
      * Format an exception with line and column information
-     * @param exception The exception to format
+     *
+     * @param exception  The exception to format
      * @param sourceCode The source code being evaluated
-     * @param reader The reader used for compilation (may contain line/column info)
+     * @param reader     The reader used for compilation (may contain line/column
+     *                   info)
      * @return A formatted error message
      */
     private String formatErrorWithLineInfo(Throwable exception, String sourceCode, LineNumberingPushbackReader reader) {
@@ -551,7 +564,8 @@ public class RenderActivity extends AppCompatActivity {
 
             return enhancedMessage.toString();
         } catch (Exception e) {
-            // If anything goes wrong in our error formatting, fall back to the original message
+            // If anything goes wrong in our error formatting, fall back to the original
+            // message
             Log.e(TAG, "Error formatting exception", e);
             return exception.getMessage();
         }
@@ -570,6 +584,7 @@ public class RenderActivity extends AppCompatActivity {
 
     /**
      * Extract line and column information from a Clojure compiler exception
+     *
      * @param ex The exception to extract information from
      * @return int array with [line, column] or null if not found
      */
@@ -590,7 +605,7 @@ public class RenderActivity extends AppCompatActivity {
                     int column = (Integer) columnField.get(ex);
 
                     Log.d(TAG, "Extracted from CompilerException - line: " + line + ", column: " + column);
-                    return new int[] {line, column};
+                    return new int[] { line, column };
                 } catch (Exception e) {
                     Log.w(TAG, "Failed to extract line/column via reflection", e);
                 }
@@ -607,7 +622,7 @@ public class RenderActivity extends AppCompatActivity {
                     int line = Integer.parseInt(matcher.group(1));
                     int column = Integer.parseInt(matcher.group(2));
                     Log.d(TAG, "Extracted from message pattern - line: " + line + ", column: " + column);
-                    return new int[] {line, column};
+                    return new int[] { line, column };
                 }
 
                 // Try alternative pattern
@@ -618,7 +633,7 @@ public class RenderActivity extends AppCompatActivity {
                     int line = Integer.parseInt(matcher.group(1));
                     int column = Integer.parseInt(matcher.group(2));
                     Log.d(TAG, "Extracted from alt message pattern - line: " + line + ", column: " + column);
-                    return new int[] {line, column};
+                    return new int[] { line, column };
                 }
             }
 

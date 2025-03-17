@@ -125,8 +125,6 @@ public class MainActivity extends AppCompatActivity {
             updateStats("Error", null, null);
         }
 
-        bytecodeCache = BytecodeCache.getInstance(this);
-
         // Add this to onCreate in MainActivity
         Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
             Log.e(TAG, "Uncaught exception", throwable);
@@ -699,8 +697,14 @@ public class MainActivity extends AppCompatActivity {
         Button clearCacheButton = new Button(this);
         clearCacheButton.setText("Clear Cache");
         clearCacheButton.setOnClickListener(v -> {
-            bytecodeCache.clearCache();
-            Toast.makeText(this, "Bytecode cache cleared", Toast.LENGTH_SHORT).show();
+            if (currentProgram != null) {
+                String code = currentProgram.getCode();
+                String codeHash = RenderActivity.getCodeHash(code);
+                BytecodeCache.getInstance(this, codeHash).clearCacheForHash(codeHash);
+                Toast.makeText(this, "Cache cleared for current program", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "No program selected", Toast.LENGTH_SHORT).show();
+            }
         });
 
         // Update button weights to accommodate three buttons

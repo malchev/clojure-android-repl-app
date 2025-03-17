@@ -8,58 +8,37 @@ import com.android.tools.r8.D8Command;
 import com.android.tools.r8.OutputMode;
 import com.android.tools.r8.origin.Origin;
 import dalvik.system.InMemoryDexClassLoader;
+import java.io.File;
 import java.nio.ByteBuffer;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.ArrayList;
 import java.util.List;
 import java.nio.file.Files;
-import java.nio.file.Path;
 
 public class AndroidClassLoaderDelegate {
     private static final String TAG = "ClojureREPLClassCallback";
+
     private final Context context;
     private final ClassLoader parent;
-    private final Map<String, Class<?>> classCache;
+    private final BytecodeCache bytecodeCache;
+    private boolean hasCompleteCache;
+    private String codeHash;
+
     private final List<ByteBuffer> dexBuffers;
     private ClassLoader currentLoader;
+    private List<String> generatedClasses = new ArrayList<>();
 
-    // Reference to current dex file being built - for caching purposes
-    private static byte[] currentDexBytes = null;
-
-    // Add fields to track all DEX files
-    private static List<byte[]> capturedDexFiles = new ArrayList<>();
-
-    // Add a map to track which DEX file contains which classes
-    private static Map<String, Integer> dexClassMap = new HashMap<>();
-
-    public AndroidClassLoaderDelegate(Context context, ClassLoader parent) {
+    public AndroidClassLoaderDelegate(Context context, ClassLoader parent,
+            BytecodeCache bytecodeCache,
+            boolean hasCompleteCache,
+            String codeHash) {
         super(); // Explicitly invoke Object constructor
         this.context = context;
         this.parent = parent;
-        this.classCache = new ConcurrentHashMap<>();
         this.dexBuffers = new ArrayList<>();
         this.currentLoader = parent;
-    }
-
-    public static void reset() {
-        currentDexBytes = null;
-        capturedDexFiles.clear();
-        dexClassMap.clear();
-    }
-
-    public static List<byte[]> getAllCapturedDex() {
-        if (capturedDexFiles.isEmpty()) {
-            Log.w(TAG, "No DEX files were captured!");
-            return null;
-        }
-
-        Log.d(TAG, "Returning " + capturedDexFiles.size() + " separate DEX files");
-        List<byte[]> result = new ArrayList<>(capturedDexFiles);
-        return result;
+        this.bytecodeCache = bytecodeCache;
+        this.hasCompleteCache = hasCompleteCache;
+        this.codeHash = codeHash;
     }
 
     private void updateClassLoader(ByteBuffer newDex) {
@@ -81,32 +60,36 @@ public class AndroidClassLoaderDelegate {
                     return existing;
                 }
             } catch (ClassNotFoundException ignored) {
-                Log.d(TAG, "(Expected) Class not found in current loader (type " + contextLoader.getClass().getName() + "): " + name);
-                // Expected - will proceed with defining the class
+                if (hasCompleteCache) {
+                    Log.w(TAG, "Class not found in current loader (type " +
+                            contextLoader.getClass().getName() + "): " + name);
+                }
+                // Expected - will proceed with defining the class if we do not have a
+                // complete cache already.
             }
+
+            File dexPath = bytecodeCache.createPathToDexFile(name);
 
             // Proceed with normal class definition...
             // Convert JVM bytecode to DEX using D8
             D8Command command = D8Command.builder()
-                .addClassProgramData(bytes, Origin.unknown())
-                .setMode(CompilationMode.DEBUG)
-                .setOutput(context.getCacheDir().toPath(), OutputMode.DexIndexed)
-                .build();
+                    .addClassProgramData(bytes, Origin.unknown())
+                    .setMode(CompilationMode.DEBUG)
+                    .setOutput(dexPath.toPath(), OutputMode.DexIndexed)
+                    .build();
 
             D8.run(command);
 
             // Read the generated DEX file
-            Path dexPath = context.getCacheDir().toPath().resolve("classes.dex");
-            byte[] dexBytes = Files.readAllBytes(dexPath);
+            byte[] dexBytes = Files.readAllBytes(new File(dexPath, "classes.dex").toPath());
 
-            // Stash the dex bytes, we'll save them all later in the app cache.
-            int dexIndex = capturedDexFiles.size();
-            capturedDexFiles.add(dexBytes);
-            // Record which DEX file contains this class
-            dexClassMap.put(name, dexIndex);
+            // Save the class name. We will use the list of generated classes in the
+            // .manifest file later.
+            generatedClasses.add(name);
+
             Log.d(TAG, "Captured DEX for class: " + name + ", size: " +
-                    dexBytes.length + " bytes (total files: " +
-                    capturedDexFiles.size());
+                    dexBytes.length + " bytes (total classes: " +
+                    generatedClasses.size() + ")");
 
             // Create a ByteBuffer containing the DEX bytes
             ByteBuffer buffer = ByteBuffer.allocate(dexBytes.length);
@@ -120,16 +103,17 @@ public class AndroidClassLoaderDelegate {
             Class<?> clazz = currentLoader.loadClass(name);
 
             // Cache the class
-            classCache.put(name, clazz);
             Log.d(TAG, "Successfully defined class: " + name);
-
-            // Clean up
-            Files.delete(dexPath);
 
             return clazz;
         } catch (Exception e) {
             Log.e(TAG, "Error defining class: " + name, e);
             throw new RuntimeException("Failed to define class: " + name, e);
         }
+    }
+
+    // Add new method to retrieve generated classes
+    public List<String> getGeneratedClasses() {
+        return generatedClasses;
     }
 }

@@ -11,8 +11,6 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.ObjectStreamClass;
 import java.nio.ByteBuffer;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -21,19 +19,28 @@ import java.util.Map;
 import java.util.Set;
 import clojure.lang.IFn;
 import clojure.lang.RT;
+import java.util.HashSet;
+import java.io.BufferedReader;
+import java.io.FileReader;
 
 public class BytecodeCache {
     private static final String TAG = "BytecodeCache";
     private static final String CACHE_DIR = "clojure_bytecode";
+    // This name must not change. It's the output of the D8 tool that we
+    // configure to generate classes directly into the cache.
+    private static final String DEX_FILENAME = "classes.dex";
+    private static final String MANIFEST_FILENAME = "classes.manifest";
     private static BytecodeCache instance;
 
     private final Context context;
     private final File cacheDir;
+    private final String codeHash;
 
     // Private constructor
-    private BytecodeCache(Context context) {
+    private BytecodeCache(Context context, String codeHash) {
         this.context = context.getApplicationContext(); // Use application context
         this.cacheDir = new File(context.getCacheDir(), CACHE_DIR);
+        this.codeHash = codeHash;
         if (!cacheDir.exists()) {
             cacheDir.mkdirs();
         }
@@ -41,118 +48,131 @@ public class BytecodeCache {
     }
 
     // Singleton getter
-    public static synchronized BytecodeCache getInstance(Context context) {
+    public static synchronized BytecodeCache getInstance(Context context, String codeHash) {
         if (instance == null) {
-            instance = new BytecodeCache(context.getApplicationContext());
+            instance = new BytecodeCache(context.getApplicationContext(), codeHash);
         }
         return instance;
     }
 
-    public String getCodeHash(String code) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(code.getBytes());
-            StringBuilder hexString = new StringBuilder();
-            for (byte b : hash) {
-                String hex = Integer.toHexString(0xff & b);
-                if (hex.length() == 1)
-                    hexString.append('0');
-                hexString.append(hex);
-            }
-            return hexString.toString();
-        } catch (NoSuchAlgorithmException e) {
-            Log.e(TAG, "Error generating hash", e);
-            return String.valueOf(code.hashCode());
+    public File createPathToDexFile(String className) {
+        File hashDir = new File(cacheDir, codeHash);
+        File classDir = new File(hashDir, className);
+        File dexFile = new File(classDir, DEX_FILENAME);
+
+        if (dexFile.exists()) {
+            throw new IllegalStateException("DEX file already exists at: " + dexFile.getAbsolutePath());
         }
+
+        if (!classDir.exists()) {
+            classDir.mkdirs();
+        }
+        return classDir;
+    }
+
+    private boolean hasDexCacheInternal(File hashDir, String codeHash) {
+        File manifestFile = new File(hashDir, MANIFEST_FILENAME);
+        if (!manifestFile.exists()) {
+            Log.w(TAG, "Hash directory '" + hashDir.getAbsolutePath() + "' exists but no manifest file found for: "
+                    + codeHash);
+            return false;
+        }
+        // Read manifest file and verify all classes exist
+        try {
+            Set<String> manifestClasses = new HashSet<>();
+            BufferedReader reader = new BufferedReader(new FileReader(manifestFile));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                manifestClasses.add(line.trim());
+            }
+            reader.close();
+
+            // Get actual class directories
+            Set<String> actualClasses = new HashSet<>();
+            File[] classDirs = hashDir.listFiles(File::isDirectory);
+            if (classDirs != null) {
+                for (File classDir : classDirs) {
+                    // Verify each class directory has exactly one file - DEX_FILENAME
+                    File[] files = classDir.listFiles();
+                    if (files == null || files.length != 1 || !files[0].getName().equals(DEX_FILENAME)) {
+                        Log.w(TAG, "Class directory " + classDir.getName() + " does not contain exactly one "
+                                + DEX_FILENAME + " file");
+                        return false;
+                    }
+                    actualClasses.add(classDir.getName());
+                }
+            }
+
+            // Verify manifest classes exist in directory
+            for (String className : manifestClasses) {
+                if (!actualClasses.contains(className)) {
+                    Log.w(TAG, "Class " + className + " in manifest but missing from directory");
+                    return false;
+                }
+            }
+
+            // Verify directory classes exist in manifest
+            for (String className : actualClasses) {
+                if (!manifestClasses.contains(className)) {
+                    Log.w(TAG, "Class " + className + " in directory but missing from manifest");
+                    return false;
+                }
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "Error reading manifest file", e);
+            return false;
+        }
+        return true;
     }
 
     // Check if a DEX cache exists for this code hash
     boolean hasDexCache(String codeHash) {
-        // Check for the manifest file first - that's the indicator we have saved
-        // multiple DEX files
-        File manifestFile = new File(cacheDir, codeHash + ".manifest");
-        if (manifestFile.exists()) {
-            Log.d(TAG, "DEX manifest exists for " + codeHash);
-
-            // Also check if the directory exists
-            File dexDir = new File(cacheDir, codeHash + "_dex");
-            boolean dirExists = dexDir.exists() && dexDir.isDirectory();
-            if (dirExists) {
-                // Count the DEX files to verify integrity
-                File[] dexFiles = dexDir.listFiles((dir, name) -> name.endsWith(".dex"));
-                int dexCount = dexFiles != null ? dexFiles.length : 0;
-                Log.d(TAG, "Found " + dexCount + " DEX files in directory");
-                return dexCount > 0;
+        File hashDir = new File(cacheDir, codeHash);
+        if (hashDir.exists() && hashDir.isDirectory()) {
+            if (hasDexCacheInternal(hashDir, codeHash)) {
+                return true;
             }
 
-            Log.w(TAG, "DEX manifest exists but directory is missing: " + dexDir.getAbsolutePath());
+            // Clear the cache for this hash and return false. This way we will
+            // force a re-generation of the cache.
+            clearCacheForHash(codeHash);
+            return false;
         }
-
+        Log.w(TAG, "Hash directory '" + hashDir.getAbsolutePath() + "' does not exist for: " + codeHash);
         return false;
     }
 
     // Load DEX from cache
     public ByteBuffer[] loadDexCaches(String codeHash) {
-        // Check if we have the directory with multiple DEX files
-        File manifestFile = new File(cacheDir, codeHash + ".manifest");
-        if (manifestFile.exists()) {
-            File dexDir = new File(cacheDir, codeHash + "_dex");
-            if (dexDir.exists() && dexDir.isDirectory()) {
-                File[] files = dexDir.listFiles((dir, name) -> name.endsWith(".dex"));
-                if (files != null && files.length > 0) {
-                    Log.d(TAG, "Loading " + files.length + " DEX files from directory");
+        File hashDir = new File(cacheDir, codeHash);
+        if (hashDir.exists() && hashDir.isDirectory()) {
+            File[] classDirs = hashDir.listFiles(File::isDirectory);
+            if (classDirs != null && classDirs.length > 0) {
+                List<ByteBuffer> bufferList = new ArrayList<>();
 
-                    // Sort by filename (which is numeric index)
-                    java.util.Arrays.sort(files, (a, b) -> {
-                        try {
-                            int idxA = Integer.parseInt(a.getName().replace(".dex", ""));
-                            int idxB = Integer.parseInt(b.getName().replace(".dex", ""));
-                            return Integer.compare(idxA, idxB);
-                        } catch (NumberFormatException e) {
-                            return a.getName().compareTo(b.getName());
-                        }
-                    });
-
-                    // Load all DEX files into ByteBuffers
-                    ByteBuffer[] buffers = new ByteBuffer[files.length];
-                    for (int i = 0; i < files.length; i++) {
-                        try (FileInputStream fis = new FileInputStream(files[i])) {
-                            byte[] buffer = new byte[(int) files[i].length()];
+                for (File classDir : classDirs) {
+                    File dexFile = new File(classDir, DEX_FILENAME);
+                    if (dexFile.exists()) {
+                        try (FileInputStream fis = new FileInputStream(dexFile)) {
+                            byte[] buffer = new byte[(int) dexFile.length()];
                             fis.read(buffer);
 
                             ByteBuffer byteBuffer = ByteBuffer.allocateDirect(buffer.length);
                             byteBuffer.put(buffer);
                             byteBuffer.rewind();
 
-                            buffers[i] = byteBuffer;
-                            Log.d(TAG, "Loaded DEX file " + i + ": " + files[i].getName() + ", size: " + buffer.length);
+                            bufferList.add(byteBuffer);
+                            Log.d(TAG, "Loaded DEX file for class " + classDir.getName() +
+                                    ", size: " + buffer.length);
                         } catch (IOException e) {
-                            Log.e(TAG, "Error loading DEX file: " + files[i].getName(), e);
-                            return null;
+                            Log.e(TAG, "Error loading DEX file: " + dexFile.getAbsolutePath(), e);
                         }
                     }
-
-                    return buffers;
                 }
-            }
-        }
 
-        // Fall back to checking for single DEX file
-        File dexFile = new File(cacheDir, codeHash + ".dex");
-        if (dexFile.exists()) {
-            try (FileInputStream fis = new FileInputStream(dexFile)) {
-                byte[] buffer = new byte[(int) dexFile.length()];
-                fis.read(buffer);
-
-                ByteBuffer byteBuffer = ByteBuffer.allocateDirect(buffer.length);
-                byteBuffer.put(buffer);
-                byteBuffer.rewind();
-
-                Log.d(TAG, "Loaded single DEX cache (" + buffer.length + " bytes) for hash: " + codeHash);
-                return new ByteBuffer[] { byteBuffer };
-            } catch (IOException e) {
-                Log.e(TAG, "Error loading DEX cache", e);
-                return null;
+                if (!bufferList.isEmpty()) {
+                    return bufferList.toArray(new ByteBuffer[0]);
+                }
             }
         }
 
@@ -173,105 +193,58 @@ public class BytecodeCache {
         );
     }
 
+    // Generate a manifest file for the given code hash and a list of generated
+    // classes
+    public void generateManifest(String codeHash, List<String> generatedClasses) {
+        // The path is cacheDir/codeHash/classes.manifest
+        Log.d(TAG, "Generating manifest for code hash: " + codeHash);
+        File hashDir = new File(cacheDir, codeHash);
+        File manifestFile = new File(hashDir, MANIFEST_FILENAME);
+        try (FileOutputStream fos = new FileOutputStream(manifestFile)) {
+            for (String className : generatedClasses) {
+                fos.write((className + "\n").getBytes());
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "Error writing manifest file: " + manifestFile.getAbsolutePath(), e);
+        }
+    }
+
+    // Helper method to recursively delete directories
+    private boolean deleteRecursive(File fileOrDir) {
+        if (fileOrDir.isDirectory()) {
+            File[] children = fileOrDir.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursive(child);
+                }
+            }
+        }
+        return fileOrDir.delete();
+    }
+
     // Clear all cache files
     public void clearCache() {
         int count = 0;
         File[] files = cacheDir.listFiles();
         if (files != null) {
             for (File file : files) {
-                if (file.delete()) {
+                if (deleteRecursive(file)) {
                     count++;
                 }
             }
         }
-        Log.d(TAG, "Cleared " + count + " files from cache");
-    }
-
-    // Update to save multiple DEX files
-    public void saveMultipleDexCaches(String codeHash, List<byte[]> dexFiles) {
-        if (dexFiles == null || dexFiles.isEmpty()) {
-            Log.e(TAG, "Attempted to save empty DEX list for hash: " + codeHash);
-            return;
-        }
-
-        // Create a directory for the DEX files
-        File dexDir = new File(cacheDir, codeHash + "_dex");
-        if (!dexDir.exists()) {
-            dexDir.mkdirs();
-        }
-
-        // Save each DEX file separately
-        for (int i = 0; i < dexFiles.size(); i++) {
-            byte[] dexBytes = dexFiles.get(i);
-            if (dexBytes == null || dexBytes.length == 0) {
-                continue;
-            }
-
-            File dexFile = new File(dexDir, i + ".dex");
-            try (FileOutputStream fos = new FileOutputStream(dexFile)) {
-                fos.write(dexBytes);
-                fos.flush();
-                Log.d(TAG, "Saved DEX file " + i + ", size: " + dexFile.length() + " bytes");
-            } catch (IOException e) {
-                Log.e(TAG, "Error saving DEX file " + i, e);
-            }
-        }
-
-        // Also save a manifest file with count
-        try {
-            File manifestFile = new File(cacheDir, codeHash + ".manifest");
-            try (FileOutputStream fos = new FileOutputStream(manifestFile)) {
-                String manifest = "dex_count=" + dexFiles.size();
-                fos.write(manifest.getBytes());
-            }
-            Log.d(TAG, "Saved manifest for " + dexFiles.size() + " DEX files");
-        } catch (IOException e) {
-            Log.e(TAG, "Error saving DEX manifest", e);
-        }
+        Log.d(TAG, "Cleared " + count + " entries from cache");
     }
 
     // Add a method to clear the cache for a specific hash
     public void clearCacheForHash(String codeHash) {
         Log.d(TAG, "Clearing cache for hash: " + codeHash);
 
-        // Remove the DEX file
-        File dexFile = new File(cacheDir, codeHash + ".dex");
-        if (dexFile.exists() && dexFile.delete()) {
-            Log.d(TAG, "Deleted DEX file: " + dexFile.getPath());
-        }
-
-        // Remove the DEX directory if it exists
-        File dexDir = new File(cacheDir, codeHash + "_dex");
-        if (dexDir.exists() && dexDir.isDirectory()) {
-            File[] files = dexDir.listFiles();
-            if (files != null) {
-                for (File file : files) {
-                    if (file.delete()) {
-                        Log.d(TAG, "Deleted file: " + file.getPath());
-                    }
-                }
+        File hashDir = new File(cacheDir, codeHash);
+        if (hashDir.exists() && hashDir.isDirectory()) {
+            if (deleteRecursive(hashDir)) {
+                Log.d(TAG, "Deleted hash directory: " + hashDir.getPath());
             }
-            if (dexDir.delete()) {
-                Log.d(TAG, "Deleted DEX directory: " + dexDir.getPath());
-            }
-        }
-
-        // Remove the manifest file
-        File manifestFile = new File(cacheDir, codeHash + ".manifest");
-        if (manifestFile.exists() && manifestFile.delete()) {
-            Log.d(TAG, "Deleted manifest file: " + manifestFile.getPath());
-        }
-
-        // Remove the entry point file
-        File entryPointFile = new File(cacheDir, codeHash + ".entry");
-        if (entryPointFile.exists() && entryPointFile.delete()) {
-            Log.d(TAG, "Deleted entry point file: " + entryPointFile.getPath());
-        }
-
-        // Remove the program file
-        File programFile = new File(cacheDir, codeHash + ".program");
-        if (programFile.exists() && programFile.delete()) {
-            Log.d(TAG, "Deleted program file: " + programFile.getPath());
         }
     }
 }
