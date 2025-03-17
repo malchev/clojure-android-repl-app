@@ -1,3 +1,4 @@
+;; Button test
 (defn -main []
   (let [context *context*
         button (doto (new android.widget.Button context)

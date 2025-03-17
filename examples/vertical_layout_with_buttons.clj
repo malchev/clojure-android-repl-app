@@ -10,12 +10,12 @@
       layout (doto (android.widget.LinearLayout. *context*)
                (.setOrientation android.widget.LinearLayout/VERTICAL)
                (.setLayoutParams layout-params))]
-  
+
   ;; Add the vertical layout to the content layout using runOnUiThread
   (.runOnUiThread *context*
     (fn []
       (.addView *content-layout* layout)
-      
+
       ;; Add some buttons with click handlers
       (doseq [i (range 3)]
         (let [btn (doto (android.widget.Button. *context*)
@@ -31,6 +31,6 @@
                 (.runOnUiThread *context*
                   #(.setText btn (str "Clicked " i "!"))))))
           (.addView layout btn)))))
-  
+
   ;; Return a success message
   "Created vertical layout with buttons")

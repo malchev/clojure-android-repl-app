@@ -1,4 +1,4 @@
-;; Constants
+;; Compass
 (def TAG "CompassApp")
 (def VERTEX-SHADER "uniform mat4 uProjectionMatrix;
                     uniform mat4 uRotationMatrix;
@@ -115,7 +115,7 @@
 ;; Create compass app
 (defn initialize-compass [activity content]
   (android.util.Log/d TAG "Initializing compass app")
-  
+
   ;; Constants
   (def NUM-POINTS 32)
   (def RADIUS 0.5)
@@ -124,22 +124,22 @@
   (def UPDATE-INTERVAL 50)
   (def SMOOTHING-FACTOR 0.3)
   (def MIN-CHANGE 0.1)
-  
+
   ;; Reset active state
   (reset! active? true)
-  
+
   ;; Create geometry
   (def disk-vertices (create-disk-vertices NUM-POINTS RADIUS))
   (def disk-colors (create-disk-colors NUM-POINTS))
   (def pointer-vertices (create-pointer-vertices RADIUS POINTER-HEIGHT POINTER-WIDTH))
   (def pointer-colors (create-pointer-colors))
-  
+
   ;; Create buffers
   (def disk-vertex-buffer (create-buffer disk-vertices))
   (def disk-color-buffer (create-buffer disk-colors))
   (def pointer-vertex-buffer (create-buffer pointer-vertices))
   (def pointer-color-buffer (create-buffer pointer-colors))
-  
+
   ;; Initialize matrices
   (def projection-matrix (float-array 16))
   (def model-matrix (float-array 16))
@@ -147,13 +147,13 @@
   (def temp-matrix (float-array 16))
   (android.opengl.Matrix/setIdentityM model-matrix 0)
   (android.opengl.Matrix/setIdentityM disk-matrix 0)
-  
+
   ;; Sensor data arrays
   (def accel-data (float-array 3))
   (def magnetic-data (float-array 3))
   (def rotation-matrix (float-array 16))
   (def orientation (float-array 3))
-  
+
   ;; Set up sensors
   (android.util.Log/d TAG "Getting sensor service")
   (def sensor-manager (.getSystemService activity android.content.Context/SENSOR_SERVICE))
@@ -161,23 +161,23 @@
   (def magnetometer (.getDefaultSensor sensor-manager android.hardware.Sensor/TYPE_MAGNETIC_FIELD))
   (android.util.Log/d TAG (str "Accelerometer: " accelerometer))
   (android.util.Log/d TAG (str "Magnetometer: " magnetometer))
-  
+
   ;; Create OpenGL renderer
   (def compass-renderer 
     (proxy [android.opengl.GLSurfaceView$Renderer] []
       (onSurfaceCreated [gl config]
         (android.util.Log/d TAG "Surface created")
         (android.opengl.GLES20/glClearColor 0.0 0.0 0.0 1.0)
-        
+
         ;; Create and link shader program
         (let [vertex-shader-handle (compile-shader android.opengl.GLES20/GL_VERTEX_SHADER VERTEX-SHADER)
               fragment-shader-handle (compile-shader android.opengl.GLES20/GL_FRAGMENT_SHADER FRAGMENT-SHADER)
               program (android.opengl.GLES20/glCreateProgram)]
-          
+
           (android.opengl.GLES20/glAttachShader program vertex-shader-handle)
           (android.opengl.GLES20/glAttachShader program fragment-shader-handle)
           (android.opengl.GLES20/glLinkProgram program)
-          
+
           (let [linked (java.nio.IntBuffer/allocate 1)]
             (android.opengl.GLES20/glGetProgramiv program android.opengl.GLES20/GL_LINK_STATUS linked)
             (when (zero? (.get linked 0))
@@ -185,10 +185,10 @@
                 (android.util.Log/e TAG (str "Program linking failed: " error))
                 (android.opengl.GLES20/glDeleteProgram program)
                 (throw (RuntimeException. (str "Program linking failed: " error))))))
-          
+
           (reset! program-handle program)
           (android.util.Log/d TAG (str "Shader program created: " @program-handle))
-          
+
           ;; Get handles to shader variables
           (reset! position-handle 
             (android.opengl.GLES20/glGetAttribLocation @program-handle "vPosition"))
@@ -198,31 +198,31 @@
             (android.opengl.GLES20/glGetUniformLocation @program-handle "uProjectionMatrix"))
           (reset! rotation-matrix-handle
             (android.opengl.GLES20/glGetUniformLocation @program-handle "uRotationMatrix"))
-          
+
           (android.util.Log/d TAG (str "Shader handles - position: " @position-handle 
                                      " color: " @color-handle
                                      " projection: " @projection-matrix-handle
                                      " rotation: " @rotation-matrix-handle))))
-      
+
       (onSurfaceChanged [gl width height]
         (android.util.Log/d TAG (str "Surface changed: " width "x" height))
         (android.opengl.GLES20/glViewport 0 0 width height)
         (create-ortho-matrix projection-matrix width height))
-      
+
       (onDrawFrame [gl]
         (android.opengl.GLES20/glClear android.opengl.GLES20/GL_COLOR_BUFFER_BIT)
-        
+
         ;; Use the shader program
         (android.opengl.GLES20/glUseProgram @program-handle)
-        
+
         ;; Set the projection matrix
         (android.opengl.GLES20/glUniformMatrix4fv @projection-matrix-handle 
                                                1 false projection-matrix 0)
-        
+
         ;; Enable vertex arrays
         (android.opengl.GLES20/glEnableVertexAttribArray @position-handle)
         (android.opengl.GLES20/glEnableVertexAttribArray @color-handle)
-        
+
         ;; Draw the compass disk (with full 3D rotation)
         (android.opengl.GLES20/glUniformMatrix4fv @rotation-matrix-handle
                                                1 false disk-matrix 0)
@@ -237,7 +237,7 @@
         (android.opengl.GLES20/glDrawArrays 
           android.opengl.GLES20/GL_TRIANGLE_FAN 
           0 (+ 2 NUM-POINTS))
-        
+
         ;; Draw the north pointer (with rotation from sensors)
         (android.opengl.GLES20/glUniformMatrix4fv @rotation-matrix-handle
                                                1 false model-matrix 0)
@@ -252,17 +252,17 @@
         (android.opengl.GLES20/glDrawArrays 
           android.opengl.GLES20/GL_TRIANGLES
           0 3)
-        
+
         ;; Disable vertex arrays
         (android.opengl.GLES20/glDisableVertexAttribArray @position-handle)
         (android.opengl.GLES20/glDisableVertexAttribArray @color-handle))))
-  
+
   ;; Create GL Surface View
   (def gl-view 
     (doto (proxy [android.opengl.GLSurfaceView] [activity]
             (init []
               (android.util.Log/d TAG "Initializing GL view"))
-            
+
             ;; Override onDetachedFromWindow to properly handle cleanup
             (onDetachedFromWindow []
               (android.util.Log/d TAG "GL view detached from window")
@@ -271,7 +271,7 @@
       (.setEGLContextClientVersion 2)
       (.setRenderer compass-renderer)
       (.setRenderMode android.opengl.GLSurfaceView/RENDERMODE_WHEN_DIRTY)))
-  
+
   ;; Create sensor event listener
   (def sensor-listener 
     (proxy [android.hardware.SensorEventListener] []
@@ -281,17 +281,17 @@
             (cond
               (= sensor-type android.hardware.Sensor/TYPE_ACCELEROMETER)
               (System/arraycopy (.values event) 0 accel-data 0 3)
-              
+
               (= sensor-type android.hardware.Sensor/TYPE_MAGNETIC_FIELD)
               (System/arraycopy (.values event) 0 magnetic-data 0 3))
-            
+
             (when (android.hardware.SensorManager/getRotationMatrix 
                    rotation-matrix nil accel-data magnetic-data)
               ;; Check if enough time has passed since last update
               (let [current-time (System/currentTimeMillis)]
                 (when (> (- current-time @last-update-time) UPDATE-INTERVAL)
                   (reset! last-update-time current-time)
-                  
+
                   ;; Remap coordinates to match our desired orientation
                   (let [remapped-matrix (float-array 16)]
                     ;; Remap so that when phone is flat, disk is flat (Y is up)
@@ -300,42 +300,42 @@
                       android.hardware.SensorManager/AXIS_X
                       android.hardware.SensorManager/AXIS_Z
                       remapped-matrix)
-                    
+
                     (android.hardware.SensorManager/getOrientation 
                      remapped-matrix orientation)
-                    
+
                     ;; Smooth the orientation changes
                     (let [current (vec orientation)
                           last @last-orientation
                           smoothed (mapv #(lerp-angle %1 %2 SMOOTHING-FACTOR) last current)
                           changes (map #(Math/abs (- %1 %2)) current last)
                           changed? (some #(> % MIN-CHANGE) changes)]
-                      
+
                       ;; Update pointer rotation (just azimuth around Z)
                       (android.opengl.Matrix/setRotateM model-matrix 0 
                                                        (-> (first smoothed)
                                                            Math/toDegrees 
                                                            (+ 90.0))  ; Adjust for screen orientation
                                                        0.0 0.0 1.0)
-                      
+
                       ;; Copy the remapped rotation matrix for the disk
                       (System/arraycopy remapped-matrix 0 disk-matrix 0 16)
-                      
+
                       ;; Adjust for screen orientation (rotate 90 degrees around X)
                       (android.opengl.Matrix/setRotateM temp-matrix 0 90.0 1.0 0.0 0.0)
                       (android.opengl.Matrix/multiplyMM disk-matrix 0 temp-matrix 0 disk-matrix 0)
-                      
+
                       ;; Request a redraw
                       (.requestRender gl-view)
-                      
+
                       ;; Only log if orientation changed significantly
                       (when changed?
                         (reset! last-orientation smoothed)
                         (android.util.Log/d TAG (str "Orientation: " smoothed)))))))))))
-      
+
       (onAccuracyChanged [sensor accuracy]
         (android.util.Log/d TAG (str "Sensor accuracy changed: " accuracy)))))
-  
+
   ;; Register sensor listeners
   (android.util.Log/d TAG "Registering sensor listeners")
   (.registerListener sensor-manager 
@@ -354,7 +354,7 @@
                            android.widget.LinearLayout$LayoutParams/MATCH_PARENT))
   (.removeAllViews content)  ; Clear any existing views
   (.addView content gl-view)
-  
+
   ;; Add a view lifecycle listener to handle lifecycle events
   (.addOnAttachStateChangeListener content
     (proxy [android.view.View$OnAttachStateChangeListener] []
@@ -363,7 +363,7 @@
       (onViewDetachedFromWindow [v]
         (android.util.Log/d TAG "View detached from window")
         (cleanup))))
-  
+
   ;; Add lifecycle hooks directly to activity if possible
   (try
     ;; Try to access isDestroyed field

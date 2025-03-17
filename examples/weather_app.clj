@@ -3,12 +3,12 @@
       content *content-layout*
       handler (android.os.Handler. (android.os.Looper/getMainLooper))
       tag "WeatherApp"  ;; Tag for logging
-      
+
       ;; Store location client as atom so we can reference it later
       location-client (atom nil)
       location-callback (atom nil)
       destroyed (atom false)  ;; Track if the activity is destroyed
-      
+
       ;; Create UI elements
       main-layout (doto (android.widget.LinearLayout. activity)
                    (.setOrientation android.widget.LinearLayout/VERTICAL)
@@ -16,21 +16,21 @@
                                      android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                      android.widget.LinearLayout$LayoutParams/MATCH_PARENT))
                    (.setPadding 32 32 32 32))
-      
+
       details-layout (doto (android.widget.LinearLayout. activity)
                       (.setOrientation android.widget.LinearLayout/VERTICAL)
                       (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                        android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                        android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
                       (.setPadding 0 16 0 16))
-      
+
       status-text (doto (android.widget.TextView. activity)
                    (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                      android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                      android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
                    (.setTextSize 16.0)
                    (.setTextColor android.graphics.Color/DKGRAY))
-      
+
       temp-text (doto (android.widget.TextView. activity)
                  (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                    android.widget.LinearLayout$LayoutParams/MATCH_PARENT
@@ -38,7 +38,7 @@
                  (.setTextSize 48.0)
                  (.setTextColor android.graphics.Color/DKGRAY)
                  (.setGravity android.view.Gravity/CENTER))
-      
+
       desc-text (doto (android.widget.TextView. activity)
                  (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                    android.widget.LinearLayout$LayoutParams/MATCH_PARENT
@@ -46,14 +46,14 @@
                  (.setTextSize 20.0)
                  (.setTextColor android.graphics.Color/DKGRAY)
                  (.setGravity android.view.Gravity/CENTER))
-      
+
       weather-icon (doto (android.widget.TextView. activity)
                     (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                      android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                      android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
                     (.setTextSize 48.0)
                     (.setGravity android.view.Gravity/CENTER))
-      
+
       wind-text (doto (android.widget.TextView. activity)
                  (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                    android.widget.LinearLayout$LayoutParams/MATCH_PARENT
@@ -61,7 +61,7 @@
                  (.setTextSize 16.0)
                  (.setTextColor android.graphics.Color/DKGRAY)
                  (.setGravity android.view.Gravity/CENTER))
-      
+
       humidity-text (doto (android.widget.TextView. activity)
                      (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                       android.widget.LinearLayout$LayoutParams/MATCH_PARENT
@@ -69,26 +69,26 @@
                      (.setTextSize 16.0)
                      (.setTextColor android.graphics.Color/DKGRAY)
                      (.setGravity android.view.Gravity/CENTER))
-      
+
       forecast-scroll (doto (android.widget.HorizontalScrollView. activity)
                        (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                         android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                         android.widget.LinearLayout$LayoutParams/WRAP_CONTENT)))
-      
+
       forecast-container (doto (android.widget.LinearLayout. activity)
                           (.setOrientation android.widget.LinearLayout/HORIZONTAL)
                           (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                            android.widget.LinearLayout$LayoutParams/WRAP_CONTENT
                                            android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
                           (.setPadding 16 16 16 16))
-      
+
       refresh-btn (doto (android.widget.Button. activity)
                    (.setText "Refresh Weather")
                    (.setLayoutParams (doto (android.widget.LinearLayout$LayoutParams.
                                           android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                           android.widget.LinearLayout$LayoutParams/WRAP_CONTENT)
                                      (.setMargins 0 32 0 0))))]
-  
+
   ;; Add views to layout
   (doto main-layout
     (.addView status-text)
@@ -98,19 +98,19 @@
     (.addView details-layout)
     (.addView forecast-scroll)
     (.addView refresh-btn))
-  
+
   (.addView forecast-scroll forecast-container)
-  
+
   (doto details-layout
     (.addView wind-text)
     (.addView humidity-text))
-  
+
   (.addView content main-layout)
-  
+
   ;; Function to update UI on main thread
   (defn run-on-ui [f]
     (.post handler f))
-  
+
   ;; Function to read response from URL
   (defn read-url [url-obj]
     (android.util.Log/d tag (str "Reading from URL: " (.toString url-obj)))
@@ -149,7 +149,7 @@
       (catch Exception e
         (android.util.Log/e tag (str "Error fetching weather: " (.getMessage e)))
         (throw e))))
-  
+
   ;; Function to parse weather JSON
   (defn parse-weather [json-str]
     (android.util.Log/d tag "Parsing weather JSON")
@@ -254,16 +254,16 @@
                       (.setText weather-icon weather-symbol)
                       (.setText desc-text (.toUpperCase (:description current)))
                       (.setText status-text (str "Weather in " location-name))
-                      (.setText wind-text (format "Wind: %s %s" 
+                      (.setText wind-text (format "Wind: %s %s"
                                                (:wind-speed current)
                                                (:wind-direction current)))
                       (.setText humidity-text (:detailed current))
-                      
+
                       ;; Update forecast view
                       (.removeAllViews forecast-container)
                       (doseq [forecast (filter :is-daytime (:forecasts weather-data))]
                         (.addView forecast-container (create-forecast-day forecast)))
-                      
+
                       (android.util.Log/d tag "UI updated with weather data"))))))
             (catch Exception e
               (android.util.Log/e tag (str "Error updating weather: " (.getMessage e)))
@@ -281,7 +281,7 @@
               (android.util.Log/d tag "Got location from callback")
               (update-weather location))
             (android.util.Log/w tag "No location available in callback"))))))
-  
+
   ;; Function to stop location updates
   (defn stop-location-updates []
     (android.util.Log/d tag "Stopping location updates")
@@ -302,13 +302,13 @@
     (android.util.Log/d tag "=== Starting weather app cleanup ===")
     (android.util.Log/d tag "Setting destroyed flag")
     (reset! destroyed true)
-    
+
     (android.util.Log/d tag (str "Location client exists? " (if @location-client "yes" "no")))
     (android.util.Log/d tag (str "Location callback exists? " (if @location-callback "yes" "no")))
-    
+
     (android.util.Log/d tag "Calling stop-location-updates")
     (stop-location-updates)
-    
+
     (android.util.Log/d tag "Clearing location client")
     (reset! location-client nil)
     (android.util.Log/d tag "Clearing location callback")
@@ -325,10 +325,10 @@
           builder (com.google.android.gms.location.LocationSettingsRequest$Builder.)
           _ (.addLocationRequest builder request)
           settings-client (com.google.android.gms.location.LocationServices/getSettingsClient activity)]
-      
+
       ;; Store the client for later cleanup
       (reset! location-client client)
-      
+
       (.setText status-text "Getting location...")
       (android.util.Log/d tag "Calling requestLocationUpdates")
       (-> (.checkLocationSettings settings-client (.build builder))
@@ -361,21 +361,21 @@
                 (.checkSelfPermission activity permission))
         (do
           (android.util.Log/d tag "Requesting location permission")
-          (androidx.core.app.ActivityCompat/requestPermissions 
-           activity 
+          (androidx.core.app.ActivityCompat/requestPermissions
+           activity
            (into-array String [permission])
            1))
         (do
           (android.util.Log/d tag "Location permission already granted")
           (request-location)))))
-  
+
   ;; Set up refresh button click handler
   (.setOnClickListener refresh-btn
     (reify android.view.View$OnClickListener
       (onClick [this view]
         (android.util.Log/d tag "Refresh button clicked")
         (check-permissions))))
-  
+
   ;; Set up activity lifecycle hooks
   (.addOnAttachStateChangeListener content
     (proxy [android.view.View$OnAttachStateChangeListener] []
@@ -385,7 +385,7 @@
       (onViewDetachedFromWindow [v]
         (android.util.Log/d tag "View detached - cleaning up weather app")
         (cleanup))))  ;; Call cleanup when detached
-  
+
   ;; Add activity lifecycle listener
   (.registerActivityLifecycleCallbacks
     (.getApplication activity)
@@ -414,11 +414,11 @@
           (android.util.Log/d tag "Activity destroyed - cleaning up weather app")
           (cleanup)))
       (onActivityPostDestroyed [activity])))
-  
+
   ;; Initial weather check
   (android.util.Log/d tag "Starting initial weather check")
   (check-permissions)
-  
+
   ;; Return success message
   (android.util.Log/d tag "Weather app initialized")
-  "Weather app initialized") 
+  "Weather app initialized")

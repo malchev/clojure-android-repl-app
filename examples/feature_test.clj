@@ -1,3 +1,4 @@
+;; Feature test
 ;; Part 1: Test spec functionality
 (do
   (android.util.Log/i "ClojureREPL" "Starting spec test...")
@@ -49,4 +50,4 @@
       (run []
         (.addView *root-layout* dynamic-button params)
         (android.util.Log/i "ClojureREPL" "Dynamic button added to layout"))))
-  "Test completed - check logcat for results") 
+  "Test completed - check logcat for results")

@@ -1,4 +1,4 @@
-;; Import necessary Android classes
+;; Analog clock
 (import '[android.content Context]
         '[android.graphics Canvas Color Paint Paint$Style RectF]
         '[android.os Handler Looper SystemClock]

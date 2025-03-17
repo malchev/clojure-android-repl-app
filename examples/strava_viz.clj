@@ -3,9 +3,9 @@
       content *content-layout*
       handler (android.os.Handler. (android.os.Looper/getMainLooper))
       tag "StravaViz"  ;; Tag for logging
-      
+
       _ (android.util.Log/i tag "Initializing StravaViz app")
-      
+
       ;; Create UI elements
       main-layout (doto (android.widget.LinearLayout. activity)
                    (.setOrientation android.widget.LinearLayout/VERTICAL)
@@ -13,7 +13,7 @@
                                      android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                      android.widget.LinearLayout$LayoutParams/MATCH_PARENT))
                    (.setPadding 32 32 32 32))
-      
+
       title-text (doto (android.widget.TextView. activity)
                   (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                     android.widget.LinearLayout$LayoutParams/MATCH_PARENT
@@ -22,14 +22,14 @@
                   (.setTextSize 24.0)
                   (.setTextColor android.graphics.Color/DKGRAY)
                   (.setGravity android.view.Gravity/CENTER))
-      
+
       status-text (doto (android.widget.TextView. activity)
                    (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                      android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                      android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
                    (.setTextSize 16.0)
                    (.setTextColor android.graphics.Color/DKGRAY))
-      
+
       token-input (doto (android.widget.EditText. activity)
                    (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                      android.widget.LinearLayout$LayoutParams/MATCH_PARENT
@@ -37,42 +37,42 @@
                    (.setHint "Enter your Strava access token")
                    (.setSingleLine true)
                    (.setVisibility android.view.View/GONE))
-      
+
       chart-container (doto (android.widget.FrameLayout. activity)
                        (.setLayoutParams (doto (android.widget.LinearLayout$LayoutParams.
                                               android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                               android.widget.LinearLayout$LayoutParams/WRAP_CONTENT)
                                          (.setMargins 0 32 0 32)))
                        (.setMinimumHeight 400))
-      
+
       stats-layout (doto (android.widget.LinearLayout. activity)
                     (.setOrientation android.widget.LinearLayout/VERTICAL)
                     (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                      android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                      android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
                     (.setPadding 0 16 0 16))
-      
+
       total-distance-text (doto (android.widget.TextView. activity)
                            (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                             android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                             android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
                            (.setTextSize 16.0)
                            (.setTextColor android.graphics.Color/DKGRAY))
-      
+
       avg-pace-text (doto (android.widget.TextView. activity)
                      (.setLayoutParams (android.widget.LinearLayout$LayoutParams.
                                       android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                       android.widget.LinearLayout$LayoutParams/WRAP_CONTENT))
                      (.setTextSize 16.0)
                      (.setTextColor android.graphics.Color/DKGRAY))
-      
+
       auth-button (doto (android.widget.Button. activity)
                    (.setText "Connect with Strava")
                    (.setLayoutParams (doto (android.widget.LinearLayout$LayoutParams.
                                           android.widget.LinearLayout$LayoutParams/MATCH_PARENT
                                           android.widget.LinearLayout$LayoutParams/WRAP_CONTENT)
                                      (.setMargins 0 32 0 0))))
-      
+
       submit-token-button (doto (android.widget.Button. activity)
                            (.setText "Submit Token")
                            (.setLayoutParams (doto (android.widget.LinearLayout$LayoutParams.
@@ -80,7 +80,7 @@
                                                   android.widget.LinearLayout$LayoutParams/WRAP_CONTENT)
                                              (.setMargins 0 16 0 0)))
                            (.setVisibility android.view.View/GONE))
-      
+
       ;; Custom chart view
       chart-view (proxy [android.view.View] [activity]
                   (onDraw [canvas]
@@ -130,15 +130,15 @@
                                        (.setAntiAlias true))
                             path (android.graphics.Path.)]
                         ;; Draw axes
-                        (.drawLine canvas 
-                                 padding-left padding-top 
+                        (.drawLine canvas
+                                 padding-left padding-top
                                  padding-left (- height padding-bottom)
                                  axis-paint)
                         (.drawLine canvas
                                  padding-left (- height padding-bottom)
                                  (- width padding-right) (- height padding-bottom)
                                  axis-paint)
-                        
+
                         ;; Draw Y-axis notches (every 10 seconds)
                         (.setTextAlign text-paint android.graphics.Paint$Align/RIGHT)
                         (let [notch-size 20
@@ -160,7 +160,7 @@
                                        (- padding-left (+ notch-size 5))
                                        (+ y 10)
                                        text-paint))))
-                        
+
                         ;; Draw X-axis notches (per week)
                         (.setTextAlign text-paint android.graphics.Paint$Align/CENTER)
                         (let [notch-size 20
@@ -176,14 +176,14 @@
                                        x
                                        (- height (- padding-bottom (+ notch-size 25)))
                                        text-paint))))
-                        
+
                         ;; Draw axis titles
                         (.setTextAlign title-paint android.graphics.Paint$Align/CENTER)
-                        (.drawText canvas "Time (w)" 
+                        (.drawText canvas "Time (w)"
                                  (/ width 2)
                                  (- height (/ padding-bottom 2))
                                  title-paint)
-                        
+
                         ;; Draw Y-axis title (rotated)
                         (.save canvas)
                         (.rotate canvas -90 (/ padding-left 3) (/ height 2))
@@ -192,7 +192,7 @@
                                  0
                                  title-paint)
                         (.restore canvas)
-                        
+
                         ;; Draw data points and connect them
                         (let [point-count (count activities)]
                           (doseq [[idx activity] (map-indexed vector sorted-activities)]
@@ -203,28 +203,28 @@
                               (if (zero? idx)
                                 (.moveTo path x y)
                                 (.lineTo path x y))
-                              
+
                               ;; Draw point
                               (.setStyle paint android.graphics.Paint$Style/FILL)
                               (.drawCircle canvas x y 8 paint)
                               (.setStyle paint android.graphics.Paint$Style/STROKE))))
-                        
+
                         ;; Draw the path
                         (.drawPath canvas path paint)
-                        
+
                         ;; Draw labels
                         (.setTextAlign text-paint android.graphics.Paint$Align/RIGHT)
-                        (.drawText canvas 
+                        (.drawText canvas
                                  (format "%.1f min/km" (/ max-pace 60.0))
                                  (- padding-left 10)
                                  (+ padding-left 10)
                                  text-paint)
-                        (.drawText canvas 
+                        (.drawText canvas
                                  (format "%.1f min/km" (/ min-pace 60.0))
                                  (- padding-left 10)
                                  (- height padding-bottom)
                                  text-paint)))))]
-  
+
   ;; Add views to layout - IMPORTANT: Add directly to content, not to an intermediate layout
   (doto content
     (.addView title-text)
@@ -234,21 +234,21 @@
     (.addView submit-token-button)
     (.addView chart-container)
     (.addView stats-layout))
-  
+
   (doto stats-layout
     (.addView total-distance-text)
     (.addView avg-pace-text))
-  
+
   (.addView chart-container chart-view)
-  
+
   ;; Function to update UI on main thread
   (defn run-on-ui [f]
     (.post handler f))
-  
+
   ;; Strava API configuration
   (def client-id "125948")  ;; Replace with your Strava API client ID
   (def client-secret "0405ee700df251cb9b1a6c82ce2c5b885069a10a")  ;; Replace with your Strava API client secret
-  
+
   ;; Function to read response from URL
   (defn read-url [url-obj headers]
     (android.util.Log/i tag (str "Starting URL request to: " (.toString url-obj)))
@@ -259,10 +259,10 @@
         ;; Add headers
         (doseq [[k v] headers]
           (.addRequestProperty conn k v))
-        
+
         ;; Make the request
         (.connect conn)
-        
+
         ;; Read response
         (let [response-code (.getResponseCode conn)]
           (android.util.Log/i tag (str "Response code: " response-code))
@@ -280,7 +280,7 @@
               (.close reader)
               (let [result (.toString content)]
                 (android.util.Log/i tag (str "Response received, length: " (.length result)))
-                (android.util.Log/i tag (str "Response content: " 
+                (android.util.Log/i tag (str "Response content: "
                                            (if (> (.length result) 500)
                                              (str (.substring result 0 500) "...")
                                              result)))
@@ -313,9 +313,9 @@
         ;; Add headers
         (doseq [[k v] headers]
           (.addRequestProperty conn k v))
-        
+
         ;; Write POST data
-        (let [param-str (clojure.string/join "&" 
+        (let [param-str (clojure.string/join "&"
                          (for [[k v] params]
                            (str (java.net.URLEncoder/encode (str k) "UTF-8")
                                 "="
@@ -325,10 +325,10 @@
                      writer (java.io.OutputStreamWriter. os)]
             (.write writer param-str)
             (.flush writer)))
-        
+
         ;; Make the request
         (.connect conn)
-        
+
         ;; Read response
         (let [response-code (.getResponseCode conn)]
           (android.util.Log/i tag (str "Response code: " response-code))
@@ -346,7 +346,7 @@
               (.close reader)
               (let [result (.toString content)]
                 (android.util.Log/i tag (str "Response received, length: " (.length result)))
-                (android.util.Log/i tag (str "Response content: " 
+                (android.util.Log/i tag (str "Response content: "
                                            (if (> (.length result) 500)
                                              (str (.substring result 0 500) "...")
                                              result)))
@@ -383,7 +383,7 @@
           result {:access-token (.getString json "access_token")
                  :refresh-token (.getString json "refresh_token")
                  :expires-at (.getLong json "expires_at")}]
-      (android.util.Log/i tag (str "Token exchange successful. Access token: " 
+      (android.util.Log/i tag (str "Token exchange successful. Access token: "
                                   (.substring (:access-token result) 0 10) "..."))
       result))
 
@@ -394,7 +394,7 @@
           page-size 200  ;; Maximum allowed by Strava API
           ;; Function to fetch a single page
           fetch-page (fn [page]
-                      (let [activities-url (java.net.URL. 
+                      (let [activities-url (java.net.URL.
                                           (str "https://www.strava.com/api/v3/athlete/activities"
                                                "?per_page=" page-size
                                                "&page=" page))
@@ -463,7 +463,7 @@
             (.setVisibility token-input android.view.View/VISIBLE)
             (.setVisibility submit-token-button android.view.View/VISIBLE)
             (.setText status-text "After authorizing, copy the 'code' parameter from the URL and paste it here."))))))
-  
+
   ;; Function to handle token submission
   (defn handle-token-submit []
     (.setOnClickListener submit-token-button
@@ -487,20 +487,20 @@
                       _ (android.util.Log/i tag "Token exchange successful, fetching activities...")
                       activities (fetch-activities access-token)]
                   (update-visualization activities)
-                  (run-on-ui #(.setText status-text 
+                  (run-on-ui #(.setText status-text
                                       (format "Loaded %d activities" (count activities)))))
                 (catch Exception e
                   (android.util.Log/e tag (str "Error: " (.getMessage e)))
                   (android.util.Log/e tag (str "Stack trace: " (.getStackTrace e)))
                   (run-on-ui #(do
-                               (.setText status-text 
+                               (.setText status-text
                                        (str "Error: " (.getMessage e) ". Please try again."))
                                (.setVisibility auth-button android.view.View/VISIBLE)
                                (.setVisibility token-input android.view.View/VISIBLE)
                                (.setVisibility submit-token-button android.view.View/VISIBLE)))))))))))
-  
+
   ;; Initialize the app
   (handle-strava-auth)
   (handle-token-submit)
-  
-  (.setText status-text "Please connect your Strava account to begin")) 
+
+  (.setText status-text "Please connect your Strava account to begin"))
