@@ -52,6 +52,7 @@ public class RenderActivity extends AppCompatActivity {
     private File appCacheDir;
     private String code;
     private String codeHash;
+    private boolean shouldKillOnDestroy = false;
 
     private class UiSafeViewGroup extends LinearLayout {
         private final LinearLayout layoutDelegate;
@@ -234,13 +235,12 @@ public class RenderActivity extends AppCompatActivity {
         resultIntent.putExtra("timings", timingData.toString());
         setResult(RESULT_OK, resultIntent);
 
-        super.onBackPressed();
+        // Instead of killing immediately, we'll set a flag and let the normal lifecycle
+        // progress
+        shouldKillOnDestroy = true;
 
-        // Kill the current process if it's a render process
-        if (isInRenderProcess()) {
-            Log.d(TAG, "Killing render process: " + android.os.Process.myPid());
-            android.os.Process.killProcess(android.os.Process.myPid());
-        }
+        // Call super to continue normal back button behavior
+        super.onBackPressed();
     }
 
     private void setupClojureClassLoader() {
@@ -526,11 +526,14 @@ public class RenderActivity extends AppCompatActivity {
     protected void onDestroy() {
         Log.d(TAG, "onDestroy called");
         isDestroyed = true;
+
+        // First let the standard onDestroy complete
         super.onDestroy();
+
         Log.d(TAG, "RenderActivity destroyed");
 
-        // Kill the current process if it's a render process
-        if (isInRenderProcess()) {
+        // Only kill if we're coming from back button press
+        if (shouldKillOnDestroy && isInRenderProcess()) {
             Log.d(TAG, "Killing render process: " + android.os.Process.myPid());
             android.os.Process.killProcess(android.os.Process.myPid());
         }
