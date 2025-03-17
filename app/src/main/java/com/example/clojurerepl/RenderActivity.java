@@ -362,7 +362,11 @@ public class RenderActivity extends AppCompatActivity {
                     }
                     Log.d(TAG, "Evaluating form: " + form);
                     lastResult = Compiler.eval(form);
-                    Log.d(TAG, "Last result class: " + lastResult.getClass().getName());
+                    if (lastResult != null) {
+                        Log.d(TAG, "Last result class: " + lastResult.getClass().getName());
+                    } else {
+                        Log.d(TAG, "Last result is null");
+                    }
                 }
                 Log.d(TAG, "Done with evaluation");
 
