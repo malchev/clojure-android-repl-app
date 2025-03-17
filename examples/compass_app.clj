@@ -1,5 +1,5 @@
 ;; Compass
-(def TAG "CompassApp")
+(def TAG "ClojureApp")
 (def VERTEX-SHADER "uniform mat4 uProjectionMatrix;
                     uniform mat4 uRotationMatrix;
                     attribute vec4 vPosition;

@@ -2,7 +2,7 @@
 (let [activity *context*
       content *content-layout*
       handler (android.os.Handler. (android.os.Looper/getMainLooper))
-      tag "StravaViz"  ;; Tag for logging
+      tag "ClojureApp"  ;; Tag for logging
 
       _ (android.util.Log/i tag "Initializing StravaViz app")
 

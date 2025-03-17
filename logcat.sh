@@ -7,4 +7,4 @@ done
 for arg in "$@"; do
     cmdline="${cmdline} -s ${arg}"
 done
-echo adb logcat -s DEBUG -s AndroidRuntime ${cmdline}
+echo adb logcat -s DEBUG -s AndroidRuntime -s ClojureApp ${cmdline}

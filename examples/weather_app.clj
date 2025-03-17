@@ -2,7 +2,7 @@
 (let [activity *context*
       content *content-layout*
       handler (android.os.Handler. (android.os.Looper/getMainLooper))
-      tag "WeatherApp"  ;; Tag for logging
+      tag "ClojureApp"  ;; Tag for logging
 
       ;; Store location client as atom so we can reference it later
       location-client (atom nil)
