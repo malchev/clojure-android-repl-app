@@ -108,17 +108,51 @@ public class RenderActivity extends AppCompatActivity {
         }
     }
 
-    public File getAppCacheDir() {
-        if (appCacheDir == null) {
-            File baseDir = new File(getCacheDir(), CLOJURE_APP_CACHE_DIR);
-            appCacheDir = new File(baseDir, codeHash);
-            if (!appCacheDir.exists()) {
-                if (!appCacheDir.mkdirs()) {
-                    Log.e(TAG, "Failed to create app cache directory");
-                    throw new RuntimeException("Failed to create app cache directory");
+    public static File getAppCacheDir(Context context, String codeHash) {
+        File baseDir = new File(context.getCacheDir(), CLOJURE_APP_CACHE_DIR);
+        File appCacheDir = new File(baseDir, codeHash);
+        if (!appCacheDir.exists()) {
+            if (!appCacheDir.mkdirs()) {
+                Log.e(TAG, "Failed to create app cache directory");
+                throw new RuntimeException("Failed to create app cache directory");
+            }
+        }
+        Log.d(TAG, "App cache directory created: " + appCacheDir.getAbsolutePath());
+        return appCacheDir;
+    }
+
+    public static void clearProgramData(Context context, String codeHash) {
+        try {
+            File cacheDir = getAppCacheDir(context, codeHash);
+
+            // Delete the directory and its contents
+            if (cacheDir.exists()) {
+                deleteRecursive(cacheDir);
+                Log.d(TAG, "Program data cleared for hash: " + codeHash);
+            } else {
+                Log.d(TAG, "No data to clear for hash: " + codeHash);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error clearing program data", e);
+            throw new RuntimeException("Error clearing program data", e);
+        }
+    }
+
+    private static void deleteRecursive(File fileOrDirectory) {
+        if (fileOrDirectory.isDirectory()) {
+            File[] children = fileOrDirectory.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursive(child);
                 }
             }
-            Log.d(TAG, "App cache directory created: " + appCacheDir.getAbsolutePath());
+        }
+        fileOrDirectory.delete();
+    }
+
+    public File getAppCacheDir() {
+        if (appCacheDir == null) {
+            appCacheDir = getAppCacheDir(this, codeHash);
         }
         return appCacheDir;
     }

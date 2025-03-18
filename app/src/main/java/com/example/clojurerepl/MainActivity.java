@@ -691,33 +691,55 @@ public class MainActivity extends AppCompatActivity {
         clearTimingsButton.setOnClickListener(v -> clearCurrentProgramTimings());
 
         Button deleteProgramButton = new Button(this);
-        deleteProgramButton.setText("Delete");
+        deleteProgramButton.setText("Delete Program");
         deleteProgramButton.setOnClickListener(v -> deleteCurrentProgram());
 
-        Button clearCacheButton = new Button(this);
-        clearCacheButton.setText("Clear Cache");
-        clearCacheButton.setOnClickListener(v -> {
+        Button clearClassCacheButton = new Button(this);
+        clearClassCacheButton.setText("Clear Classes");
+        clearClassCacheButton.setOnClickListener(v -> {
             if (currentProgram != null) {
                 String code = currentProgram.getCode();
                 String codeHash = RenderActivity.getCodeHash(code);
                 BytecodeCache.getInstance(this, codeHash).clearCacheForHash(codeHash);
-                Toast.makeText(this, "Cache cleared for current program", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Class cache cleared for current program", Toast.LENGTH_SHORT).show();
             } else {
                 Toast.makeText(this, "No program selected", Toast.LENGTH_SHORT).show();
             }
         });
 
-        // Update button weights to accommodate three buttons
+        Button clearDataButton = new Button(this);
+        clearDataButton.setText("Clear App Data");
+        clearDataButton.setOnClickListener(v -> {
+            if (currentProgram == null) {
+                Toast.makeText(this, "No program selected", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            try {
+                // Use RenderActivity's static method to clear program data
+                String code = currentProgram.getCode();
+                String codeHash = RenderActivity.getCodeHash(code);
+                RenderActivity.clearProgramData(this, codeHash);
+                Toast.makeText(this, "Program data cleared successfully", Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {
+                Log.e(TAG, "Error clearing program data", e);
+                Toast.makeText(this, "Error clearing data: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        // Update button weights to accommodate four buttons
         LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
         buttonParams.setMargins(0, 0, 8, 0); // Add margin between buttons
 
         clearTimingsButton.setLayoutParams(buttonParams);
+        clearClassCacheButton.setLayoutParams(buttonParams);
+        clearDataButton.setLayoutParams(buttonParams);
         deleteProgramButton.setLayoutParams(buttonParams);
-        clearCacheButton.setLayoutParams(buttonParams);
 
         buttonRow.addView(clearTimingsButton);
-        buttonRow.addView(clearCacheButton);
+        buttonRow.addView(clearClassCacheButton);
+        buttonRow.addView(clearDataButton);
         buttonRow.addView(deleteProgramButton);
 
         // Create a container for all elements
