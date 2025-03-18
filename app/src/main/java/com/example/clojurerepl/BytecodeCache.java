@@ -30,7 +30,7 @@ public class BytecodeCache {
     // configure to generate classes directly into the cache.
     private static final String DEX_FILENAME = "classes.dex";
     private static final String MANIFEST_FILENAME = "classes.manifest";
-    private static BytecodeCache instance;
+    private static final Map<String, BytecodeCache> instances = new HashMap<>();
 
     private final Context context;
     private final File cacheDir;
@@ -47,12 +47,12 @@ public class BytecodeCache {
         Log.d(TAG, "BytecodeCache initialized at: " + cacheDir.getAbsolutePath());
     }
 
-    // Singleton getter
+    // Updated getInstance to return different instances for different codeHashes
     public static synchronized BytecodeCache getInstance(Context context, String codeHash) {
-        if (instance == null) {
-            instance = new BytecodeCache(context.getApplicationContext(), codeHash);
+        if (!instances.containsKey(codeHash)) {
+            instances.put(codeHash, new BytecodeCache(context.getApplicationContext(), codeHash));
         }
-        return instance;
+        return instances.get(codeHash);
     }
 
     public File createPathToDexFile(String className) {
@@ -246,5 +246,48 @@ public class BytecodeCache {
                 Log.d(TAG, "Deleted hash directory: " + hashDir.getPath());
             }
         }
+    }
+
+    public int getClassCount() {
+        // Check if cache directory exists
+        File hashDir = new File(cacheDir, codeHash);
+        if (!hashDir.exists()) {
+            return 0;
+        }
+
+        // Count class directories (each containing a .dex file)
+        File[] classDirs = hashDir.listFiles(File::isDirectory);
+        return classDirs != null ? classDirs.length : 0;
+    }
+
+    public long getCacheSize() {
+        File hashDir = new File(cacheDir, codeHash);
+        if (!hashDir.exists()) {
+            return 0L;
+        }
+
+        long totalSize = 0;
+        // Calculate size by summing up all files in all subdirectories
+        File[] classDirs = hashDir.listFiles(File::isDirectory);
+        if (classDirs != null) {
+            for (File classDir : classDirs) {
+                File[] files = classDir.listFiles();
+                if (files != null) {
+                    for (File file : files) {
+                        if (file.isFile()) {
+                            totalSize += file.length();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Add manifest file size if it exists
+        File manifestFile = new File(hashDir, MANIFEST_FILENAME);
+        if (manifestFile.exists()) {
+            totalSize += manifestFile.length();
+        }
+
+        return totalSize;
     }
 }

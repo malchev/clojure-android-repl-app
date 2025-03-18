@@ -458,7 +458,7 @@ public class RenderActivity extends AppCompatActivity {
                 long executionTime = System.currentTimeMillis() - startTime;
                 Log.d(TAG, "Code compiled and executed in " + executionTime + "ms");
 
-                updateTimings("Code compilation", executionTime);
+                updateTimings("Eval", executionTime);
 
                 // Save DEX file for class loading, but only if we are generating the cache now.
                 // The cache should exist on subsequent invocations of this activity.
