@@ -7,7 +7,9 @@
         '[android.os Bundle]
         '[android.content.res Configuration]
         '[java.util Date]
-        '[java.text SimpleDateFormat])
+        '[java.text SimpleDateFormat]
+        '[java.io File FileWriter BufferedWriter FileReader BufferedReader]
+        '[org.json JSONObject JSONArray])
 
 ;; Require clojure.core to get access to core functions
 (clojure.core/refer-clojure)
@@ -22,18 +24,163 @@
 (def ui-state (atom {:scroll-view nil
                      :log-layout nil
                      :status-view nil
-                     :event-count 0}))
+                     :event-count 0
+                     :log-entries []
+                     :restored-logs-count 0}))
+
+;; File for saving logs
+(def log-file-path (str *cache-dir* "/clojure_app_logs.json"))
+
+;; Add this global counter to track highest count across sessions
+(def highest-seen-count (atom 0))
+
+;; Initialize the counter based on existing log file as early as possible
+(try
+  (let [file (File. log-file-path)]
+    (when (.exists file)
+      (try
+        (let [reader (BufferedReader. (FileReader. file))
+              sb (StringBuilder.)
+              buffer (char-array 1024)
+              _ (loop [chars-read (.read reader buffer 0 1024)]
+                  (when (> chars-read 0)
+                    (.append sb buffer 0 chars-read)
+                    (recur (.read reader buffer 0 1024))))
+              _ (.close reader)
+              json-str (.toString sb)]
+
+          (when (> (.length json-str) 0)
+            (let [json-array (JSONArray. json-str)
+                  max-count (atom 0)]
+
+              ;; Find the max count in the JSON array
+              (dotimes [i (.length json-array)]
+                (try
+                  (let [json-obj (.getJSONObject json-array i)
+                        count (try (.getInt json-obj "count") (catch Exception e 0))]
+                    (when (> count @max-count)
+                      (reset! max-count count)))
+                  (catch Exception e nil)))
+
+              ;; Set the highest-seen-count to the max found
+              (swap! highest-seen-count max @max-count))))
+        (catch Exception e nil))))
+  (catch Exception e nil))
+
+(defn save-logs-to-file
+  "Save logs to a file in JSON format"
+  []
+  (try
+    (let [log-entries (:log-entries @ui-state)
+          json-array (JSONArray.)]
+
+      ;; Add each log entry to the JSON array
+      (doseq [entry log-entries]
+        (let [json-obj (JSONObject.)]
+          (.put json-obj "message" (:message entry))
+          (.put json-obj "timestamp" (:timestamp entry))
+          (.put json-obj "restored" (boolean (:restored entry)))
+          (.put json-obj "count" (:count entry))
+          (.put json-obj "event-name" (:event-name entry))
+          (.put json-obj "background-color" (:background-color entry))
+          (.put json-array json-obj)))
+
+      ;; Write to file
+      (let [writer (BufferedWriter. (FileWriter. log-file-path))]
+        (.write writer (.toString json-array))
+        (.close writer)
+        (Log/i TAG (str "Logs saved to " log-file-path))))
+    (catch Exception e
+      (Log/e TAG (str "Error saving logs: " (.getMessage e))))))
+
+(defn load-logs-from-file
+  "Load logs from file in JSON format"
+  []
+  (try
+    (let [file (File. log-file-path)]
+      (if (.exists file)
+        (let [reader (BufferedReader. (FileReader. file))
+              sb (StringBuilder.)
+              buffer (char-array 1024)
+              _ (loop [chars-read (.read reader buffer 0 1024)]
+                  (when (> chars-read 0)
+                    (.append sb buffer 0 chars-read)
+                    (recur (.read reader buffer 0 1024))))
+              _ (.close reader)
+              json-array (JSONArray. (.toString sb))
+              log-entries (atom [])
+              restored-count (.length json-array)]
+
+          ;; Convert JSON array back to log entries
+          (dotimes [i restored-count]
+            (let [json-obj (.getJSONObject json-array i)
+                  entry {:message (.getString json-obj "message")
+                         :timestamp (.getString json-obj "timestamp")
+                         :count (.getInt json-obj "count")
+                         :event-name (.getString json-obj "event-name")
+                         :background-color (.getString json-obj "background-color")
+                         :restored true}]
+              (swap! log-entries conj entry)))
+
+          ;; Return the loaded entries and count
+          {:entries @log-entries
+           :count restored-count})
+        {:entries [] :count 0}))
+    (catch Exception e
+      (Log/e TAG (str "Error loading logs: " (.getMessage e)))
+      {:entries [] :count 0})))
+
+(defn display-log-entry
+  "Display a single log entry in the UI"
+  [entry]
+  (let [log-layout (:log-layout @ui-state)
+        event-view (TextView. *context*)]
+
+    (.setTextSize event-view 14)
+    (.setText event-view (str (:count entry) ". " (:message entry)))
+    (.setPadding event-view 20 10 20 10)
+    (.setTextColor event-view Color/BLACK)
+
+    ;; Set background color - different for restored logs
+    (if (:restored entry)
+      (.setBackgroundColor event-view (Color/parseColor "#E1F5FE")) ;; Light blue for restored logs
+      (.setBackgroundColor event-view (Color/parseColor
+                                       (if (odd? (:count entry))
+                                         "#F0F0F0"
+                                         "#FFFFFF"))))
+
+    ;; Add a left border to restored logs for visual separation
+    (when (:restored entry)
+      (let [drawable (android.graphics.drawable.GradientDrawable.)]
+        (.setStroke drawable 5 (Color/parseColor "#2196F3"))
+        (.setBackground event-view drawable)))
+
+    (.addView log-layout event-view)))
 
 (defn log-event
   "Log event to both Logcat and the UI"
   [event-name]
   (let [timestamp (.format date-formatter (Date.))
         message (str event-name " at " timestamp)
-        _ (swap! ui-state update :event-count inc)
-        count (:event-count @ui-state)
+
+        ;; Get next count by incrementing our highest-seen-count
+        _ (swap! highest-seen-count inc)
+        count @highest-seen-count
+
+        ;; Update UI state with the new count
+        _ (swap! ui-state assoc :event-count count)
+
         status-view (:status-view @ui-state)
         log-layout (:log-layout @ui-state)
-        scroll-view (:scroll-view @ui-state)]
+        scroll-view (:scroll-view @ui-state)
+
+        ;; Create a log entry record
+        entry {:message message
+               :timestamp timestamp
+               :count count
+               :event-name event-name
+               :background-color (if (odd? count) "#F0F0F0" "#FFFFFF")
+               :restored false}]
 
     ;; Log to Logcat
     (Log/i TAG message)
@@ -42,24 +189,19 @@
     (when status-view
       (.setText status-view (str "Last event: " event-name)))
 
+    ;; Add to our in-memory log collection
+    (swap! ui-state update :log-entries conj entry)
+
     ;; Add new entry to log layout
     (when log-layout
-      (let [event-view (TextView. *context*)]
-        (.setTextSize event-view 14)
-        (.setText event-view (str count ". " message))
-        (.setPadding event-view 20 10 20 10)
-        (.setTextColor event-view Color/BLACK)
+      (display-log-entry entry)
 
-        ;; Alternate background colors for readability
-        (if (odd? count)
-          (.setBackgroundColor event-view (Color/parseColor "#F0F0F0"))
-          (.setBackgroundColor event-view (Color/parseColor "#FFFFFF")))
+      ;; Save logs to file after adding a new entry
+      (save-logs-to-file)
 
-        (.addView log-layout event-view)
-
-        ;; Scroll to bottom
-        (when scroll-view
-          (.post scroll-view (fn [] (.fullScroll scroll-view View/FOCUS_DOWN))))))))
+      ;; Scroll to bottom
+      (when scroll-view
+        (.post scroll-view (fn [] (.fullScroll scroll-view View/FOCUS_DOWN)))))))
 
 (defn create-ui
   "Create the main UI for the app"
@@ -81,6 +223,14 @@
                        ViewGroup$LayoutParams/WRAP_CONTENT)
         _ (.addView main-layout status-view status-params)
 
+        ;; Buttons container
+        button-container (LinearLayout. *context*)
+        _ (.setOrientation button-container LinearLayout/HORIZONTAL)
+        container-params (android.widget.LinearLayout$LayoutParams.
+                         ViewGroup$LayoutParams/MATCH_PARENT
+                         ViewGroup$LayoutParams/WRAP_CONTENT)
+        _ (.addView main-layout button-container container-params)
+
         ;; Clear log button
         clear-button (Button. *context*)
         _ (.setText clear-button "Clear Event Log")
@@ -89,13 +239,34 @@
                                (onClick [this view]
                                  (let [log-layout (:log-layout @ui-state)]
                                    (.removeAllViews log-layout)
-                                   (swap! ui-state assoc :event-count 0)
+                                   (swap! ui-state assoc
+                                          :event-count 0
+                                          :log-entries []
+                                          :restored-logs-count 0)
+                                   ;; Delete the log file when clearing
+                                   (let [file (File. log-file-path)]
+                                     (when (.exists file)
+                                       (.delete file)))
                                    (log-event "Log Cleared")))))
         button-params (android.widget.LinearLayout$LayoutParams.
-                      ViewGroup$LayoutParams/MATCH_PARENT
+                      0
                       ViewGroup$LayoutParams/WRAP_CONTENT)
-        _ (.setMargins button-params 20 10 20 10)
-        _ (.addView main-layout clear-button button-params)
+        _ (set! (.weight button-params) 1.0)
+        _ (.setMargins button-params 10 10 5 10)
+        _ (.addView button-container clear-button button-params)
+
+        ;; Add legend for restored logs
+        restored-legend (TextView. *context*)
+        _ (.setText restored-legend "■ Restored logs")
+        _ (.setTextSize restored-legend 14)
+        _ (.setTextColor restored-legend (Color/parseColor "#2196F3"))
+        _ (.setPadding restored-legend 20 10 20 10)
+        _ (.setTypeface restored-legend Typeface/DEFAULT_BOLD)
+        legend-params (android.widget.LinearLayout$LayoutParams.
+                      ViewGroup$LayoutParams/WRAP_CONTENT
+                      ViewGroup$LayoutParams/WRAP_CONTENT)
+        _ (.setMargins legend-params 10 10 10 10)
+        _ (.addView main-layout restored-legend legend-params)
 
         ;; Scrollable log area
         scroll-view (ScrollView. *context*)
@@ -162,7 +333,9 @@
 
 (defn on-save-instance-state [outState]
   (log-event "onSaveInstanceState")
-  (.putInt outState "eventCount" (:event-count @ui-state)))
+  (.putInt outState "eventCount" (:event-count @ui-state))
+  ;; Make sure to save logs to file
+  (save-logs-to-file))
 
 (defn on-restore-instance-state [savedInstanceState]
   (log-event "onRestoreInstanceState")
@@ -373,6 +546,19 @@
 
     (Log/i TAG "Component callbacks registered")))
 
+;; Add this function to restore logs when app starts
+(defn restore-logs
+  "Restore logs from previous sessions"
+  []
+  (let [{:keys [entries count]} (load-logs-from-file)]
+    (when (> count 0)
+      ;; Log the restore event (will use next available count after our initialization)
+      (log-event (str "Restored " count " logs from previous session"))
+      (swap! ui-state assoc :restored-logs-count count)
+
+      ;; Add restored entries to our collection
+      (swap! ui-state update :log-entries concat entries))))
+
 (defn -main []
   (Log/i TAG "App starting")
 
@@ -386,5 +572,21 @@
     ;; Register lifecycle callbacks
     (register-callbacks)
 
+    ;; Restore logs from previous sessions
+    (restore-logs)
+
     ;; Initial event
-    (log-event "Application Initialized")))
+    (log-event "Application Initialized")
+
+    ;; Now display all logs in the right order
+    (let [log-layout (:log-layout @ui-state)
+          all-entries (:log-entries @ui-state)
+          ;; First sort by restored status (restored first), then by count
+          sorted-entries (sort-by (juxt #(if (:restored %) 0 1) :count) all-entries)]
+
+      ;; Clear the log layout since we'll redisplay everything
+      (.removeAllViews log-layout)
+
+      ;; Display all entries in the correct order
+      (doseq [entry sorted-entries]
+        (display-log-entry entry)))))
