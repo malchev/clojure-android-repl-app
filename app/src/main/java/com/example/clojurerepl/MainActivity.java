@@ -942,11 +942,19 @@ public class MainActivity extends AppCompatActivity {
             for (String timing : currentProgram.getTimingRuns()) {
                 updateTimingsTable(timing);
             }
+
+            // Update stats for the new current program
+            String code = currentProgram.getCode();
+            int lineCount = code.split("\n").length;
+            updateStats("Program loaded", lineCount, null);
         } else {
             // No programs left
             currentProgram = null;
             replInput.setText("");
             clearTimingsTable();
+
+            // Reset stats view to initial state
+            updateStats("Initializing...", null, null);
         }
 
         // Save the state
