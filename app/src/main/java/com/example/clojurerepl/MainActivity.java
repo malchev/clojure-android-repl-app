@@ -841,18 +841,26 @@ public class MainActivity extends AppCompatActivity {
         clearTimingsButton.setLayoutParams(buttonParams);
         clearTimingsButton.setAllCaps(true);
         clearTimingsButton.setTextSize(12);
+        clearTimingsButton.setBackgroundColor(Color.parseColor("#1976D2")); // Material Blue
+        clearTimingsButton.setTextColor(Color.WHITE);
 
         clearClassCacheButton.setLayoutParams(buttonParams);
         clearClassCacheButton.setAllCaps(true);
         clearClassCacheButton.setTextSize(12);
+        clearClassCacheButton.setBackgroundColor(Color.parseColor("#1976D2")); // Material Blue
+        clearClassCacheButton.setTextColor(Color.WHITE);
 
         clearDataButton.setLayoutParams(buttonParams);
         clearDataButton.setAllCaps(true);
         clearDataButton.setTextSize(12);
+        clearDataButton.setBackgroundColor(Color.parseColor("#1976D2")); // Material Blue
+        clearDataButton.setTextColor(Color.WHITE);
 
         deleteProgramButton.setLayoutParams(buttonParams);
         deleteProgramButton.setAllCaps(true);
         deleteProgramButton.setTextSize(12);
+        deleteProgramButton.setBackgroundColor(Color.parseColor("#1976D2")); // Material Blue
+        deleteProgramButton.setTextColor(Color.WHITE);
 
         buttonRow.addView(clearTimingsButton);
         buttonRow.addView(clearClassCacheButton);
