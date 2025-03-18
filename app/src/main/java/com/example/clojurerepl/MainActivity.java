@@ -41,6 +41,7 @@ import java.lang.reflect.Type;
 import java.util.HashMap;
 import java.util.Map;
 import android.widget.Toast;
+import android.content.res.ColorStateList;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "ClojureREPL";
@@ -727,15 +728,35 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // Update button weights to accommodate four buttons
+        // Create simple button layout params with equal weights
         LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
-        buttonParams.setMargins(0, 0, 8, 0); // Add margin between buttons
+        buttonParams.setMargins(4, 0, 4, 0);
 
+        // Set consistent styles for all buttons
         clearTimingsButton.setLayoutParams(buttonParams);
+        clearTimingsButton.setAllCaps(true);
+        clearTimingsButton.setTextSize(12);
+        clearTimingsButton.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#1976D2"))); // Material Blue
+        clearTimingsButton.setTextColor(Color.WHITE);
+
         clearClassCacheButton.setLayoutParams(buttonParams);
+        clearClassCacheButton.setAllCaps(true);
+        clearClassCacheButton.setTextSize(12);
+        clearClassCacheButton.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#1976D2")));
+        clearClassCacheButton.setTextColor(Color.WHITE);
+
         clearDataButton.setLayoutParams(buttonParams);
+        clearDataButton.setAllCaps(true);
+        clearDataButton.setTextSize(12);
+        clearDataButton.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#1976D2")));
+        clearDataButton.setTextColor(Color.WHITE);
+
         deleteProgramButton.setLayoutParams(buttonParams);
+        deleteProgramButton.setAllCaps(true);
+        deleteProgramButton.setTextSize(12);
+        deleteProgramButton.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#1976D2")));
+        deleteProgramButton.setTextColor(Color.WHITE);
 
         buttonRow.addView(clearTimingsButton);
         buttonRow.addView(clearClassCacheButton);
