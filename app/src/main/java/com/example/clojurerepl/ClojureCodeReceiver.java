@@ -11,13 +11,34 @@ public class ClojureCodeReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        Log.i(TAG, "Received broadcast intent: " + intent.getAction());
-        if (ACTION_EVAL_CODE.equals(intent.getAction())) {
-            // Forward the intent to MainActivity
+        if (intent != null && intent.hasExtra(RenderActivity.EXTRA_CODE)) {
+            String encodedCode = intent.getStringExtra(RenderActivity.EXTRA_CODE);
+            String encoding = intent.getStringExtra(RenderActivity.EXTRA_ENCODING);
+
+            // Decode the code if it's base64 encoded
+            String decodedCode;
+            if ("base64".equals(encoding) && encodedCode != null) {
+                try {
+                    byte[] decodedBytes = android.util.Base64.decode(encodedCode, android.util.Base64.DEFAULT);
+                    decodedCode = new String(decodedBytes, "UTF-8");
+                    Log.d(TAG, "Successfully decoded base64 content, length: " + decodedCode.length());
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to decode base64 content", e);
+                    decodedCode = encodedCode; // Fallback to original content on error
+                }
+            } else {
+                decodedCode = encodedCode; // Use as-is if not base64 encoded
+            }
+
+            // Launch MainActivity with the decoded code
             Intent mainIntent = new Intent(context, MainActivity.class);
+            mainIntent.putExtra(RenderActivity.EXTRA_CODE, decodedCode);
             mainIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-            mainIntent.putExtras(intent.getExtras());
             context.startActivity(mainIntent);
+
+            Log.d(TAG, "ClojureCodeReceiver launched MainActivity with code");
+        } else {
+            Log.e(TAG, "Received intent without code extra");
         }
     }
 }

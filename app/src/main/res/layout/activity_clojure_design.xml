@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="#FFFFFF">
+
+    <EditText
+        android:id="@+id/app_description_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Describe the app you want to create"
+        android:minLines="2"
+        android:textColor="#000000"
+        android:textColorHint="#808080"
+        android:inputType="textMultiLine" />
+
+    <Button
+        android:id="@+id/generate_button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Generate App" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/current_code_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Current Code:"
+                android:textColor="#000000"
+                android:textStyle="bold"
+                android:layout_marginTop="16dp" />
+
+            <TextView
+                android:id="@+id/current_code_view"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:textSize="12sp"
+                android:textColor="#000000"
+                android:background="#f5f5f5"
+                android:padding="8dp" />
+
+            <TextView
+                android:id="@+id/screenshot_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="App Preview:"
+                android:textColor="#000000"
+                android:textStyle="bold"
+                android:layout_marginTop="16dp" />
+
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="200dp"
+                android:background="#eaeaea">
+
+                <LinearLayout
+                    android:id="@+id/screenshots_container"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:orientation="horizontal"
+                    android:padding="2dp"/>
+            </HorizontalScrollView>
+
+            <TextView
+                android:id="@+id/logcat_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Logcat Output:"
+                android:textColor="#000000"
+                android:textStyle="bold"
+                android:layout_marginTop="16dp" />
+
+            <TextView
+                android:id="@+id/logcat_output"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:textSize="10sp"
+                android:textColor="#000000"
+                android:background="#f5f5f5"
+                android:padding="8dp" />
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- Hidden by default, shown after app is generated -->
+    <EditText
+        android:id="@+id/feedback_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Enter feedback for improvement"
+        android:minLines="2"
+        android:visibility="gone"
+        android:inputType="textMultiLine" />
+
+    <!-- Feedback buttons container -->
+    <LinearLayout
+        android:id="@+id/feedback_buttons_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:background="#FFFFFF"
+        android:layout_marginTop="16dp"
+        android:padding="16dp">
+
+        <Button
+            android:id="@+id/thumbs_down_button"
+            android:layout_width="0dp"
+            android:layout_height="60dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp"
+            android:text="NEEDS WORK"
+            android:textSize="14sp"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#FF0000" />
+
+        <Button
+            android:id="@+id/run_button"
+            android:layout_width="0dp"
+            android:layout_height="60dp"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
+            android:text="RUN CODE"
+            android:textSize="14sp"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#2196F3" />
+
+        <Button
+            android:id="@+id/thumbs_up_button"
+            android:layout_width="0dp"
+            android:layout_height="60dp"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="ACCEPT APP"
+            android:textSize="14sp"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#00FF00" />
+    </LinearLayout>
+
+    <!-- Legacy buttons to be removed later -->
+    <Button
+        android:id="@+id/submit_feedback_button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Submit Feedback"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/confirm_success_button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Accept App"
+        android:visibility="gone" />
+
+    <!-- Keep the existing ImageView hidden for backward compatibility -->
+    <ImageView
+        android:id="@+id/screenshot_view"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="LLM Type:"
+            android:layout_gravity="center_vertical"
+            android:layout_marginEnd="8dp"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Spinner
+                android:id="@+id/llm_type_spinner"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content" />
+
+            <Spinner
+                android:id="@+id/gemini_model_spinner"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/clear_chat_history_button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Clear History"
+                android:textSize="12sp"
+                android:padding="8dp" />
+
+            <Button
+                android:id="@+id/clear_api_key_button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Clear Key"
+                android:textSize="12sp"
+                android:padding="8dp" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

@@ -195,54 +195,31 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void launchRenderActivity() {
-        try {
-            String code = replInput.getText().toString();
-            if (code.trim().isEmpty()) {
-                replOutput.setText("Please enter some code first");
-                updateStats("No code", 0, 0L);
-                return;
-            }
-
-            if (code.length() > 500000) {
-                Log.e(TAG, "Code too large for intent: " + code.length() + " bytes");
-                replOutput.setText("Error: Code too large for intent");
-                return;
-            }
-
-            final int lineCount = code.split("\n").length;
-            final long startTime = System.currentTimeMillis();
-
-            updateStats("Compiling...", lineCount, null);
-
-            try {
-                Intent renderIntent = new Intent(MainActivity.this, RenderActivity.class);
-                Log.d(TAG, "Creating intent for RenderActivity with code length: " + code.length());
-                renderIntent.putExtra("code", code);
-                Log.d(TAG, "Starting RenderActivity...");
-                startActivityForResult(renderIntent, 1001); // Use request code 1001 for render activity
-                Log.d(TAG, "RenderActivity started");
-                replOutput.setText("Launching render activity...");
-
-                // Update stats with final timing
-                long totalTime = System.currentTimeMillis() - startTime;
-                updateStats("Compiled successfully", lineCount, totalTime);
-            } catch (Exception e) {
-                Log.e(TAG, "Error launching RenderActivity", e);
-                replOutput.setText("Error: " + e.getMessage());
-                updateStats("Compilation error", lineCount, null);
-            }
-        } catch (Throwable t) {
-            // Catch absolutely everything
-            Log.e(TAG, "Critical error in launchRenderActivity", t);
-            Toast.makeText(this, "Critical error: " + t.getMessage(), Toast.LENGTH_LONG).show();
+        String code = replInput.getText().toString();
+        if (code.isEmpty()) {
+            Toast.makeText(this, "No code to run", Toast.LENGTH_SHORT).show();
+            return;
         }
+
+        // Save current state before launching
+        saveState();
+
+        // Create intent
+        Intent intent = new Intent(this, RenderActivity.class);
+        intent.putExtra(RenderActivity.EXTRA_CODE, code);
+
+        // Add the launching activity name
+        intent.putExtra(RenderActivity.EXTRA_LAUNCHING_ACTIVITY, MainActivity.class.getName());
+
+        // Launch the activity
+        startActivity(intent);
     }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == 1001 && resultCode == RESULT_OK && data != null) {
-            String timings = data.getStringExtra("timings");
+            String timings = data.getStringExtra(RenderActivity.EXTRA_TIMINGS);
             if (timings != null && currentProgram != null) {
                 runCount++;
                 currentProgram.addTimingRun(timings);
@@ -389,72 +366,58 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void handleIntent(Intent intent) {
-        if (intent == null || !intent.hasExtra("code")) {
-            Log.w(TAG, "No code provided in intent");
-            updateStats("No code provided", 0, 0L);
-            return;
-        }
+        if (intent != null) {
+            String encodedCode = intent.getStringExtra(RenderActivity.EXTRA_CODE);
+            String encoding = intent.getStringExtra(RenderActivity.EXTRA_ENCODING);
+            String description = intent.getStringExtra(RenderActivity.EXTRA_DESCRIPTION);
 
-        String encoding = intent.getStringExtra("encoding");
-        final String code; // Make code final
-
-        if ("base64".equals(encoding)) {
-            String base64Code = intent.getStringExtra("code");
-            if (base64Code != null) {
-                try {
-                    code = new String(Base64.decode(base64Code, Base64.DEFAULT), StandardCharsets.UTF_8);
-                } catch (IllegalArgumentException e) {
-                    Log.e(TAG, "Failed to decode base64 content", e);
-                    updateStats("Error decoding", null, null);
-                    return;
+            if (encodedCode != null && !encodedCode.isEmpty()) {
+                // Decode if base64 encoded
+                String decodedCode;
+                if ("base64".equals(encoding)) {
+                    try {
+                        byte[] decodedBytes = android.util.Base64.decode(encodedCode, android.util.Base64.DEFAULT);
+                        decodedCode = new String(decodedBytes, "UTF-8");
+                        Log.d(TAG, "Decoded base64 code from intent, length: " + decodedCode.length());
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error decoding base64 code", e);
+                        decodedCode = encodedCode; // Fallback to using as-is
+                    }
+                } else {
+                    decodedCode = encodedCode;
                 }
-            } else {
-                code = null;
+
+                // Log that we received code
+                Log.d(TAG, "Received code from ClojureAppDesignActivity, length: " + decodedCode.length());
+
+                // Create a new program
+                ClojureProgram program = new ClojureProgram(decodedCode);
+                if (description != null && !description.isEmpty()) {
+                    program.setName(description);
+                }
+
+                // Save program and update UI
+                String programName = program.getName();
+                programs.put(programName, program);
+                updateSpinnerItems();
+
+                // Select the new program
+                currentProgram = program;
+                replInput.setText(decodedCode);
+                int position = -1;
+                for (int i = 0; i < spinnerAdapter.getCount(); i++) {
+                    if (spinnerAdapter.getItem(i).equals(programName)) {
+                        position = i;
+                        break;
+                    }
+                }
+                if (position >= 0) {
+                    programSpinner.setSelection(position);
+                }
+
+                Toast.makeText(this, "Received new program: " + programName, Toast.LENGTH_LONG).show();
             }
-        } else {
-            code = intent.getStringExtra("code");
         }
-
-        if (code == null || code.trim().isEmpty()) {
-            Log.w(TAG, "Empty code provided in intent");
-            updateStats("Empty code", 0, 0L);
-            return;
-        }
-
-        // Create new program instance
-        ClojureProgram newProgram = new ClojureProgram(code);
-
-        // Check if program already exists
-        for (ClojureProgram existing : programs.values()) {
-            if (existing.equals(newProgram)) {
-                // Clear timings for existing program
-                existing.getTimingRuns().clear();
-                currentProgram = existing;
-                clearTimingsTable();
-                final String finalCode = code; // Create final copy for lambda
-                runOnUiThread(() -> {
-                    replInput.setText(finalCode);
-                    programSpinner.setSelection(
-                            spinnerAdapter.getPosition(existing.getName()));
-                });
-                saveState();
-                return;
-            }
-        }
-
-        // Add new program
-        programs.put(newProgram.getName(), newProgram);
-        currentProgram = newProgram;
-
-        final String finalCode = code; // Create final copy for lambda
-        runOnUiThread(() -> {
-            replInput.setText(finalCode);
-            updateSpinnerItems();
-            programSpinner.setSelection(
-                    spinnerAdapter.getPosition(newProgram.getName()));
-        });
-
-        saveState();
     }
 
     private void saveState() {
@@ -975,5 +938,43 @@ public class MainActivity extends AppCompatActivity {
     protected void onPause() {
         super.onPause();
         saveState();
+    }
+
+    private void saveCodeToFile() {
+        // Get the current code from the editor
+        String currentCode = replInput.getText().toString();
+        if (currentCode.isEmpty()) {
+            Toast.makeText(this, "No code to save", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        try {
+            File codeDir = new File(getExternalFilesDir(null), "code");
+            if (!codeDir.exists()) {
+                codeDir.mkdirs();
+            }
+
+            // Create a timestamped filename
+            String timestamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
+                    .format(new java.util.Date());
+            String filename = "main_" + timestamp + ".clj";
+            File codeFile = new File(codeDir, filename);
+
+            java.io.FileWriter writer = new java.io.FileWriter(codeFile);
+            writer.write(currentCode);
+            writer.close();
+
+            // Also always write to a fixed location for easy scripts
+            File latestFile = new File(codeDir, "latest_main.clj");
+            writer = new java.io.FileWriter(latestFile);
+            writer.write(currentCode);
+            writer.close();
+
+            Toast.makeText(this, "Code saved to: " + codeFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
+            Log.d(TAG, "Code saved to: " + codeFile.getAbsolutePath());
+        } catch (Exception e) {
+            Log.e(TAG, "Error saving code to file", e);
+            Toast.makeText(this, "Error saving code: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
     }
 }

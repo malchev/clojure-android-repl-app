@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="action_api_key" type="id" />
+    <item name="action_save_code" type="id" />
+    <item name="action_clear_session" type="id" />
+    <item name="action_clear_api_key" type="id" />
+</resources>

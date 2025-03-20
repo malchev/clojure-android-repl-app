@@ -9,7 +9,6 @@ import clojure.lang.RT;
 import clojure.lang.Var;
 import clojure.lang.DynamicClassLoader;
 import android.util.Log;
-import java.lang.reflect.Field;
 import android.content.Intent;
 import clojure.lang.Symbol;
 import android.graphics.Color;
@@ -32,12 +31,30 @@ import android.content.Context;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.io.File;
+import android.graphics.Bitmap;
+import android.view.View;
+import android.view.MotionEvent;
+import android.os.Handler;
+import java.util.ArrayList;
+import android.view.ViewGroup;
+import java.lang.reflect.Field;
 
 public class RenderActivity extends AppCompatActivity {
     private static final String TAG = "ClojureRender";
     private static final String CLOJURE_APP_CACHE_DIR = "clojure_app_cache";
     // Define EOF object for detecting end of input
     private static final Object EOF = new Object();
+
+    public static final String ACTION_RENDER_COMPLETE = "com.example.clojurerepl.RENDER_COMPLETE";
+    public static final String EXTRA_SUCCESS = "success";
+    public static final String EXTRA_ERROR = "error";
+    public static final String EXTRA_LAUNCHING_ACTIVITY = "launching_activity";
+    public static final String EXTRA_CODE = "code";
+    public static final String EXTRA_ENCODING = "encoding";
+    public static final String EXTRA_DESCRIPTION = "description";
+    public static final String EXTRA_SCREENSHOT_PATHS = "screenshot_paths";
+    public static final String EXTRA_PROCESS_LOGCAT = "process_logcat";
+    public static final String EXTRA_TIMINGS = "timings";
 
     private LinearLayout contentLayout;
     private Var contextVar;
@@ -53,6 +70,24 @@ public class RenderActivity extends AppCompatActivity {
     private String code;
     private String codeHash;
     private boolean shouldKillOnDestroy = false;
+
+    // Add a field to track screenshots
+    private List<File> capturedScreenshots = new ArrayList<>();
+    // Add a field to track result of Clojure compilation and execution
+    private String clojureStatus = null;
+
+    // Add a flag to track when back is pressed
+    private boolean isBackPressed = false;
+
+    // Add a field to track the last screenshot time
+    private long lastScreenshotTime = 0;
+    private static final long MIN_SCREENSHOT_INTERVAL_MS = 500; // Minimum time between screenshots
+
+    // Add this field to RenderActivity
+    private int processId;
+
+    // Add this field to track the launching activity
+    private String launchingActivity;
 
     private class UiSafeViewGroup extends LinearLayout {
         private final LinearLayout layoutDelegate;
@@ -165,6 +200,10 @@ public class RenderActivity extends AppCompatActivity {
             super.onCreate(savedInstanceState);
             setContentView(R.layout.activity_render);
 
+            // Store the current process ID
+            processId = android.os.Process.myPid();
+            Log.d(TAG, "RenderActivity started in process: " + processId);
+
             // Add timing view at the top
             timingView = new TextView(this);
             timingView.setTextSize(12);
@@ -183,16 +222,27 @@ public class RenderActivity extends AppCompatActivity {
             Log.d(TAG, "Content layout found: " + (contentLayout != null));
 
             try {
-                // Get the code from the intent
+                // Get the name of the activity that launched this one
                 Intent intent = getIntent();
-                if (intent == null) {
+                if (intent != null) {
+                    launchingActivity = intent.getStringExtra(EXTRA_LAUNCHING_ACTIVITY);
+                    if (launchingActivity == null) {
+                        // Default to design activity for backward compatibility
+                        launchingActivity = ClojureAppDesignActivity.class.getName();
+                    }
+                    Log.d(TAG, "RenderActivity launched by: " + launchingActivity);
+                }
+
+                // Get the code from the intent
+                Intent intentCode = getIntent();
+                if (intentCode == null) {
                     Log.e(TAG, "No intent provided");
                     showError("No intent provided");
                     return;
                 }
 
                 // Store code in class member instead of local variable
-                code = intent.getStringExtra("code");
+                code = intentCode.getStringExtra(EXTRA_CODE);
                 Log.d(TAG, "Received intent with code: " + (code != null ? "length=" + code.length() : "null"));
 
                 if (code != null && !code.trim().isEmpty()) {
@@ -240,6 +290,29 @@ public class RenderActivity extends AppCompatActivity {
                 Log.e(TAG, "Error in RenderActivity", e);
                 showError("Error: " + e.getMessage());
             }
+
+            // Add touch interceptor to detect user interactions
+            contentLayout.setOnTouchListener(new View.OnTouchListener() {
+                @Override
+                public boolean onTouch(View v, MotionEvent event) {
+                    // Skip screenshot capture if back button is being pressed
+                    if (event.getAction() == MotionEvent.ACTION_DOWN && !isBackPressed) {
+                        // Take screenshot on touch down
+                        new Handler().postDelayed(() -> {
+                            File screenshot = takeScreenshot();
+                            if (screenshot != null) {
+                                capturedScreenshots.add(screenshot);
+                                Log.d(TAG, "Touch DOWN screenshot captured: " + screenshot.getAbsolutePath());
+                            }
+                        }, 100); // Short delay on down event
+                    }
+                    return false; // Don't consume the event
+                }
+            });
+
+            // After your current touch listener setup, add:
+            setupScreenshotForClickableViews(contentLayout);
+            observeViewHierarchyChanges(contentLayout);
         } catch (Throwable t) {
             Log.e(TAG, "Fatal error in RenderActivity onCreate", t);
             Toast.makeText(this, "Fatal error: " + t.getMessage(), Toast.LENGTH_LONG).show();
@@ -254,7 +327,7 @@ public class RenderActivity extends AppCompatActivity {
 
             // Send timing data back to MainActivity
             Intent resultIntent = new Intent();
-            resultIntent.putExtra("timings", timingData.toString());
+            resultIntent.putExtra(EXTRA_TIMINGS, timingData.toString());
             setResult(RESULT_OK, resultIntent);
         });
     }
@@ -262,19 +335,116 @@ public class RenderActivity extends AppCompatActivity {
     @Override
     public void onBackPressed() {
         Log.d(TAG, "Back button pressed, marking activity as destroyed");
-        isDestroyed = true;
 
-        // Ensure final timing data is sent back
-        Intent resultIntent = new Intent();
-        resultIntent.putExtra("timings", timingData.toString());
-        setResult(RESULT_OK, resultIntent);
+        // Set flag to prevent duplicate screenshot
+        isBackPressed = true;
 
-        // Instead of killing immediately, we'll set a flag and let the normal lifecycle
-        // progress
-        shouldKillOnDestroy = true;
+        // Delay sending screenshots to parent to allow touch events to complete
+        new Handler().postDelayed(() -> {
+            // Capture the logcat for this process
+            List<String> processLogs = LogcatReader.getLogsForProcess(processId);
+            String logcatContent = String.join("\n", processLogs);
+            Log.d(TAG, "Captured " + processLogs.size() + " logcat lines");
+            Log.d(TAG, "┌───────────────────────────────────────────┐");
+            Log.d(TAG, "│            BEGIN LOGCAT CONTENT           │");
+            Log.d(TAG, "└───────────────────────────────────────────┘");
+            Log.d(TAG, logcatContent);
+            Log.d(TAG, "┌───────────────────────────────────────────┐");
+            Log.d(TAG, "│             END LOGCAT CONTENT            │");
+            Log.d(TAG, "└───────────────────────────────────────────┘");
 
-        // Call super to continue normal back button behavior
-        super.onBackPressed();
+            // Determine the correct parent activity to return to
+            Class<?> parentActivityClass;
+            try {
+                parentActivityClass = Class.forName(launchingActivity);
+                Log.d(TAG, "Sending results to: " + parentActivityClass.getSimpleName());
+            } catch (ClassNotFoundException e) {
+                Log.e(TAG, "Could not find parent activity class: " + launchingActivity);
+                parentActivityClass = MainActivity.class; // Default to MainActivity if not found
+            }
+
+            Intent parentIntent = new Intent(this, parentActivityClass);
+
+            // Use FLAG_ACTIVITY_CLEAR_TOP to ensure we go back to the existing instance
+            parentIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+
+            parentIntent.putExtra(EXTRA_SUCCESS, clojureStatus == null);
+
+            // Add all screenshot paths to intent
+            if (!capturedScreenshots.isEmpty()) {
+                String[] screenshotPaths = new String[capturedScreenshots.size()];
+                for (int i = 0; i < capturedScreenshots.size(); i++) {
+                    screenshotPaths[i] = capturedScreenshots.get(i).getAbsolutePath();
+                }
+                parentIntent.putExtra(EXTRA_SCREENSHOT_PATHS, screenshotPaths);
+            }
+
+            // Add the logcat content to the intent as well
+            parentIntent.putExtra(EXTRA_PROCESS_LOGCAT, logcatContent);
+
+            // Add the feedback to the intent
+            if (clojureStatus != null) {
+                Log.d(TAG, "Adding error to parent intent: " + clojureStatus);
+                parentIntent.putExtra(EXTRA_ERROR, clojureStatus);
+            }
+
+            // Set flag to kill process on destroy
+            shouldKillOnDestroy = true;
+
+            startActivity(parentIntent);
+
+            // Continue with back press
+            RenderActivity.super.onBackPressed();
+        }, 200); // Short delay to ensure we capture any in-flight touch events
+    }
+
+    private File takeScreenshot() {
+        // Check if we need to throttle screenshot capture
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastScreenshotTime < MIN_SCREENSHOT_INTERVAL_MS) {
+            Log.d(TAG, "Skipping screenshot - too soon after previous capture");
+            return null;
+        }
+
+        try {
+            // Get the root view
+            View rootView = getWindow().getDecorView().getRootView();
+
+            // Make sure the view has been drawn
+            if (rootView.getWidth() == 0 || rootView.getHeight() == 0) {
+                Log.e(TAG, "Cannot take screenshot, view has not been drawn");
+                return null;
+            }
+
+            // Create a bitmap with the layout
+            rootView.setDrawingCacheEnabled(true);
+            Bitmap bitmap = Bitmap.createBitmap(rootView.getDrawingCache());
+            rootView.setDrawingCacheEnabled(false);
+
+            if (bitmap == null) {
+                Log.e(TAG, "Failed to create bitmap from drawing cache");
+                return null;
+            }
+
+            // Use ScreenshotManager to save the bitmap
+            ScreenshotManager screenshotManager = new ScreenshotManager(this);
+            String fileName = "render_" + System.currentTimeMillis() + ".png";
+            File screenshot = screenshotManager.saveScreenshot(bitmap, fileName);
+
+            // Verify the file was created
+            if (screenshot != null && screenshot.exists()) {
+                lastScreenshotTime = currentTime;
+                Log.d(TAG, "Screenshot saved successfully: " + screenshot.getAbsolutePath() +
+                        " size: " + screenshot.length() + " bytes");
+            } else {
+                Log.e(TAG, "Screenshot file was not created");
+            }
+
+            return screenshot;
+        } catch (Exception e) {
+            Log.e(TAG, "Error taking screenshot", e);
+            return null;
+        }
     }
 
     private void setupClojureClassLoader() {
@@ -354,6 +524,7 @@ public class RenderActivity extends AppCompatActivity {
             Thread.currentThread().setContextClassLoader(classLoader);
         }
 
+        boolean success = true;
         try {
             // Set up the Android delegate
             AndroidClassLoaderDelegate delegate = new AndroidClassLoaderDelegate(
@@ -374,6 +545,15 @@ public class RenderActivity extends AppCompatActivity {
             Log.e(TAG, "Error setting up class loader", e);
             throw new RuntimeException(e);
         }
+
+        // After rendering is complete, take an initial screenshot
+        new Handler().postDelayed(() -> {
+            File screenshot = takeScreenshot();
+            if (screenshot != null) {
+                capturedScreenshots.add(screenshot);
+                Log.d(TAG, "Initial screenshot captured: " + screenshot.getAbsolutePath());
+            }
+        }, 500); // Slight delay to allow UI to render fully
     }
 
     /**
@@ -455,14 +635,15 @@ public class RenderActivity extends AppCompatActivity {
             } catch (Exception e) {
                 Log.e(TAG, "Error in Clojure compilation", e);
                 lastResult = "Error: " + e.getMessage();
-                final String errorMessage = e.getMessage();
-                runOnUiThread(() -> showError(errorMessage));
+                clojureStatus = e.getMessage(); // TODO: Have showError return this
+                showError(clojureStatus);
             }
-
         } catch (Exception e) {
-            Log.e(TAG, "Error in compilation", e);
-            final String errorMessage = e.getMessage();
-            runOnUiThread(() -> showError("Error: " + errorMessage));
+            Log.e(TAG, "Error setting up Clojure environment", e);
+            // Throw runtime exception for environment setup errors, as they indicate an app
+            // bug
+            // rather than a user code error
+            throw new RuntimeException("Error setting up Clojure environment: " + e.getMessage(), e);
         } finally {
             Log.d(TAG, "Cleaning up bindings");
             Var.popThreadBindings();
@@ -704,5 +885,63 @@ public class RenderActivity extends AppCompatActivity {
             }
         }
         return false;
+    }
+
+    private void setupScreenshotForClickableViews(ViewGroup viewGroup) {
+        // Process all child views
+        for (int i = 0; i < viewGroup.getChildCount(); i++) {
+            View child = viewGroup.getChildAt(i);
+
+            // If this is a clickable view that likely handles click events
+            if (child.isClickable()) {
+                // Instead of reflection, use an OnTouchListener that doesn't interfere with
+                // clicks
+                child.setOnTouchListener((v, event) -> {
+                    // Skip screenshot capture if back button is being pressed
+                    if (event.getAction() == MotionEvent.ACTION_DOWN && !isBackPressed) {
+                        // Take screenshot on button press
+                        new Handler().postDelayed(() -> {
+                            File screenshot = takeScreenshot();
+                            if (screenshot != null) {
+                                capturedScreenshots.add(screenshot);
+                                Log.d(TAG, "Button press screenshot: " + screenshot.getAbsolutePath());
+                            }
+                        }, 100);
+                    }
+                    // Return false to not consume the event and allow normal click processing
+                    return false;
+                });
+
+                Log.d(TAG, "Added screenshot capture to clickable view: " + child.getClass().getSimpleName());
+            }
+
+            // Recursively process child view groups
+            if (child instanceof ViewGroup) {
+                setupScreenshotForClickableViews((ViewGroup) child);
+            }
+        }
+    }
+
+    // Also add this method to handle views added dynamically after render
+    private void observeViewHierarchyChanges(ViewGroup viewGroup) {
+        viewGroup.getViewTreeObserver().addOnGlobalLayoutListener(() -> {
+            // Check for any new clickable views
+            setupScreenshotForClickableViews(viewGroup);
+        });
+    }
+
+    // Add this helper method to disable all touch listeners
+    private void disableTouchListeners(ViewGroup viewGroup) {
+        for (int i = 0; i < viewGroup.getChildCount(); i++) {
+            View child = viewGroup.getChildAt(i);
+
+            // Clear any touch listeners
+            child.setOnTouchListener(null);
+
+            // Recurse on view groups
+            if (child instanceof ViewGroup) {
+                disableTouchListeners((ViewGroup) child);
+            }
+        }
     }
 }
