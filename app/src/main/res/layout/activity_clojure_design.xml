@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <EditText
+        android:id="@+id/app_description_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Describe the app you want to create..."
+        android:minLines="3" />
+
+    <Button
+        android:id="@+id/generate_button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Generate App" />
+
+    <TextView
+        android:id="@+id/current_code_view"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fontFamily="monospace"
+        android:textSize="12sp" />
+
+    <ImageView
+        android:id="@+id/screenshot_view"
+        android:layout_width="match_parent"
+        android:layout_height="200dp"
+        android:scaleType="centerInside" />
+
+    <TextView
+        android:id="@+id/logcat_output"
+        android:layout_width="match_parent"
+        android:layout_height="100dp"
+        android:fontFamily="monospace"
+        android:textSize="12sp" />
+
+    <EditText
+        android:id="@+id/feedback_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Enter feedback for improvements..."
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/submit_feedback_button"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Submit Feedback"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/confirm_success_button"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Looks Good!"
+            android:visibility="gone" />
+    </LinearLayout>
+
+</LinearLayout>

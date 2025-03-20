@@ -32,12 +32,18 @@ import android.content.Context;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.io.File;
+import android.content.BroadcastReceiver;
+import android.content.IntentFilter;
 
 public class RenderActivity extends AppCompatActivity {
     private static final String TAG = "ClojureRender";
     private static final String CLOJURE_APP_CACHE_DIR = "clojure_app_cache";
     // Define EOF object for detecting end of input
     private static final Object EOF = new Object();
+
+    public static final String ACTION_RENDER_COMPLETE = "com.example.clojurerepl.RENDER_COMPLETE";
+    public static final String EXTRA_SUCCESS = "success";
+    public static final String EXTRA_ERROR = "error";
 
     private LinearLayout contentLayout;
     private Var contextVar;
@@ -53,6 +59,9 @@ public class RenderActivity extends AppCompatActivity {
     private String code;
     private String codeHash;
     private boolean shouldKillOnDestroy = false;
+
+    private BroadcastReceiver completionReceiver;
+    private boolean hasNotifiedCompletion = false;
 
     private class UiSafeViewGroup extends LinearLayout {
         private final LinearLayout layoutDelegate;
@@ -240,6 +249,17 @@ public class RenderActivity extends AppCompatActivity {
                 Log.e(TAG, "Error in RenderActivity", e);
                 showError("Error: " + e.getMessage());
             }
+
+            // Register for completion notifications
+            completionReceiver = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    if (ACTION_RENDER_COMPLETE.equals(intent.getAction())) {
+                        finish();
+                    }
+                }
+            };
+            registerReceiver(completionReceiver, new IntentFilter(ACTION_RENDER_COMPLETE));
         } catch (Throwable t) {
             Log.e(TAG, "Fatal error in RenderActivity onCreate", t);
             Toast.makeText(this, "Fatal error: " + t.getMessage(), Toast.LENGTH_LONG).show();
@@ -390,6 +410,9 @@ public class RenderActivity extends AppCompatActivity {
             Log.e(TAG, "Error setting up class loader", e);
             throw new RuntimeException(e);
         }
+
+        // After successful compilation and execution
+        notifyCompletion(true, null);
     }
 
     /**
@@ -554,6 +577,20 @@ public class RenderActivity extends AppCompatActivity {
 
             contentLayout.addView(errorContainer);
         });
+
+        notifyCompletion(false, message);
+    }
+
+    private void notifyCompletion(boolean success, String error) {
+        if (hasNotifiedCompletion) return;
+        hasNotifiedCompletion = true;
+
+        Intent intent = new Intent(ACTION_RENDER_COMPLETE);
+        intent.putExtra(EXTRA_SUCCESS, success);
+        if (error != null) {
+            intent.putExtra(EXTRA_ERROR, error);
+        }
+        sendBroadcast(intent);
     }
 
     @Override
@@ -570,6 +607,10 @@ public class RenderActivity extends AppCompatActivity {
         if (shouldKillOnDestroy && isInRenderProcess()) {
             Log.d(TAG, "Killing render process: " + android.os.Process.myPid());
             android.os.Process.killProcess(android.os.Process.myPid());
+        }
+
+        if (completionReceiver != null) {
+            unregisterReceiver(completionReceiver);
         }
     }
 
