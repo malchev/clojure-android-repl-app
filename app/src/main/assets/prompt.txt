@@ -125,3 +125,9 @@ Write a clojure app with the following structure:
 	16.a. Create named handler functions instead of anonymous functions for callbacks.
 	16.b. Log the entry to each lifecycle callback with the parameters received.
 	16.c. Include a utility function for debug logging.
+
+VERY IMPORTANT: When providing the final code, enclose it with as follows:
+```clojure
+	... code ...
+```
+DO NOT emit non-final clojure code enclosed as above, only the final answer.

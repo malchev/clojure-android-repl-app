@@ -1,0 +1,3 @@
+1. Make sure logcat and screenshots are sent to the model
+2. Spell out the iterations in the system prompt; tell the model to look at the attached logcat and screenshots; provide a structure to the feedback
+3. Implement retry on socket errors and such
