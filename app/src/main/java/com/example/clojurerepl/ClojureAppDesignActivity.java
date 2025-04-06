@@ -113,10 +113,19 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 LLMClientFactory.LLMType selectedType = (LLMClientFactory.LLMType) parent.getItemAtPosition(position);
                 if (selectedType == LLMClientFactory.LLMType.GEMINI) {
                     ApiKeyManager apiKeyManager = ApiKeyManager.getInstance(ClojureAppDesignActivity.this);
-                    if (!apiKeyManager.hasApiKey()) {
+                    if (!apiKeyManager.hasApiKey(LLMClientFactory.LLMType.GEMINI)) {
                         showApiKeyDialog();
                     } else {
                         updateGeminiModelSpinner();
+                    }
+                } else if (selectedType == LLMClientFactory.LLMType.OPENAI) {
+                    ApiKeyManager apiKeyManager = ApiKeyManager.getInstance(ClojureAppDesignActivity.this);
+                    if (!apiKeyManager.hasApiKey(LLMClientFactory.LLMType.OPENAI)) {
+                        showApiKeyDialog();
+                    } else {
+                        // For OpenAI, we don't need to update any spinner since we only have two models
+                        iterationManager = new ClojureIterationManager(ClojureAppDesignActivity.this,
+                                LLMClientFactory.createClient(ClojureAppDesignActivity.this, selectedType));
                     }
                 } else {
                     geminiModelSpinner.setVisibility(View.GONE);
