@@ -2,6 +2,8 @@ package com.example.clojurerepl;
 
 import android.content.Context;
 import android.util.Log;
+import java.util.List;
+import java.util.Arrays;
 
 public class LLMClientFactory {
     private static final String TAG = "LLMClientFactory";
@@ -27,6 +29,28 @@ public class LLMClientFactory {
             case STUB:
             default:
                 return new StubLLMClient(context);
+        }
+    }
+
+    public static List<String> getAvailableModels(Context context, LLMType type) {
+        Log.d(TAG, "Getting available models for type: " + type);
+        switch (type) {
+            case GEMINI:
+                GeminiLLMClient tempClient = new GeminiLLMClient(context);
+                List<String> models = tempClient.getAvailableModels();
+                // Filter and sort models
+                models.removeIf(model -> model.contains("vision"));
+                models.sort((a, b) -> {
+                    if (a.contains("pro") && !b.contains("pro"))
+                        return -1;
+                    if (!a.contains("pro") && b.contains("pro"))
+                        return 1;
+                    return a.compareTo(b);
+                });
+                return models;
+            case STUB:
+            default:
+                return Arrays.asList("stub-model-1", "stub-model-2");
         }
     }
 }

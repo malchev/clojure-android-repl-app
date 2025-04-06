@@ -121,7 +121,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 } else {
                     geminiModelSpinner.setVisibility(View.GONE);
                     iterationManager = new ClojureIterationManager(ClojureAppDesignActivity.this,
-                            createLLMClient(selectedType, null));
+                            LLMClientFactory.createClient(ClojureAppDesignActivity.this, selectedType));
                 }
             }
 
@@ -161,26 +161,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         appDescriptionInput.setText(
                 "Create a game of life app. It's in the form of a 50x50 grid. Each square of the grid is tappable, and when tapped, it switches colors between white (dead) and black (alive). There are three buttons beneath the grid: play, stop, and step. Play runs the game with a delay of half a second between steps until the grid turns all white. Stop stops a play run. Step does a single iteration of the grid state.");
-    }
-
-    private LLMClient createLLMClient(LLMClientFactory.LLMType type, String modelName) {
-        Log.d(TAG, "Creating LLM client of type: " + type + (modelName != null ? ", model: " + modelName : ""));
-        switch (type) {
-            case GEMINI:
-                if (modelName != null && !modelName.isEmpty()) {
-                    GeminiLLMClient client = new GeminiLLMClient(this);
-                    client.setModel(modelName);
-                    Log.d(TAG, "Created Gemini client with model: " + modelName);
-                    return client;
-                }
-                // If no model name provided, fall back to STUB
-                Log.d(TAG, "No model name provided for Gemini, falling back to STUB");
-                return new StubLLMClient(this);
-            case STUB:
-            default:
-                Log.d(TAG, "Creating STUB client");
-                return new StubLLMClient(this);
-        }
     }
 
     private void startNewDesign() {
@@ -665,35 +645,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Wait a moment to ensure the models are fetched
         new Handler().postDelayed(() -> {
             CompletableFuture.supplyAsync(() -> {
-                Log.d(TAG, "Creating temporary Gemini client to get models");
-                GeminiLLMClient tempClient = new GeminiLLMClient(this);
-
-                // Wait a moment for the network request to complete
-                try {
-                    Thread.sleep(1500);
-                } catch (InterruptedException e) {
-                    Log.e(TAG, "Thread sleep interrupted", e);
-                }
-
-                List<String> models = tempClient.getAvailableModels();
-                Log.d(TAG, "Raw available models: " + models);
-
-                if (models.isEmpty()) {
-                    // If no models available, throw error
-                    throw new RuntimeException("No Gemini models available from API");
-                }
-
-                // Filter and sort models
-                models.removeIf(model -> model.contains("vision"));
-                models.sort((a, b) -> {
-                    if (a.contains("pro") && !b.contains("pro"))
-                        return -1;
-                    if (!a.contains("pro") && b.contains("pro"))
-                        return 1;
-                    return a.compareTo(b);
-                });
-
-                return models;
+                Log.d(TAG, "Fetching available models from factory");
+                return LLMClientFactory.getAvailableModels(this, LLMClientFactory.LLMType.GEMINI);
             }).thenAccept(models -> runOnUiThread(() -> {
                 progressDialog.dismiss();
 
@@ -711,7 +664,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 String selectedModel = models.get(0);
                 Log.d(TAG, "Selecting model: " + selectedModel);
                 iterationManager = new ClojureIterationManager(this,
-                        createLLMClient(LLMClientFactory.LLMType.GEMINI, selectedModel));
+                        LLMClientFactory.createClient(this, LLMClientFactory.LLMType.GEMINI));
             })).exceptionally(e -> {
                 progressDialog.dismiss();
                 Log.e(TAG, "Error updating Gemini model spinner", e);
@@ -724,7 +677,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         }, 500); // Short delay to ensure API key is saved first
     }
 
-    // Update the model spinner listener to log selection
+    // Update the model spinner listener to use factory
     private void setupGeminiModelSpinnerListener() {
         geminiModelSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
@@ -732,7 +685,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 String selectedModel = (String) parent.getItemAtPosition(position);
                 Log.d(TAG, "User selected Gemini model: " + selectedModel);
                 iterationManager = new ClojureIterationManager(
-                        ClojureAppDesignActivity.this, createLLMClient(LLMClientFactory.LLMType.GEMINI, selectedModel));
+                        ClojureAppDesignActivity.this,
+                        LLMClientFactory.createClient(ClojureAppDesignActivity.this, LLMClientFactory.LLMType.GEMINI));
             }
 
             @Override
