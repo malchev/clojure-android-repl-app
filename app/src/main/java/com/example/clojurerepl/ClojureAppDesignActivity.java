@@ -648,14 +648,21 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         new Handler().postDelayed(() -> {
             CompletableFuture.supplyAsync(() -> {
                 Log.d(TAG, "Fetching available models from factory for type: " + type);
+                ApiKeyManager apiKeyManager = ApiKeyManager.getInstance(this);
+                if (!apiKeyManager.hasApiKey(type)) {
+                    Log.w(TAG, "No API key available for type: " + type);
+                    return new ArrayList<String>();
+                }
                 return LLMClientFactory.getAvailableModels(this, type);
             }).thenAccept(models -> runOnUiThread(() -> {
                 progressDialog.dismiss();
 
                 if (models.isEmpty()) {
-                    Log.e(TAG, "No models available after filtering");
-                    throw new RuntimeException("No models available after filtering");
+                    Log.w(TAG, "No models available for type: " + type);
+                    geminiModelSpinner.setVisibility(View.GONE);
+                    return;
                 }
+
                 ArrayAdapter<String> modelAdapter = new ArrayAdapter<>(this,
                         android.R.layout.simple_spinner_item, models);
                 modelAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
@@ -672,7 +679,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 Log.e(TAG, "Error updating model spinner", e);
                 runOnUiThread(() -> {
                     Toast.makeText(this, "Failed to fetch models: " + e.getMessage(), Toast.LENGTH_LONG).show();
-                    throw new RuntimeException("Failed to fetch models from API", e);
+                    geminiModelSpinner.setVisibility(View.GONE);
                 });
                 return null;
             });

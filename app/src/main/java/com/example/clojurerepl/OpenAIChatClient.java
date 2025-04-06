@@ -15,21 +15,39 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.io.File;
+import java.util.UUID;
+import java.util.Map;
+import java.util.HashMap;
 
 public class OpenAIChatClient extends LLMClient {
     private static final String TAG = "OpenAIChatClient";
-    private String model = "gpt-4";
-    private final List<Message> messageHistory = new ArrayList<>();
-    private String currentSessionId;
+    private String modelName = null;
+    private final Map<String, List<Message>> sessionMessages = new HashMap<>();
 
     public OpenAIChatClient(Context context) {
         super(context);
         Log.d(TAG, "Creating new OpenAIChatClient");
     }
 
-    public void setModel(String model) {
-        Log.d(TAG, "Set OpenAI model to: " + model);
-        this.model = model;
+    public void setModel(String modelName) {
+        this.modelName = modelName;
+    }
+
+    public String getModel() {
+        return modelName;
+    }
+
+    private void ensureModelIsSet() {
+        if (modelName == null) {
+            List<String> availableModels = LLMClientFactory.getAvailableModels(context,
+                    LLMClientFactory.LLMType.OPENAI);
+            if (!availableModels.isEmpty()) {
+                modelName = availableModels.get(0);
+                Log.d(TAG, "Using first available model: " + modelName);
+            } else {
+                throw new IllegalStateException("No OpenAI models available. Please set a model first.");
+            }
+        }
     }
 
     private class OpenAIChatSession implements ChatSession {
@@ -46,12 +64,11 @@ public class OpenAIChatClient extends LLMClient {
             Log.d(TAG, "Reset chat session: " + sessionId);
             sessionMessages.clear();
             sessionMessages.add(new Message("user", message));
-            currentSessionId = sessionId;
 
             return CompletableFuture.supplyAsync(() -> {
                 try {
                     JSONObject requestBody = new JSONObject();
-                    requestBody.put("model", model);
+                    requestBody.put("model", modelName);
                     requestBody.put("temperature", 0.7);
                     requestBody.put("max_tokens", 4096);
 
@@ -85,7 +102,6 @@ public class OpenAIChatClient extends LLMClient {
         @Override
         public void reset() {
             sessionMessages.clear();
-            currentSessionId = null;
         }
 
         @Override
@@ -106,6 +122,7 @@ public class OpenAIChatClient extends LLMClient {
 
     @Override
     public CompletableFuture<String> generateInitialCode(String description) {
+        ensureModelIsSet();
         Log.d(TAG, "┌───────────────────────────────────────────┐");
         Log.d(TAG, "│         GENERATING INITIAL CODE           │");
         Log.d(TAG, "│            LLM REQUEST   1                │");
@@ -124,6 +141,7 @@ public class OpenAIChatClient extends LLMClient {
             String logcat,
             File screenshot,
             String feedback) {
+        ensureModelIsSet();
         Log.d(TAG, "┌───────────────────────────────────────────┐");
         Log.d(TAG, "│         GENERATING NEXT ITERATION         │");
         Log.d(TAG, "│            LLM REQUEST   2                │");
@@ -143,13 +161,8 @@ public class OpenAIChatClient extends LLMClient {
     }
 
     private String callOpenAIAPI(String requestBody) {
+        ensureModelIsSet();
         Log.d(TAG, "=== Calling OpenAI API ===");
-        Log.d(TAG, "Message history size: " + messageHistory.size());
-        for (int i = 0; i < messageHistory.size(); i++) {
-            Log.d(TAG, "Message " + i + " - Role: " + messageHistory.get(i).role);
-            Log.d(TAG, "Content:\n" + messageHistory.get(i).content);
-        }
-
         Log.d(TAG, "Request length: " + requestBody.length());
         Log.d(TAG, "╔══════════════════════════════════════════╗");
         Log.d(TAG, "║ START OPENAI API REQUEST AAAAAAAAAAAAAA ║");

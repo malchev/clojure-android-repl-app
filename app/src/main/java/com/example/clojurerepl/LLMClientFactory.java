@@ -2,8 +2,16 @@ package com.example.clojurerepl;
 
 import android.content.Context;
 import android.util.Log;
+import com.example.clojurerepl.auth.ApiKeyManager;
 import java.util.List;
 import java.util.Arrays;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import org.json.JSONObject;
+import org.json.JSONArray;
+import java.util.ArrayList;
 
 public class LLMClientFactory {
     private static final String TAG = "LLMClientFactory";
@@ -44,23 +52,65 @@ public class LLMClientFactory {
         Log.d(TAG, "Getting available models for type: " + type);
         switch (type) {
             case GEMINI:
-                GeminiLLMClient tempClient = new GeminiLLMClient(context);
-                List<String> models = tempClient.getAvailableModels();
-                // Filter and sort models
-                models.removeIf(model -> model.contains("vision"));
-                models.sort((a, b) -> {
-                    if (a.contains("pro") && !b.contains("pro"))
-                        return -1;
-                    if (!a.contains("pro") && b.contains("pro"))
-                        return 1;
-                    return a.compareTo(b);
-                });
-                return models;
+                return Arrays.asList("gemini-pro", "gemini-pro-vision");
             case OPENAI:
-                return Arrays.asList("gpt-4", "gpt-3.5-turbo");
+                return fetchOpenAIModels(context);
             case STUB:
+                return Arrays.asList("stub-model");
             default:
-                return Arrays.asList("stub-model-1", "stub-model-2");
+                throw new IllegalArgumentException("Unknown LLM type: " + type);
         }
+    }
+
+    private static List<String> fetchOpenAIModels(Context context) {
+        Log.d(TAG, "Fetching OpenAI models");
+        List<String> models = new ArrayList<>();
+        ApiKeyManager apiKeyManager = ApiKeyManager.getInstance(context);
+        String apiKey = apiKeyManager.getApiKey(LLMType.OPENAI);
+
+        if (apiKey == null || apiKey.isEmpty()) {
+            Log.w(TAG, "No OpenAI API key available");
+            return models;
+        }
+
+        try {
+            URL url = new URL("https://api.openai.com/v1/models");
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setRequestProperty("Authorization", "Bearer " + apiKey);
+            connection.setRequestProperty("Content-Type", "application/json");
+
+            int responseCode = connection.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+                String inputLine;
+                StringBuilder response = new StringBuilder();
+
+                while ((inputLine = in.readLine()) != null) {
+                    response.append(inputLine);
+                }
+                in.close();
+
+                JSONObject jsonResponse = new JSONObject(response.toString());
+                JSONArray data = jsonResponse.getJSONArray("data");
+
+                for (int i = 0; i < data.length(); i++) {
+                    JSONObject model = data.getJSONObject(i);
+                    String modelId = model.getString("id");
+                    // Only include GPT models
+                    if (modelId.startsWith("gpt-")) {
+                        models.add(modelId);
+                    }
+                }
+
+                Log.d(TAG, "Successfully fetched OpenAI models: " + models);
+            } else {
+                Log.e(TAG, "Failed to fetch OpenAI models. Response code: " + responseCode);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error fetching OpenAI models", e);
+        }
+
+        return models;
     }
 }
