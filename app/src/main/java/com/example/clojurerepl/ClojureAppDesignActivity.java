@@ -30,6 +30,7 @@ import android.app.ProgressDialog;
 import android.os.Handler;
 import android.content.ComponentName;
 import android.text.InputType;
+import android.text.method.LinkMovementMethod;
 
 public class ClojureAppDesignActivity extends AppCompatActivity {
     private static final String TAG = "ClojureAppDesign";
@@ -115,13 +116,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
                 if (selectedType == LLMClientFactory.LLMType.GEMINI) {
                     if (!apiKeyManager.hasApiKey(LLMClientFactory.LLMType.GEMINI)) {
-                        showApiKeyDialog();
+                        showApiKeyDialog(LLMClientFactory.LLMType.GEMINI);
                     } else {
                         updateModelSpinner(LLMClientFactory.LLMType.GEMINI);
                     }
                 } else if (selectedType == LLMClientFactory.LLMType.OPENAI) {
                     if (!apiKeyManager.hasApiKey(LLMClientFactory.LLMType.OPENAI)) {
-                        showApiKeyDialog();
+                        showApiKeyDialog(LLMClientFactory.LLMType.OPENAI);
                     } else {
                         updateModelSpinner(LLMClientFactory.LLMType.OPENAI);
                     }
@@ -706,82 +707,63 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         });
     }
 
-    private void showApiKeyDialog() {
-        ApiKeyManager apiKeyManager = ApiKeyManager.getInstance(this);
-        LLMClientFactory.LLMType currentType = (LLMClientFactory.LLMType) llmTypeSpinner.getSelectedItem();
+    private void showApiKeyDialog(LLMClientFactory.LLMType type) {
+        Log.d(TAG, "Showing API key dialog for type: " + type);
+        String serviceUrl = type == LLMClientFactory.LLMType.GEMINI
+                ? "https://makersuite.google.com/app/apikey"
+                : "https://platform.openai.com/api-keys";
 
-        // Check if dialog is already showing
-        if (apiKeyDialog != null && apiKeyDialog.isShowing()) {
-            // Already showing, no need to create a new one
-            return;
-        }
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Enter " + type.name() + " API Key");
 
-        // Create EditText for input
+        // Message with clickable link to get API key
+        TextView messageView = new TextView(this);
+        messageView.setText("Get your API key from: " + serviceUrl);
+        messageView.setMovementMethod(LinkMovementMethod.getInstance());
+        messageView.setPadding(50, 20, 50, 50);
+
+        // Input field for API key
         final EditText input = new EditText(this);
-        input.setHint("Enter your " + currentType + " API key");
+        input.setInputType(InputType.TYPE_CLASS_TEXT);
+        input.setHint("Paste your API key here");
 
-        // Prefill with existing key if available
-        String existingKey = apiKeyManager.getApiKey(currentType);
-        if (existingKey != null) {
-            input.setText(existingKey);
-        }
+        // Add views to layout
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.addView(messageView);
+        layout.addView(input);
+        builder.setView(layout);
 
-        // Set layout parameters
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        input.setLayoutParams(params);
-
-        // Create alert dialog
-        apiKeyDialog = new AlertDialog.Builder(this)
-                .setTitle(currentType + " API Key")
-                .setMessage(
-                        "Please enter your " + currentType + " API key. You can get one from " +
-                                (currentType == LLMClientFactory.LLMType.GEMINI
-                                        ? "https://makersuite.google.com/app/apikey"
-                                        : "https://platform.openai.com/api-keys"))
-                .setView(input)
-                .setPositiveButton("Save", null) // We'll set the listener after showing the dialog
-                .setNegativeButton("Cancel", null) // We'll set the listener after showing the dialog
-                .setCancelable(false) // Prevent dismissal by tapping outside or back button
-                .create();
-
-        // Show the dialog first
-        apiKeyDialog.show();
-
-        // Set button listeners after showing to prevent automatic dismissal
-        apiKeyDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+        builder.setPositiveButton("OK", (dialog, which) -> {
             String apiKey = input.getText().toString().trim();
             if (!apiKey.isEmpty()) {
-                apiKeyManager.saveApiKey(apiKey, currentType);
-                Toast.makeText(ClojureAppDesignActivity.this, "API key saved", Toast.LENGTH_SHORT).show();
+                ApiKeyManager.getInstance(this).saveApiKey(apiKey, type);
+                Toast.makeText(this, type.name() + " API key saved", Toast.LENGTH_SHORT).show();
 
-                // Explicitly dismiss the dialog
-                if (apiKeyDialog != null) {
-                    apiKeyDialog.dismiss();
-                    apiKeyDialog = null;
-                }
+                // Update model spinner after key is saved
+                updateModelSpinner(type);
 
-                // Now update the spinner
-                if (currentType == LLMClientFactory.LLMType.GEMINI) {
-                    updateModelSpinner(LLMClientFactory.LLMType.GEMINI);
+                // Initialize the client with the first model
+                List<String> models = LLMClientFactory.getAvailableModels(this, type);
+                if (!models.isEmpty()) {
+                    String selectedModel = models.get(0);
+                    Log.d(TAG, "Initializing LLM client with model: " + selectedModel);
+                    iterationManager = new ClojureIterationManager(this,
+                            LLMClientFactory.createClient(this, type, selectedModel));
                 }
             } else {
-                Toast.makeText(ClojureAppDesignActivity.this, "API key cannot be empty", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "API key cannot be empty", Toast.LENGTH_SHORT).show();
+                showApiKeyDialog(type); // Show dialog again if empty
             }
         });
 
-        apiKeyDialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v -> {
-            // Switch to stub client
-            llmTypeSpinner.setSelection(Arrays.asList(LLMClientFactory.LLMType.values())
-                    .indexOf(LLMClientFactory.LLMType.STUB));
-
-            // Explicitly dismiss the dialog
-            if (apiKeyDialog != null) {
-                apiKeyDialog.dismiss();
-                apiKeyDialog = null;
-            }
+        builder.setNegativeButton("Cancel", (dialog, which) -> {
+            dialog.cancel();
+            llmTypeSpinner.setSelection(0); // Reset to first option
         });
+
+        builder.setCancelable(false); // Prevent dismiss by back button
+        builder.show();
     }
 
     @Override
@@ -796,13 +778,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     public boolean onOptionsItemSelected(MenuItem item) {
         int id = item.getItemId();
         if (id == R.id.action_api_key) {
-            showApiKeyDialog();
+            LLMClientFactory.LLMType currentType = (LLMClientFactory.LLMType) llmTypeSpinner.getSelectedItem();
+            showApiKeyDialog(currentType);
             return true;
         } else if (id == R.id.action_save_code) {
             saveCodeToFile();
             return true;
-        } else if (id == R.id.action_clear_session) {
-            clearChatSession();
+        } else if (id == android.R.id.home) {
+            onBackPressed();
             return true;
         }
         return super.onOptionsItemSelected(item);
