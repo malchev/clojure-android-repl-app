@@ -15,9 +15,9 @@ public class ClojureCodeReceiver extends BroadcastReceiver {
         if (ACTION_EVAL_CODE.equals(intent.getAction())) {
             // Forward the intent to MainActivity
             Intent mainIntent = new Intent(context, MainActivity.class);
-            mainIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            mainIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
             mainIntent.putExtras(intent.getExtras());
             context.startActivity(mainIntent);
         }
     }
-} 
+}
