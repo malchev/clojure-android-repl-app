@@ -10,6 +10,7 @@ public class LLMClientFactory {
 
     public enum LLMType {
         GEMINI,
+        OPENAI,
         STUB
     }
 
@@ -26,6 +27,8 @@ public class LLMClientFactory {
                     }
                 }
                 return client;
+            case OPENAI:
+                return new OpenAIChatClient(context);
             case STUB:
             default:
                 return new StubLLMClient(context);
@@ -48,6 +51,8 @@ public class LLMClientFactory {
                     return a.compareTo(b);
                 });
                 return models;
+            case OPENAI:
+                return Arrays.asList("gpt-4", "gpt-3.5-turbo");
             case STUB:
             default:
                 return Arrays.asList("stub-model-1", "stub-model-2");

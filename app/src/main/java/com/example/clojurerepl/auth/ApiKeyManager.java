@@ -3,16 +3,19 @@ package com.example.clojurerepl.auth;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.util.Log;
+import com.example.clojurerepl.LLMClientFactory;
 
 public class ApiKeyManager {
     private static final String TAG = "ApiKeyManager";
-    private static final String PREF_NAME = "api_key_prefs";
-    private static final String KEY_API_KEY = "gemini_api_key";
-
-    private final Context context;
-
-    // Singleton pattern
+    private static final String PREFS_NAME = "ApiKeyPrefs";
+    private static final String GEMINI_API_KEY = "gemini_api_key";
+    private static final String OPENAI_API_KEY = "openai_api_key";
     private static ApiKeyManager instance;
+    private final SharedPreferences prefs;
+
+    private ApiKeyManager(Context context) {
+        prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+    }
 
     public static synchronized ApiKeyManager getInstance(Context context) {
         if (instance == null) {
@@ -21,37 +24,57 @@ public class ApiKeyManager {
         return instance;
     }
 
-    private ApiKeyManager(Context context) {
-        this.context = context;
+    public void saveApiKey(String apiKey) {
+        saveApiKey(apiKey, LLMClientFactory.LLMType.GEMINI);
     }
 
-    public boolean hasApiKey() {
-        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
-        String apiKey = prefs.getString(KEY_API_KEY, null);
-        return apiKey != null && !apiKey.isEmpty();
+    public void saveApiKey(String apiKey, LLMClientFactory.LLMType type) {
+        Log.d(TAG, "Saving API key for type: " + type);
+        SharedPreferences.Editor editor = prefs.edit();
+        switch (type) {
+            case GEMINI:
+                editor.putString(GEMINI_API_KEY, apiKey);
+                break;
+            case OPENAI:
+                editor.putString(OPENAI_API_KEY, apiKey);
+                break;
+            default:
+                Log.w(TAG, "Unknown API key type: " + type);
+                return;
+        }
+        editor.apply();
     }
 
     public String getApiKey() {
-        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
-        return prefs.getString(KEY_API_KEY, null);
+        return getApiKey(LLMClientFactory.LLMType.GEMINI);
     }
 
-    public void saveApiKey(String apiKey) {
-        if (apiKey == null || apiKey.trim().isEmpty()) {
-            Log.e(TAG, "Attempted to save empty API key");
-            return;
+    public String getApiKey(LLMClientFactory.LLMType type) {
+        Log.d(TAG, "Getting API key for type: " + type);
+        switch (type) {
+            case GEMINI:
+                return prefs.getString(GEMINI_API_KEY, null);
+            case OPENAI:
+                return prefs.getString(OPENAI_API_KEY, null);
+            default:
+                Log.w(TAG, "Unknown API key type: " + type);
+                return null;
         }
+    }
 
-        SharedPreferences.Editor editor = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE).edit();
-        editor.putString(KEY_API_KEY, apiKey.trim());
-        editor.apply();
+    public boolean hasApiKey() {
+        return hasApiKey(LLMClientFactory.LLMType.GEMINI);
+    }
 
-        Log.d(TAG, "API key saved successfully");
+    public boolean hasApiKey(LLMClientFactory.LLMType type) {
+        String key = getApiKey(type);
+        return key != null && !key.isEmpty();
     }
 
     public void clearApiKey() {
-        SharedPreferences.Editor editor = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE).edit();
-        editor.remove(KEY_API_KEY);
+        SharedPreferences.Editor editor = prefs.edit();
+        editor.remove(GEMINI_API_KEY);
+        editor.remove(OPENAI_API_KEY);
         editor.apply();
         Log.d(TAG, "API key cleared");
     }

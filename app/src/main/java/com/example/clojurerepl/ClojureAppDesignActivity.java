@@ -698,6 +698,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
     private void showApiKeyDialog() {
         ApiKeyManager apiKeyManager = ApiKeyManager.getInstance(this);
+        LLMClientFactory.LLMType currentType = (LLMClientFactory.LLMType) llmTypeSpinner.getSelectedItem();
 
         // Check if dialog is already showing
         if (apiKeyDialog != null && apiKeyDialog.isShowing()) {
@@ -707,10 +708,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Create EditText for input
         final EditText input = new EditText(this);
-        input.setHint("Enter your Gemini API key");
+        input.setHint("Enter your " + currentType + " API key");
 
         // Prefill with existing key if available
-        String existingKey = apiKeyManager.getApiKey();
+        String existingKey = apiKeyManager.getApiKey(currentType);
         if (existingKey != null) {
             input.setText(existingKey);
         }
@@ -723,9 +724,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Create alert dialog
         apiKeyDialog = new AlertDialog.Builder(this)
-                .setTitle("Gemini API Key")
+                .setTitle(currentType + " API Key")
                 .setMessage(
-                        "Please enter your Gemini API key. You can get one from https://makersuite.google.com/app/apikey")
+                        "Please enter your " + currentType + " API key. You can get one from " +
+                                (currentType == LLMClientFactory.LLMType.GEMINI
+                                        ? "https://makersuite.google.com/app/apikey"
+                                        : "https://platform.openai.com/api-keys"))
                 .setView(input)
                 .setPositiveButton("Save", null) // We'll set the listener after showing the dialog
                 .setNegativeButton("Cancel", null) // We'll set the listener after showing the dialog
@@ -739,7 +743,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         apiKeyDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             String apiKey = input.getText().toString().trim();
             if (!apiKey.isEmpty()) {
-                apiKeyManager.saveApiKey(apiKey);
+                apiKeyManager.saveApiKey(apiKey, currentType);
                 Toast.makeText(ClojureAppDesignActivity.this, "API key saved", Toast.LENGTH_SHORT).show();
 
                 // Explicitly dismiss the dialog
@@ -749,7 +753,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 }
 
                 // Now update the spinner
-                updateGeminiModelSpinner();
+                if (currentType == LLMClientFactory.LLMType.GEMINI) {
+                    updateGeminiModelSpinner();
+                }
             } else {
                 Toast.makeText(ClojureAppDesignActivity.this, "API key cannot be empty", Toast.LENGTH_SHORT).show();
             }
