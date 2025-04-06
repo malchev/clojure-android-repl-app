@@ -130,6 +130,5 @@ Write a clojure app with the following structure:
 ```clojure
 	... code ...
 ```
-DO NOT emit non-final clojure code enclosed as above, only the final answer.
 
 21. Show your reasoning steps.

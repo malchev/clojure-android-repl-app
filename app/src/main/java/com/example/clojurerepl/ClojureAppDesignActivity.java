@@ -521,6 +521,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
             // Display all screenshots
             displayScreenshots(screenshotPaths);
+
+            // Save the current code when returning from RenderActivity
+            if (currentCode != null && !currentCode.isEmpty()) {
+                saveCodeToFile();
+            }
         }
         // Keep existing single screenshot path handling for compatibility
         else if (intent.hasExtra("screenshot_path")) {
@@ -533,6 +538,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
             // Display the screenshot
             displayScreenshot(new File(screenshotPath));
+
+            // Save the current code when returning from RenderActivity
+            if (currentCode != null && !currentCode.isEmpty()) {
+                saveCodeToFile();
+            }
         }
 
         // Check if we have process logcat data
