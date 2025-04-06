@@ -384,6 +384,9 @@ public class RenderActivity extends AppCompatActivity {
             // Broadcast the completion
             sendBroadcast(broadcastIntent);
 
+            // Set flag to kill process on destroy
+            shouldKillOnDestroy = true;
+
             // Continue with back press
             RenderActivity.super.onBackPressed();
         }, 200); // Short delay to ensure we capture any in-flight touch events
