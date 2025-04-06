@@ -159,7 +159,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Get the screenshots container
         screenshotsContainer = findViewById(R.id.screenshots_container);
 
-        appDescriptionInput.setText("Create a game of life app. It's in the form of a 50x50 grid. Each square of the grid is tappable, and when tapped, it switches colors between white (dead) and black (alive). There are three buttons beneath the grid: play, stop, and step. Play runs the game with a delay of half a second between steps until the grid turns all white. Stop stops a play run. Step does a single iteration of the grid state.");
+        appDescriptionInput.setText(
+                "Create a game of life app. It's in the form of a 50x50 grid. Each square of the grid is tappable, and when tapped, it switches colors between white (dead) and black (alive). There are three buttons beneath the grid: play, stop, and step. Play runs the game with a delay of half a second between steps until the grid turns all white. Stop stops a play run. Step does a single iteration of the grid state.");
     }
 
     private LLMClient createLLMClient(LLMClientFactory.LLMType type, String modelName) {
@@ -184,10 +185,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
     private void startNewDesign() {
         Log.d(TAG, "\n" +
-            "╔═══════════════════════════════════════════╗\n" +
-            "║         STARTING NEW APP DESIGN           ║\n" +
-            "║            ITERATION   1                  ║\n" +
-            "╚═══════════════════════════════════════════╝");
+                "╔═══════════════════════════════════════════╗\n" +
+                "║         STARTING NEW APP DESIGN           ║\n" +
+                "║            ITERATION   1                  ║\n" +
+                "╚═══════════════════════════════════════════╝");
 
         String description = appDescriptionInput.getText().toString();
         if (description.isEmpty()) {
@@ -198,45 +199,50 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         generateButton.setEnabled(false);
         currentDescription = description;
 
+        // Create LLM client using factory
+        LLMClient llmClient = LLMClientFactory.createClient(this, LLMClientFactory.LLMType.GEMINI);
+        iterationManager = new ClojureIterationManager(this, llmClient);
+
         // Get the LLM to generate the code first
         iterationManager.getLLMClient().generateInitialCode(description)
-            .thenAccept(code -> {
-                runOnUiThread(() -> {
-                    currentCode = code;
-                    currentCodeView.setText(code);
+                .thenAccept(code -> {
+                    runOnUiThread(() -> {
+                        currentCode = code;
+                        currentCodeView.setText(code);
 
-                    // Show the feedback buttons
-                    feedbackButtonsContainer.setVisibility(View.VISIBLE);
-                    thumbsUpButton.setVisibility(View.VISIBLE);
-                    thumbsDownButton.setVisibility(View.VISIBLE);
-                    runButton.setVisibility(View.VISIBLE);
+                        // Show the feedback buttons
+                        feedbackButtonsContainer.setVisibility(View.VISIBLE);
+                        thumbsUpButton.setVisibility(View.VISIBLE);
+                        thumbsDownButton.setVisibility(View.VISIBLE);
+                        runButton.setVisibility(View.VISIBLE);
 
-                    // Only launch RenderActivity after we have the code
-                    if (currentCode != null && !currentCode.isEmpty()) {
-                        Intent intent = new Intent(this, RenderActivity.class);
-                        intent.putExtra("code", currentCode);
-                        intent.putExtra("launching_activity", ClojureAppDesignActivity.class.getName());
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        startActivity(intent);
-                    }
+                        // Only launch RenderActivity after we have the code
+                        if (currentCode != null && !currentCode.isEmpty()) {
+                            Intent intent = new Intent(this, RenderActivity.class);
+                            intent.putExtra("code", currentCode);
+                            intent.putExtra("launching_activity", ClojureAppDesignActivity.class.getName());
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            startActivity(intent);
+                        }
 
-                    generateButton.setEnabled(true);
-                    iterationCount = 1;
+                        generateButton.setEnabled(true);
+                        iterationCount = 1;
+                    });
+                })
+                .exceptionally(throwable -> {
+                    Log.e(TAG, "Error generating code", throwable);
+                    runOnUiThread(() -> {
+                        Toast.makeText(this, "Error generating code: " + throwable.getMessage(),
+                                Toast.LENGTH_LONG).show();
+                        generateButton.setEnabled(true);
+                    });
+                    return null;
                 });
-            })
-            .exceptionally(throwable -> {
-                Log.e(TAG, "Error generating code", throwable);
-                runOnUiThread(() -> {
-                    Toast.makeText(this, "Error generating code: " + throwable.getMessage(),
-                        Toast.LENGTH_LONG).show();
-                    generateButton.setEnabled(true);
-                });
-                return null;
-            });
     }
 
     private void handleIterationResult(ClojureIterationManager.IterationResult result) {
-        if (result == null) return;
+        if (result == null)
+            return;
 
         currentCode = result.code;
         currentCodeView.setText(currentCode);
@@ -246,8 +252,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         thumbsUpButton.setVisibility(View.VISIBLE);
         thumbsDownButton.setVisibility(View.VISIBLE);
         runButton.setVisibility(View.VISIBLE);
-        submitFeedbackButton.setVisibility(View.GONE);  // Hide this until feedback is entered
-        confirmSuccessButton.setVisibility(View.GONE);  // Hide this until needed
+        submitFeedbackButton.setVisibility(View.GONE); // Hide this until feedback is entered
+        confirmSuccessButton.setVisibility(View.GONE); // Hide this until needed
 
         // Enable all buttons
         thumbsUpButton.setEnabled(true);
@@ -275,11 +281,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Create array of feedback options
         final String[] options = {
-            "There is a Clojure compilation error. Check attached logcat",
-            "There are mismatched parentheses or square brackets. Check attached logcat",
-            "App compiles but fails with a runtime error. Check attached logcat",
-            "Nothing shows up on the screen. Check attached logcat",
-            "Custom feedback..." // Keep the custom feedback option
+                "There is a Clojure compilation error. Check attached logcat",
+                "There are mismatched parentheses or square brackets. Check attached logcat",
+                "App compiles but fails with a runtime error. Check attached logcat",
+                "Nothing shows up on the screen. Check attached logcat",
+                "Custom feedback..." // Keep the custom feedback option
         };
 
         builder.setItems(options, (dialog, which) -> {
@@ -314,10 +320,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
     private void submitFeedbackWithText(String feedback) {
         Log.d(TAG, "\n" +
-            "╔═══════════════════════════════════════════╗\n" +
-            "║         STARTING NEXT ITERATION           ║\n" +
-            "║            ITERATION " + String.format("%3d", (iterationCount + 1)) + "                ║\n" +
-            "╚═══════════════════════════════════════════╝");
+                "╔═══════════════════════════════════════════╗\n" +
+                "║         STARTING NEXT ITERATION           ║\n" +
+                "║            ITERATION " + String.format("%3d", (iterationCount + 1)) + "                ║\n" +
+                "╚═══════════════════════════════════════════╝");
 
         // Make sure buttons are enabled
         thumbsUpButton.setEnabled(true);
@@ -340,36 +346,36 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 logcatText,
                 currentScreenshot,
                 feedback)
-            .thenAccept(code -> {
-                runOnUiThread(() -> {
-                    currentCode = code;
-                    currentCodeView.setText(code);
+                .thenAccept(code -> {
+                    runOnUiThread(() -> {
+                        currentCode = code;
+                        currentCodeView.setText(code);
 
-                    // Make sure buttons are enabled after response
-                    thumbsUpButton.setEnabled(true);
-                    thumbsDownButton.setEnabled(true);
-                    runButton.setEnabled(true);
+                        // Make sure buttons are enabled after response
+                        thumbsUpButton.setEnabled(true);
+                        thumbsDownButton.setEnabled(true);
+                        runButton.setEnabled(true);
 
-                    // Launch RenderActivity with new code
-                    Intent intent = new Intent(this, RenderActivity.class);
-                    intent.putExtra("code", code);
-                    intent.putExtra("launching_activity", ClojureAppDesignActivity.class.getName());
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    startActivity(intent);
+                        // Launch RenderActivity with new code
+                        Intent intent = new Intent(this, RenderActivity.class);
+                        intent.putExtra("code", code);
+                        intent.putExtra("launching_activity", ClojureAppDesignActivity.class.getName());
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(intent);
+                    });
+                })
+                .exceptionally(throwable -> {
+                    Log.e(TAG, "Error generating next iteration", throwable);
+                    runOnUiThread(() -> {
+                        Toast.makeText(this, "Error generating next iteration: " + throwable.getMessage(),
+                                Toast.LENGTH_LONG).show();
+                        // Make sure buttons are enabled on error
+                        thumbsUpButton.setEnabled(true);
+                        thumbsDownButton.setEnabled(true);
+                        runButton.setEnabled(true);
+                    });
+                    return null;
                 });
-            })
-            .exceptionally(throwable -> {
-                Log.e(TAG, "Error generating next iteration", throwable);
-                runOnUiThread(() -> {
-                    Toast.makeText(this, "Error generating next iteration: " + throwable.getMessage(),
-                        Toast.LENGTH_LONG).show();
-                    // Make sure buttons are enabled on error
-                    thumbsUpButton.setEnabled(true);
-                    thumbsDownButton.setEnabled(true);
-                    runButton.setEnabled(true);
-                });
-                return null;
-            });
     }
 
     // Legacy method, now calls the new implementation
@@ -663,10 +669,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 Log.d(TAG, "Raw available models: " + models);
 
                 if (models.isEmpty()) {
-                    // If still empty, add default model
-                    models = new ArrayList<>();
-                    models.add("gemini-pro");
-                    Log.d(TAG, "Using default model: gemini-pro");
+                    // If no models available, throw error
+                    throw new RuntimeException("No Gemini models available from API");
                 }
 
                 // Filter and sort models
@@ -684,11 +688,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 progressDialog.dismiss();
 
                 if (models.isEmpty()) {
-                    Log.w(TAG, "No models available after filtering");
-                    Toast.makeText(this, "No Gemini models available. Using default model.", Toast.LENGTH_LONG).show();
-                    models.add("gemini-pro");
+                    Log.e(TAG, "No models available after filtering");
+                    throw new RuntimeException("No Gemini models available after filtering");
                 }
-
                 ArrayAdapter<String> modelAdapter = new ArrayAdapter<>(this,
                         android.R.layout.simple_spinner_item, models);
                 modelAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
@@ -705,18 +707,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 Log.e(TAG, "Error updating Gemini model spinner", e);
                 runOnUiThread(() -> {
                     Toast.makeText(this, "Failed to fetch models: " + e.getMessage(), Toast.LENGTH_LONG).show();
-                    // Fall back to default model instead of switching to STUB
-                    List<String> defaultModels = new ArrayList<>();
-                    defaultModels.add("gemini-pro");
-
-                    ArrayAdapter<String> modelAdapter = new ArrayAdapter<>(this,
-                            android.R.layout.simple_spinner_item, defaultModels);
-                    modelAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-                    geminiModelSpinner.setAdapter(modelAdapter);
-                    geminiModelSpinner.setVisibility(View.VISIBLE);
-
-                    iterationManager = new ClojureIterationManager(this,
-                            createLLMClient(LLMClientFactory.LLMType.GEMINI, "gemini-pro"));
+                    throw new RuntimeException("Failed to fetch Gemini models from API", e);
                 });
                 return null;
             });
@@ -893,22 +884,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         startActivity(intent);
     }
 
-    // Add this method to access the GeminiLLMClient
-    private GeminiLLMClient getGeminiClient() {
-        if (iterationManager == null || !(iterationManager.getLLMClient() instanceof GeminiLLMClient)) {
-            return null;
-        }
-        return (GeminiLLMClient) iterationManager.getLLMClient();
-    }
-
     private void clearChatSession() {
-        GeminiLLMClient geminiClient = getGeminiClient();
-        if (geminiClient != null && currentDescription != null) {
-            GeminiLLMClient.ChatSession session = geminiClient.getOrCreateSession(currentDescription);
-            session.reset();
-            Toast.makeText(this, "Chat session reset", Toast.LENGTH_SHORT).show();
-        } else {
-            Toast.makeText(this, "No active Gemini session", Toast.LENGTH_SHORT).show();
+        if (iterationManager != null) {
+            LLMClient llmClient = iterationManager.getLLMClient();
+            if (llmClient != null) {
+                llmClient.getOrCreateSession(currentDescription).reset();
+            }
         }
     }
 
@@ -918,6 +899,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
      */
     private void handleDesignCodeIntent(String encodedCode, String encoding) {
         Log.d(TAG, "handleDesignCodeIntent: " + encodedCode + " " + encoding);
+        // Create temporary LLM client using factory
+        LLMClient tempClient = LLMClientFactory.createClient(this, LLMClientFactory.LLMType.GEMINI);
+
         // Decode if base64 encoded
         if ("base64".equals(encoding) && encodedCode != null) {
             try {
@@ -993,5 +977,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // original input
         Log.d(TAG, "No code block markers found, using original input");
         return input;
+    }
+
+    public String getSelectedModel() {
+        if (geminiModelSpinner != null) {
+            return (String) geminiModelSpinner.getSelectedItem();
+        }
+        return null;
     }
 }

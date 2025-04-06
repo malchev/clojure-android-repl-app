@@ -28,7 +28,7 @@ Write a clojure app with the following structure:
 
 11. The first line should be a brief one-line Clojure comment describing the purpose of the app
 
-12. Not try to create or switch to any namespace at all
+12. DO NOT try to create or switch to any namespace at all
 	Just use the "user" namespace that's been established
 	Import what we need directly without namespace manipulation
 
@@ -126,8 +126,10 @@ Write a clojure app with the following structure:
 	16.b. Log the entry to each lifecycle callback with the parameters received.
 	16.c. Include a utility function for debug logging.
 
-VERY IMPORTANT: When providing the final code, enclose it with as follows:
+20. VERY IMPORTANT: When providing the final code, enclose it with as follows:
 ```clojure
 	... code ...
 ```
 DO NOT emit non-final clojure code enclosed as above, only the final answer.
+
+21. Show your reasoning steps.

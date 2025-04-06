@@ -7,6 +7,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.concurrent.CompletableFuture;
+import java.util.List;
 
 public abstract class LLMClient {
     private static final String TAG = "LLMClient";
@@ -72,4 +73,26 @@ public abstract class LLMClient {
             String logcat,
             File screenshot,
             String feedback);
+
+    // Message class for chat history
+    public static class Message {
+        public final String role;
+        public final String content;
+
+        public Message(String role, String content) {
+            this.role = role;
+            this.content = content;
+        }
+    }
+
+    // Chat session interface
+    public interface ChatSession {
+        void reset();
+
+        CompletableFuture<String> sendMessage(String message);
+
+        List<Message> getMessageHistory();
+    }
+
+    public abstract ChatSession getOrCreateSession(String description);
 }

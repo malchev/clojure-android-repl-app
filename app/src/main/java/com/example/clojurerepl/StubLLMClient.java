@@ -4,13 +4,57 @@ import android.content.Context;
 import android.util.Log;
 import java.io.File;
 import java.util.concurrent.CompletableFuture;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.List;
+import java.util.ArrayList;
 
 public class StubLLMClient extends LLMClient {
     private static final String TAG = "StubLLMClient";
+    private Map<String, ChatSession> chatSessions = new HashMap<>();
 
     public StubLLMClient(Context context) {
         super(context);
         Log.d(TAG, "Created new StubLLMClient");
+    }
+
+    private class StubChatSession implements ChatSession {
+        private String sessionId;
+        private List<Message> messageHistory = new ArrayList<>();
+
+        public StubChatSession(String sessionId) {
+            this.sessionId = sessionId;
+            Log.d(TAG, "Created new stub chat session: " + sessionId);
+        }
+
+        @Override
+        public CompletableFuture<String> sendMessage(String message) {
+            Log.d(TAG, "Stub chat session sending message: " + message);
+            messageHistory.add(new Message("user", message));
+            String response = "Stub response for: " + message;
+            messageHistory.add(new Message("model", response));
+            return CompletableFuture.completedFuture(response);
+        }
+
+        @Override
+        public void reset() {
+            messageHistory.clear();
+            Log.d(TAG, "Reset stub chat session: " + sessionId);
+        }
+
+        @Override
+        public List<Message> getMessageHistory() {
+            return messageHistory;
+        }
+    }
+
+    @Override
+    public ChatSession getOrCreateSession(String description) {
+        String sessionId = "stub-" + Math.abs(description.hashCode());
+        if (!chatSessions.containsKey(sessionId)) {
+            chatSessions.put(sessionId, new StubChatSession(sessionId));
+        }
+        return chatSessions.get(sessionId);
     }
 
     @Override

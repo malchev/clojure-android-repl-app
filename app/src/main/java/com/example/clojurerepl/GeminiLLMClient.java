@@ -22,7 +22,7 @@ public class GeminiLLMClient extends LLMClient {
     private static final String TAG = "GeminiLLMClient";
     private static final String API_BASE_URL = "https://generativelanguage.googleapis.com/v1";
     private static List<String> availableModels = null;
-    private String currentModel = "gemini-pro";
+    private String currentModel = null;
     private ApiKeyManager apiKeyManager;
     private Map<String, ChatSession> chatSessions = new HashMap<>();
 
@@ -32,29 +32,16 @@ public class GeminiLLMClient extends LLMClient {
         super(context);
         Log.d(TAG, "Creating new GeminiLLMClient");
         apiKeyManager = ApiKeyManager.getInstance(context);
-
-        // Initialize with first available model or fallback to gemini-pro
-        setModel("gemini-pro");
     }
 
     // Class to manage chat session state
-    public class ChatSession {
+    private class GeminiChatSession implements ChatSession {
         private String sessionId;
         private List<Message> messageHistory = new ArrayList<>();
 
-        public ChatSession(String sessionId) {
+        public GeminiChatSession(String sessionId) {
             this.sessionId = sessionId;
             Log.d(TAG, "Created new chat session: " + sessionId);
-        }
-
-        private static class Message {
-            public final String role;
-            public final String content;
-
-            public Message(String role, String content) {
-                this.role = role;
-                this.content = content;
-            }
         }
 
         public void addUserMessage(String content) {
@@ -65,6 +52,7 @@ public class GeminiLLMClient extends LLMClient {
             messageHistory.add(new Message("model", content));
         }
 
+        @Override
         public CompletableFuture<String> sendMessage(String message) {
             // Add the message to history first
             addUserMessage(message);
@@ -90,16 +78,23 @@ public class GeminiLLMClient extends LLMClient {
             });
         }
 
+        @Override
         public void reset() {
             messageHistory.clear();
             Log.d(TAG, "Reset chat session: " + sessionId);
         }
+
+        @Override
+        public List<Message> getMessageHistory() {
+            return messageHistory;
+        }
     }
 
+    @Override
     public ChatSession getOrCreateSession(String description) {
         String sessionId = "app-" + Math.abs(description.hashCode());
         if (!chatSessions.containsKey(sessionId)) {
-            chatSessions.put(sessionId, new ChatSession(sessionId));
+            chatSessions.put(sessionId, new GeminiChatSession(sessionId));
         }
         return chatSessions.get(sessionId);
     }
@@ -107,10 +102,10 @@ public class GeminiLLMClient extends LLMClient {
     @Override
     public CompletableFuture<String> generateInitialCode(String description) {
         Log.d(TAG, "\n" +
-            "┌───────────────────────────────────────────┐\n" +
-            "│         GENERATING INITIAL CODE           │\n" +
-            "│            LLM REQUEST   1                │\n" +
-            "└───────────────────────────────────────────┘");
+                "┌───────────────────────────────────────────┐\n" +
+                "│         GENERATING INITIAL CODE           │\n" +
+                "│            LLM REQUEST   1                │\n" +
+                "└───────────────────────────────────────────┘");
 
         Log.d(TAG, "Generating initial code for description: " + description);
 
@@ -136,39 +131,40 @@ public class GeminiLLMClient extends LLMClient {
             String feedback) {
         // Get the iteration number from the chat session
         ChatSession session = getOrCreateSession(description);
-        int iterationNum = (session.messageHistory.size() / 2) + 1;
+        int iterationNum = (session.getMessageHistory().size() / 2) + 1;
         String formattedNum = String.format("%3d", iterationNum);
 
         Log.d(TAG, "\n" +
-            "┌───────────────────────────────────────────┐\n" +
-            "│         GENERATING NEXT ITERATION         │\n" +
-            "│            LLM REQUEST " + formattedNum + "                │\n" +
-            "└───────────────────────────────────────────┘");
+                "┌───────────────────────────────────────────┐\n" +
+                "│         GENERATING NEXT ITERATION         │\n" +
+                "│            LLM REQUEST " + formattedNum + "                │\n" +
+                "└───────────────────────────────────────────┘");
 
         Log.d(TAG, "=== Starting Next Iteration ===");
         Log.d(TAG, "Description: " + description);
         Log.d(TAG, "Current code length: " + (currentCode != null ? currentCode.length() : 0));
-        Log.d(TAG, "=== Logcat Content Being Sent ===\n" + logcat);
+        Log.d(TAG,
+                "=== Logcat Content Being Sent === (" + (logcat != null ? logcat.split("\n").length : 0) + " lines)");
         Log.d(TAG, "Screenshot present: " + (screenshot != null ? screenshot.getPath() : "null"));
         Log.d(TAG, "Feedback: " + feedback);
 
         // Format the iteration prompt
         String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback);
-        Log.d(TAG, "=== Formatted Prompt ===\n" + prompt);
+        // Log.d(TAG, "=== Formatted Prompt ===\n" + prompt);
 
         // Send through the chat session
         return session.sendMessage(prompt);
     }
 
     // Helper method to call the Gemini API with message history
-    private String callGeminiAPI(String prompt, List<ChatSession.Message> history) {
+    private String callGeminiAPI(String prompt, List<Message> history) {
         try {
             Log.d(TAG, "=== Calling Gemini API ===");
             Log.d(TAG, "Message history size: " + history.size());
             for (int i = 0; i < history.size(); i++) {
-                ChatSession.Message msg = history.get(i);
+                Message msg = history.get(i);
                 Log.d(TAG, String.format("Message %d - Role: %s\nContent:\n%s",
-                    i, msg.role, msg.content));
+                        i, msg.role, msg.content));
             }
 
             String apiKey = apiKeyManager.getApiKey();
@@ -176,6 +172,9 @@ public class GeminiLLMClient extends LLMClient {
                 throw new RuntimeException("No Gemini API key configured");
             }
 
+            if (currentModel == null) {
+                throw new RuntimeException("No Gemini model selected");
+            }
             URL url = new URL(API_BASE_URL + "/models/" + currentModel + ":generateContent?key=" + apiKey);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
@@ -191,7 +190,7 @@ public class GeminiLLMClient extends LLMClient {
             JSONArray contents = new JSONArray();
 
             // Add each message from history
-            for (ChatSession.Message message : history) {
+            for (Message message : history) {
                 JSONObject messageObj = new JSONObject();
                 messageObj.put("role", message.role);
 
@@ -276,16 +275,14 @@ public class GeminiLLMClient extends LLMClient {
     // Helper method for simple API calls without history
     private String callGeminiAPI(String prompt) {
         // Create a temporary session and send message
-        List<ChatSession.Message> tempHistory = new ArrayList<>();
-        tempHistory.add(new ChatSession.Message("user", prompt));
+        List<Message> tempHistory = new ArrayList<>();
+        tempHistory.add(new Message("user", prompt));
         return callGeminiAPI(prompt, tempHistory);
     }
 
     public void setModel(String model) {
-        if (model != null && !model.equals(this.currentModel)) {
-            this.currentModel = model;
-            Log.d(TAG, "Set Gemini model to: " + model);
-        }
+        this.currentModel = model;
+        Log.d(TAG, "Set Gemini model to: " + model);
     }
 
     public String getModel() {
@@ -356,11 +353,7 @@ public class GeminiLLMClient extends LLMClient {
             }
         } catch (Exception e) {
             Log.e(TAG, "Error fetching models", e);
-            // Fallback to basic models list if API call fails
-            List<String> fallbackModels = new ArrayList<>();
-            fallbackModels.add("gemini-pro");
-            fallbackModels.add("gemini-1.5-pro");
-            return fallbackModels;
+            throw new RuntimeException("Failed to fetch models from Gemini API", e);
         }
     }
 
@@ -386,9 +379,9 @@ public class GeminiLLMClient extends LLMClient {
             // Move past the start tag and any whitespace/newline
             int codeStart = startIndex + startTag.length();
             while (codeStart < response.length() &&
-                   (response.charAt(codeStart) == ' ' ||
-                    response.charAt(codeStart) == '\n' ||
-                    response.charAt(codeStart) == '\r')) {
+                    (response.charAt(codeStart) == ' ' ||
+                            response.charAt(codeStart) == '\n' ||
+                            response.charAt(codeStart) == '\r')) {
                 codeStart++;
             }
 

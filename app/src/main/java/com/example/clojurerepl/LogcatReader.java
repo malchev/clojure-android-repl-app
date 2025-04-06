@@ -20,10 +20,10 @@ public class LogcatReader {
 
         try {
             // Clear the log buffer first to avoid getting old logs
-            //Runtime.getRuntime().exec("logcat -c");
+            // Runtime.getRuntime().exec("logcat -c");
 
             // Execute logcat command to get logs for the specific process
-            Process process = Runtime.getRuntime().exec("logcat -d --pid=" + pid);
+            Process process = Runtime.getRuntime().exec("logcat *:E *:W -d --pid=" + pid);
             BufferedReader bufferedReader = new BufferedReader(
                     new InputStreamReader(process.getInputStream()));
 
