@@ -2,6 +2,7 @@ package com.example.clojurerepl;
 
 import android.content.Context;
 import android.util.Log;
+import com.example.clojurerepl.auth.ApiKeyManager;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.BufferedReader;
@@ -9,56 +10,71 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.io.File;
-import com.example.clojurerepl.auth.ApiKeyManager;
 
 public class OpenAIChatClient extends LLMClient {
     private static final String TAG = "OpenAIChatClient";
-    private static final String API_BASE_URL = "https://api.openai.com/v1";
-    private static final int HTTP_TIMEOUT = 30000; // 30 seconds timeout
-    private String currentModel = "gpt-3.5-turbo";
-    private ApiKeyManager apiKeyManager;
-    private Map<String, ChatSession> chatSessions = new HashMap<>();
+    private String model = "gpt-4";
+    private final List<Message> messageHistory = new ArrayList<>();
+    private String currentSessionId;
 
     public OpenAIChatClient(Context context) {
         super(context);
         Log.d(TAG, "Creating new OpenAIChatClient");
-        apiKeyManager = ApiKeyManager.getInstance(context);
+    }
+
+    public void setModel(String model) {
+        Log.d(TAG, "Set OpenAI model to: " + model);
+        this.model = model;
     }
 
     private class OpenAIChatSession implements ChatSession {
-        private String sessionId;
-        private List<Message> messageHistory = new ArrayList<>();
+        private final String sessionId;
+        private final List<Message> sessionMessages = new ArrayList<>();
 
         public OpenAIChatSession(String sessionId) {
             this.sessionId = sessionId;
-            Log.d(TAG, "Created new OpenAI chat session: " + sessionId);
         }
 
         @Override
         public CompletableFuture<String> sendMessage(String message) {
-            // Add the message to history first
-            addUserMessage(message);
+            Log.d(TAG, "Created new OpenAI chat session: " + sessionId);
+            Log.d(TAG, "Reset chat session: " + sessionId);
+            sessionMessages.clear();
+            sessionMessages.add(new Message("user", message));
+            currentSessionId = sessionId;
 
-            // Make the API call with the full history
             return CompletableFuture.supplyAsync(() -> {
                 try {
-                    // Call the API with the full context
-                    String response = callOpenAIAPI(messageHistory);
+                    JSONObject requestBody = new JSONObject();
+                    requestBody.put("model", model);
+                    requestBody.put("temperature", 0.7);
+                    requestBody.put("max_tokens", 4096);
 
-                    // Extract Clojure code from the response
-                    String code = extractClojureCode(response);
+                    JSONArray messagesArray = new JSONArray();
+                    for (Message msg : sessionMessages) {
+                        JSONObject msgObj = new JSONObject();
+                        msgObj.put("role", msg.role);
+                        msgObj.put("content", msg.content);
+                        messagesArray.put(msgObj);
+                    }
+                    requestBody.put("messages", messagesArray);
 
-                    // Save the original response to history
-                    addModelMessage(response);
-
-                    // Return the extracted code
-                    return code;
+                    String response = callOpenAIAPI(requestBody.toString());
+                    JSONObject jsonResponse = new JSONObject(response);
+                    JSONArray choices = jsonResponse.getJSONArray("choices");
+                    if (choices.length() > 0) {
+                        JSONObject choice = choices.getJSONObject(0);
+                        JSONObject messageObj = choice.getJSONObject("message");
+                        String content = messageObj.getString("content");
+                        sessionMessages.add(new Message("assistant", content));
+                        return content;
+                    }
+                    throw new RuntimeException("No response from OpenAI");
                 } catch (Exception e) {
                     Log.e(TAG, "Error in chat session", e);
                     throw new RuntimeException("Failed to get response from OpenAI", e);
@@ -68,54 +84,37 @@ public class OpenAIChatClient extends LLMClient {
 
         @Override
         public void reset() {
-            messageHistory.clear();
-            Log.d(TAG, "Reset chat session: " + sessionId);
+            sessionMessages.clear();
+            currentSessionId = null;
         }
 
         @Override
         public List<Message> getMessageHistory() {
-            return messageHistory;
-        }
-
-        private void addUserMessage(String content) {
-            messageHistory.add(new Message("user", content));
-        }
-
-        private void addModelMessage(String content) {
-            messageHistory.add(new Message("assistant", content));
+            return new ArrayList<>(sessionMessages);
         }
     }
 
     @Override
     public ChatSession getOrCreateSession(String description) {
-        String sessionId = "openai-" + Math.abs(description.hashCode());
-        if (!chatSessions.containsKey(sessionId)) {
-            chatSessions.put(sessionId, new OpenAIChatSession(sessionId));
-        }
-        return chatSessions.get(sessionId);
+        String sessionId = "openai-" + System.currentTimeMillis();
+        return new OpenAIChatSession(sessionId);
+    }
+
+    public ChatSession createChatSession() {
+        return getOrCreateSession(null);
     }
 
     @Override
     public CompletableFuture<String> generateInitialCode(String description) {
-        Log.d(TAG, "\n" +
-                "┌───────────────────────────────────────────┐\n" +
-                "│         GENERATING INITIAL CODE           │\n" +
-                "│            LLM REQUEST   1                │\n" +
-                "└───────────────────────────────────────────┘");
-
+        Log.d(TAG, "┌───────────────────────────────────────────┐");
+        Log.d(TAG, "│         GENERATING INITIAL CODE           │");
+        Log.d(TAG, "│            LLM REQUEST   1                │");
+        Log.d(TAG, "└───────────────────────────────────────────┘");
         Log.d(TAG, "Generating initial code for description: " + description);
 
-        // Get or create a chat session for this app
-        ChatSession chatSession = getOrCreateSession(description);
-
-        // Reset session to start fresh
-        chatSession.reset();
-
-        // Format the prompt
-        String prompt = formatInitialPrompt(description);
-
-        // Send through the chat session
-        return chatSession.sendMessage(prompt);
+        ChatSession session = createChatSession();
+        String formattedPrompt = formatInitialPrompt(description);
+        return session.sendMessage(formattedPrompt);
     }
 
     @Override
@@ -125,16 +124,10 @@ public class OpenAIChatClient extends LLMClient {
             String logcat,
             File screenshot,
             String feedback) {
-        // Get the iteration number from the chat session
-        ChatSession session = getOrCreateSession(description);
-        int iterationNum = (session.getMessageHistory().size() / 2) + 1;
-        String formattedNum = String.format("%3d", iterationNum);
-
-        Log.d(TAG, "\n" +
-                "┌───────────────────────────────────────────┐\n" +
-                "│         GENERATING NEXT ITERATION         │\n" +
-                "│            LLM REQUEST " + formattedNum + "                │\n" +
-                "└───────────────────────────────────────────┘");
+        Log.d(TAG, "┌───────────────────────────────────────────┐");
+        Log.d(TAG, "│         GENERATING NEXT ITERATION         │");
+        Log.d(TAG, "│            LLM REQUEST   2                │");
+        Log.d(TAG, "└───────────────────────────────────────────┘");
 
         Log.d(TAG, "=== Starting Next Iteration ===");
         Log.d(TAG, "Description: " + description);
@@ -144,98 +137,65 @@ public class OpenAIChatClient extends LLMClient {
         Log.d(TAG, "Screenshot present: " + (screenshot != null ? screenshot.getPath() : "null"));
         Log.d(TAG, "Feedback: " + feedback);
 
-        // Format the iteration prompt
-        String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback);
-
-        // Send through the chat session
-        return session.sendMessage(prompt);
+        ChatSession session = createChatSession();
+        String formattedPrompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback);
+        return session.sendMessage(formattedPrompt);
     }
 
-    private String callOpenAIAPI(List<Message> history) {
+    private String callOpenAIAPI(String requestBody) {
+        Log.d(TAG, "=== Calling OpenAI API ===");
+        Log.d(TAG, "Message history size: " + messageHistory.size());
+        for (int i = 0; i < messageHistory.size(); i++) {
+            Log.d(TAG, "Message " + i + " - Role: " + messageHistory.get(i).role);
+            Log.d(TAG, "Content:\n" + messageHistory.get(i).content);
+        }
+
+        Log.d(TAG, "Request length: " + requestBody.length());
+        Log.d(TAG, "╔══════════════════════════════════════════╗");
+        Log.d(TAG, "║ START OPENAI API REQUEST AAAAAAAAAAAAAA ║");
+        Log.d(TAG, "╚══════════════════════════════════════════╝");
+        Log.d(TAG, requestBody);
+        Log.d(TAG, "╔══════════════════════════════════════════╗");
+        Log.d(TAG, "║ STOP OPENAI API REQUEST BBBBBBBBBBBBBBBB ║");
+        Log.d(TAG, "╚══════════════════════════════════════════╝");
+
         try {
-            Log.d(TAG, "=== Calling OpenAI API ===");
-            Log.d(TAG, "Message history size: " + history.size());
-            for (int i = 0; i < history.size(); i++) {
-                Message msg = history.get(i);
-                Log.d(TAG, String.format("Message %d - Role: %s\nContent:\n%s",
-                        i, msg.role, msg.content));
-            }
+            URL url = new URL("https://api.openai.com/v1/chat/completions");
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("Authorization",
+                    "Bearer " + ApiKeyManager.getInstance(context).getApiKey(LLMClientFactory.LLMType.OPENAI));
+            connection.setDoOutput(true);
 
-            String apiKey = apiKeyManager.getApiKey();
-            if (apiKey == null) {
-                throw new RuntimeException("No OpenAI API key configured");
-            }
-
-            URL url = new URL(API_BASE_URL + "/chat/completions");
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setRequestProperty("Authorization", "Bearer " + apiKey);
-            conn.setDoOutput(true);
-            conn.setConnectTimeout(HTTP_TIMEOUT);
-            conn.setReadTimeout(HTTP_TIMEOUT);
-
-            // Create the API request
-            JSONObject requestBody = new JSONObject();
-            requestBody.put("model", currentModel);
-            requestBody.put("temperature", 0.7);
-            requestBody.put("max_tokens", 4096);
-
-            // Build the messages array from history
-            JSONArray messages = new JSONArray();
-            for (Message message : history) {
-                JSONObject messageObj = new JSONObject();
-                messageObj.put("role", message.role);
-                messageObj.put("content", message.content);
-                messages.put(messageObj);
-            }
-            requestBody.put("messages", messages);
-
-            // Write the request
-            try (OutputStream os = conn.getOutputStream()) {
-                byte[] input = requestBody.toString().getBytes("utf-8");
+            try (OutputStream os = connection.getOutputStream()) {
+                byte[] input = requestBody.getBytes(StandardCharsets.UTF_8);
                 os.write(input, 0, input.length);
             }
 
-            Log.d(TAG, "\n" +
-                    "╔══════════════════════════════════════════╗\n" +
-                    "║ START OPENAI API REQUEST AAAAAAAAAAAAAA ║\n" +
-                    "╚══════════════════════════════════════════╝");
-            String requestStr = requestBody.toString();
-            Log.d(TAG, requestStr);
-            Log.d(TAG, "Request length: " + requestStr.length() + "\n" +
-                    "╔══════════════════════════════════════════╗\n" +
-                    "║ STOP OPENAI API REQUEST BBBBBBBBBBBBBBBB ║\n" +
-                    "╚══════════════════════════════════════════╝");
-
-            int responseCode = conn.getResponseCode();
+            int responseCode = connection.getResponseCode();
             if (responseCode == HttpURLConnection.HTTP_OK) {
-                // Read the response
                 try (BufferedReader br = new BufferedReader(
-                        new InputStreamReader(conn.getInputStream(), "utf-8"))) {
+                        new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
                     StringBuilder response = new StringBuilder();
                     String responseLine;
                     while ((responseLine = br.readLine()) != null) {
                         response.append(responseLine.trim());
                     }
-                    String extractedResponse = extractTextFromResponse(response.toString());
-                    Log.d(TAG, "=== Complete LLM Response ===\n" + extractedResponse);
-                    return extractedResponse;
+                    return response.toString();
                 }
             } else {
-                // Handle error response
-                String errorResponse = "";
                 try (BufferedReader br = new BufferedReader(
-                        new InputStreamReader(conn.getErrorStream(), "utf-8"))) {
+                        new InputStreamReader(connection.getErrorStream(), StandardCharsets.UTF_8))) {
                     StringBuilder response = new StringBuilder();
                     String responseLine;
                     while ((responseLine = br.readLine()) != null) {
                         response.append(responseLine.trim());
                     }
-                    errorResponse = response.toString();
+                    String errorResponse = response.toString();
+                    Log.e(TAG, "OpenAI API error response: " + errorResponse);
+                    throw new RuntimeException("OpenAI API error: " + responseCode + " - " + errorResponse);
                 }
-                Log.e(TAG, "OpenAI API error response: " + errorResponse);
-                throw new RuntimeException("OpenAI API error: " + responseCode + " - " + errorResponse);
             }
         } catch (Exception e) {
             Log.e(TAG, "Error calling OpenAI API", e);
@@ -243,75 +203,37 @@ public class OpenAIChatClient extends LLMClient {
         }
     }
 
-    private String extractTextFromResponse(String jsonResponse) {
-        try {
-            JSONObject json = new JSONObject(jsonResponse);
-            JSONArray choices = json.getJSONArray("choices");
-            if (choices.length() > 0) {
-                JSONObject firstChoice = choices.getJSONObject(0);
-                JSONObject message = firstChoice.getJSONObject("message");
-                return message.getString("content");
-            }
-            return "Failed to extract text from OpenAI response";
-        } catch (Exception e) {
-            Log.e(TAG, "Error extracting text from OpenAI response", e);
-            return "Error: " + e.getMessage();
-        }
-    }
-
-    private String extractClojureCode(String response) {
-        Log.d(TAG, "=== Extracting Clojure code from response length: " + response.length() + " ===");
+    public String extractClojureCode(String response) {
+        Log.d(TAG, "Extracting Clojure code from response of length: " + response.length());
 
         if (response == null || response.isEmpty()) {
             Log.w(TAG, "Empty response received");
             return "";
         }
 
-        // First try to find ```clojure
-        String startTag = "```clojure";
-        int startIndex = response.indexOf(startTag);
-
-        // If not found, try just ```
+        // Try to find the start of a Clojure code block
+        int startIndex = response.indexOf("```clojure");
         if (startIndex == -1) {
-            startTag = "```";
-            startIndex = response.indexOf(startTag);
-        }
-
-        if (startIndex != -1) {
-            // Move past the start tag and any whitespace/newline
-            int codeStart = startIndex + startTag.length();
-            while (codeStart < response.length() &&
-                    (response.charAt(codeStart) == ' ' ||
-                            response.charAt(codeStart) == '\n' ||
-                            response.charAt(codeStart) == '\r')) {
-                codeStart++;
+            // If no Clojure-specific tag, try generic code block
+            startIndex = response.indexOf("```");
+            if (startIndex == -1) {
+                Log.w(TAG, "No code block markers found in response");
+                return response.trim(); // Return the whole response if no markers found
             }
-
-            // Find the closing ```
-            String endTag = "```";
-            int endIndex = response.indexOf(endTag, codeStart);
-
-            if (endIndex != -1) {
-                String code = response.substring(codeStart, endIndex).trim();
-                Log.d(TAG, "Found code block between markers. Length: " + code.length());
-                return code;
-            } else {
-                Log.w(TAG, "Found start marker but no end marker");
-            }
+            startIndex += 3; // Skip the opening ```
         } else {
-            Log.w(TAG, "No code block markers found in response");
+            startIndex += 10; // Skip the opening ```clojure
         }
 
-        // If we couldn't extract code between markers, return original
-        return response;
-    }
+        // Find the end of the code block
+        int endIndex = response.indexOf("```", startIndex);
+        if (endIndex == -1) {
+            Log.w(TAG, "No closing code block marker found");
+            return response.substring(startIndex).trim();
+        }
 
-    public void setModel(String model) {
-        this.currentModel = model;
-        Log.d(TAG, "Set OpenAI model to: " + model);
-    }
-
-    public String getModel() {
-        return currentModel;
+        String code = response.substring(startIndex, endIndex).trim();
+        Log.d(TAG, "Extracted code block of length: " + code.length());
+        return code;
     }
 }
