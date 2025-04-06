@@ -103,12 +103,18 @@
   (reset! active? false)
   ;; Unregister sensor listeners
   (try
-    (.unregisterListener sensor-manager sensor-listener)
+    (when sensor-manager
+      (android.util.Log/d TAG "Unregistering accelerometer listener")
+      (.unregisterListener sensor-manager sensor-listener accelerometer)
+      (android.util.Log/d TAG "Unregistering magnetometer listener")
+      (.unregisterListener sensor-manager sensor-listener magnetometer))
     (catch Exception e
       (android.util.Log/e TAG (str "Error unregistering sensors: " (.getMessage e)))))
   ;; Pause OpenGL rendering if view is still valid
   (try
-    (.onPause gl-view)
+    (when gl-view
+      (android.util.Log/d TAG "Pausing GL view")
+      (.onPause gl-view))
     (catch Exception e
       (android.util.Log/e TAG (str "Error pausing GL view: " (.getMessage e))))))
 
@@ -364,19 +370,38 @@
         (android.util.Log/d TAG "View detached from window")
         (cleanup))))
 
-  ;; Add lifecycle hooks directly to activity if possible
-  (try
-    ;; Try to access isDestroyed field
-    (let [field (.getDeclaredField (.getClass activity) "isDestroyed")]
-      ;; If we get here, the field exists, so try to add lifecycle hooks
-      (.addOnAttachStateChangeListener activity
-        (proxy [android.view.View$OnAttachStateChangeListener] []
-          (onViewAttachedToWindow [v] nil)
-          (onViewDetachedFromWindow [v]
-            (android.util.Log/d TAG "Activity view detached - cleaning up")
-            (cleanup)))))
-    (catch Exception e
-      (android.util.Log/d TAG "Could not set up direct activity hooks, using view listener only")))
+  ;; Add AndroidX LifecycleObserver
+  (let [lifecycle (.. activity (getLifecycle))
+        observer (proxy [androidx.lifecycle.LifecycleEventObserver] []
+                  (onStateChanged [source event]
+                    (case (.name event)
+                      "ON_RESUME"
+                      (do
+                        (android.util.Log/d TAG "Activity resumed - registering sensors")
+                        (reset! active? true)
+                        (when sensor-manager
+                          (.registerListener sensor-manager 
+                                           sensor-listener
+                                           accelerometer
+                                           android.hardware.SensorManager/SENSOR_DELAY_GAME)
+                          (.registerListener sensor-manager
+                                           sensor-listener
+                                           magnetometer
+                                           android.hardware.SensorManager/SENSOR_DELAY_GAME)))
+                      "ON_PAUSE"
+                      (do
+                        (android.util.Log/d TAG "Activity paused - unregistering sensors")
+                        (reset! active? false)
+                        (when sensor-manager
+                          (.unregisterListener sensor-manager sensor-listener accelerometer)
+                          (.unregisterListener sensor-manager sensor-listener magnetometer)))
+                      "ON_DESTROY"
+                      (do
+                        (android.util.Log/d TAG "Activity destroyed - cleaning up")
+                        (cleanup))
+                      nil)))]
+    (.addObserver lifecycle observer)
+    (android.util.Log/d TAG "Lifecycle observer registered"))
 
   "Compass initialized")
 
