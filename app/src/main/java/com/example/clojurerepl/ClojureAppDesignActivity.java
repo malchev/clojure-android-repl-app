@@ -186,8 +186,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         generateButton.setEnabled(false);
         currentDescription = description;
 
-        // Create LLM client using factory
-        LLMClient llmClient = LLMClientFactory.createClient(this, LLMClientFactory.LLMType.GEMINI);
+        // Get the current LLM type and model
+        LLMClientFactory.LLMType currentType = (LLMClientFactory.LLMType) llmTypeSpinner.getSelectedItem();
+        String selectedModel = (String) geminiModelSpinner.getSelectedItem();
+
+        // Create LLM client using factory with the selected model
+        LLMClient llmClient = LLMClientFactory.createClient(this, currentType, selectedModel);
         iterationManager = new ClojureIterationManager(this, llmClient);
 
         // Get the LLM to generate the code first
@@ -662,7 +666,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 String selectedModel = models.get(0);
                 Log.d(TAG, "Selecting model: " + selectedModel);
                 iterationManager = new ClojureIterationManager(this,
-                        LLMClientFactory.createClient(this, type));
+                        LLMClientFactory.createClient(this, type, selectedModel));
             })).exceptionally(e -> {
                 progressDialog.dismiss();
                 Log.e(TAG, "Error updating model spinner", e);
@@ -685,7 +689,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 LLMClientFactory.LLMType currentType = (LLMClientFactory.LLMType) llmTypeSpinner.getSelectedItem();
                 iterationManager = new ClojureIterationManager(
                         ClojureAppDesignActivity.this,
-                        LLMClientFactory.createClient(ClojureAppDesignActivity.this, currentType));
+                        LLMClientFactory.createClient(ClojureAppDesignActivity.this, currentType, selectedModel));
             }
 
             @Override

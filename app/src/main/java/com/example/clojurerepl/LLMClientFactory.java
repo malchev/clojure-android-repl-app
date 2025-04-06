@@ -14,25 +14,30 @@ public class LLMClientFactory {
         STUB
     }
 
-    public static LLMClient createClient(Context context, LLMType type) {
+    public static LLMClient createClient(Context context, LLMType type, String modelName) {
         Log.d(TAG, "Creating LLM client of type: " + type);
         switch (type) {
             case GEMINI:
-                GeminiLLMClient client = new GeminiLLMClient(context);
-                // Get the selected model from the activity
-                if (context instanceof ClojureAppDesignActivity) {
-                    String selectedModel = ((ClojureAppDesignActivity) context).getSelectedModel();
-                    if (selectedModel != null && !selectedModel.isEmpty()) {
-                        client.setModel(selectedModel);
-                    }
+                GeminiLLMClient geminiClient = new GeminiLLMClient(context);
+                if (modelName != null) {
+                    geminiClient.setModel(modelName);
                 }
-                return client;
+                return geminiClient;
             case OPENAI:
-                return new OpenAIChatClient(context);
+                OpenAIChatClient openaiClient = new OpenAIChatClient(context);
+                if (modelName != null) {
+                    openaiClient.setModel(modelName);
+                }
+                return openaiClient;
             case STUB:
-            default:
                 return new StubLLMClient(context);
+            default:
+                throw new IllegalArgumentException("Unknown LLM type: " + type);
         }
+    }
+
+    public static LLMClient createClient(Context context, LLMType type) {
+        return createClient(context, type, null);
     }
 
     public static List<String> getAvailableModels(Context context, LLMType type) {
