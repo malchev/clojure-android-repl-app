@@ -111,21 +111,19 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 LLMClientFactory.LLMType selectedType = (LLMClientFactory.LLMType) parent.getItemAtPosition(position);
+                ApiKeyManager apiKeyManager = ApiKeyManager.getInstance(ClojureAppDesignActivity.this);
+
                 if (selectedType == LLMClientFactory.LLMType.GEMINI) {
-                    ApiKeyManager apiKeyManager = ApiKeyManager.getInstance(ClojureAppDesignActivity.this);
                     if (!apiKeyManager.hasApiKey(LLMClientFactory.LLMType.GEMINI)) {
                         showApiKeyDialog();
                     } else {
-                        updateGeminiModelSpinner();
+                        updateModelSpinner(LLMClientFactory.LLMType.GEMINI);
                     }
                 } else if (selectedType == LLMClientFactory.LLMType.OPENAI) {
-                    ApiKeyManager apiKeyManager = ApiKeyManager.getInstance(ClojureAppDesignActivity.this);
                     if (!apiKeyManager.hasApiKey(LLMClientFactory.LLMType.OPENAI)) {
                         showApiKeyDialog();
                     } else {
-                        // For OpenAI, we don't need to update any spinner since we only have two models
-                        iterationManager = new ClojureIterationManager(ClojureAppDesignActivity.this,
-                                LLMClientFactory.createClient(ClojureAppDesignActivity.this, selectedType));
+                        updateModelSpinner(LLMClientFactory.LLMType.OPENAI);
                     }
                 } else {
                     geminiModelSpinner.setVisibility(View.GONE);
@@ -146,7 +144,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Initialize manager with initial LLM type (now GEMINI by default)
         // Don't create the manager yet - wait for models to be loaded
-        updateGeminiModelSpinner();
+        updateModelSpinner(LLMClientFactory.LLMType.GEMINI);
 
         // Set up click listeners
         generateButton.setOnClickListener(v -> startNewDesign());
@@ -635,16 +633,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         return Math.round(dp * density);
     }
 
-    private void updateGeminiModelSpinner() {
-        ApiKeyManager apiKeyManager = ApiKeyManager.getInstance(this);
-        String apiKey = apiKeyManager.getApiKey();
-
-        if (apiKey == null || apiKey.isEmpty()) {
-            Log.w(TAG, "No API key available for Gemini");
-            showApiKeyDialog();
-            return;
-        }
-
+    private void updateModelSpinner(LLMClientFactory.LLMType type) {
         // Show a progress indicator
         ProgressDialog progressDialog = new ProgressDialog(this);
         progressDialog.setMessage("Fetching available models...");
@@ -654,14 +643,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Wait a moment to ensure the models are fetched
         new Handler().postDelayed(() -> {
             CompletableFuture.supplyAsync(() -> {
-                Log.d(TAG, "Fetching available models from factory");
-                return LLMClientFactory.getAvailableModels(this, LLMClientFactory.LLMType.GEMINI);
+                Log.d(TAG, "Fetching available models from factory for type: " + type);
+                return LLMClientFactory.getAvailableModels(this, type);
             }).thenAccept(models -> runOnUiThread(() -> {
                 progressDialog.dismiss();
 
                 if (models.isEmpty()) {
                     Log.e(TAG, "No models available after filtering");
-                    throw new RuntimeException("No Gemini models available after filtering");
+                    throw new RuntimeException("No models available after filtering");
                 }
                 ArrayAdapter<String> modelAdapter = new ArrayAdapter<>(this,
                         android.R.layout.simple_spinner_item, models);
@@ -673,13 +662,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 String selectedModel = models.get(0);
                 Log.d(TAG, "Selecting model: " + selectedModel);
                 iterationManager = new ClojureIterationManager(this,
-                        LLMClientFactory.createClient(this, LLMClientFactory.LLMType.GEMINI));
+                        LLMClientFactory.createClient(this, type));
             })).exceptionally(e -> {
                 progressDialog.dismiss();
-                Log.e(TAG, "Error updating Gemini model spinner", e);
+                Log.e(TAG, "Error updating model spinner", e);
                 runOnUiThread(() -> {
                     Toast.makeText(this, "Failed to fetch models: " + e.getMessage(), Toast.LENGTH_LONG).show();
-                    throw new RuntimeException("Failed to fetch Gemini models from API", e);
+                    throw new RuntimeException("Failed to fetch models from API", e);
                 });
                 return null;
             });
@@ -692,15 +681,16 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 String selectedModel = (String) parent.getItemAtPosition(position);
-                Log.d(TAG, "User selected Gemini model: " + selectedModel);
+                Log.d(TAG, "User selected model: " + selectedModel);
+                LLMClientFactory.LLMType currentType = (LLMClientFactory.LLMType) llmTypeSpinner.getSelectedItem();
                 iterationManager = new ClojureIterationManager(
                         ClojureAppDesignActivity.this,
-                        LLMClientFactory.createClient(ClojureAppDesignActivity.this, LLMClientFactory.LLMType.GEMINI));
+                        LLMClientFactory.createClient(ClojureAppDesignActivity.this, currentType));
             }
 
             @Override
             public void onNothingSelected(AdapterView<?> parent) {
-                Log.d(TAG, "No Gemini model selected");
+                Log.d(TAG, "No model selected");
             }
         });
     }
@@ -763,7 +753,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
                 // Now update the spinner
                 if (currentType == LLMClientFactory.LLMType.GEMINI) {
-                    updateGeminiModelSpinner();
+                    updateModelSpinner(LLMClientFactory.LLMType.GEMINI);
                 }
             } else {
                 Toast.makeText(ClojureAppDesignActivity.this, "API key cannot be empty", Toast.LENGTH_SHORT).show();
