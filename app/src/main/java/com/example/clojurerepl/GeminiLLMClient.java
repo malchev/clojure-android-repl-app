@@ -217,6 +217,17 @@ public class GeminiLLMClient extends LLMClient {
                 os.write(input, 0, input.length);
             }
 
+            Log.d(TAG, "\n" +
+                    "╔══════════════════════════════════════════╗\n" +
+                    "║ START GEMINI API REQUEST AAAAAAAAAAAAAA ║\n" +
+                    "╚══════════════════════════════════════════╝");
+            String requestStr = requestBody.toString();
+            Log.d(TAG, requestStr);
+            Log.d(TAG, "Request length: " + requestStr.length() + "\n" +
+                    "╔══════════════════════════════════════════╗\n" +
+                    "║ STOP GEMINI API REQUEST BBBBBBBBBBBBBBBB ║\n" +
+                    "╚══════════════════════════════════════════╝");
+
             int responseCode = conn.getResponseCode();
             if (responseCode == HttpURLConnection.HTTP_OK) {
                 // Read the response
