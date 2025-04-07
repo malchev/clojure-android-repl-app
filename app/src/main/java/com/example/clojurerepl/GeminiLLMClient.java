@@ -21,7 +21,6 @@ import com.example.clojurerepl.auth.ApiKeyManager;
 public class GeminiLLMClient extends LLMClient {
     private static final String TAG = "GeminiLLMClient";
     private static final String API_BASE_URL = "https://generativelanguage.googleapis.com/v1";
-    private static List<String> availableModels = null;
     private String currentModel = null;
     private ApiKeyManager apiKeyManager;
     private Map<String, ChatSession> chatSessions = new HashMap<>();
@@ -176,14 +175,13 @@ public class GeminiLLMClient extends LLMClient {
                         i, msg.role, msg.content));
             }
 
-            String apiKey = apiKeyManager.getApiKey();
+            String apiKey = apiKeyManager.getApiKey(LLMClientFactory.LLMType.GEMINI);
             if (apiKey == null) {
                 throw new RuntimeException("No Gemini API key configured");
             }
 
-            if (currentModel == null) {
-                throw new RuntimeException("No Gemini model selected");
-            }
+            ensureModelIsSet();
+
             URL url = new URL(API_BASE_URL + "/models/" + currentModel + ":generateContent?key=" + apiKey);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
@@ -300,127 +298,25 @@ public class GeminiLLMClient extends LLMClient {
         return callGeminiAPI(prompt, tempHistory);
     }
 
+    public String getModel() {
+        return currentModel;
+    }
+
     public void setModel(String model) {
         this.currentModel = model;
         Log.d(TAG, "Set Gemini model to: " + model);
     }
 
-    public String getModel() {
-        return currentModel;
-    }
-
-    public List<String> getAvailableModels() {
-        if (availableModels != null) {
-            return availableModels;
-        }
-
-        try {
-            String apiKey = apiKeyManager.getApiKey();
-            if (apiKey == null) {
-                throw new RuntimeException("No Gemini API key configured");
-            }
-
-            URL url = new URL(API_BASE_URL + "/models?key=" + apiKey);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setConnectTimeout(HTTP_TIMEOUT);
-            conn.setReadTimeout(HTTP_TIMEOUT);
-
-            int responseCode = conn.getResponseCode();
-            if (responseCode == HttpURLConnection.HTTP_OK) {
-                try (BufferedReader br = new BufferedReader(
-                        new InputStreamReader(conn.getInputStream(), "utf-8"))) {
-                    StringBuilder response = new StringBuilder();
-                    String responseLine;
-                    while ((responseLine = br.readLine()) != null) {
-                        response.append(responseLine.trim());
-                    }
-
-                    // Parse the JSON response
-                    JSONObject json = new JSONObject(response.toString());
-                    JSONArray models = json.getJSONArray("models");
-                    List<String> modelNames = new ArrayList<>();
-
-                    for (int i = 0; i < models.length(); i++) {
-                        JSONObject model = models.getJSONObject(i);
-                        String name = model.getString("name");
-                        // Only add Gemini models
-                        if (name.contains("gemini")) {
-                            // Extract just the model name from the full path
-                            String[] parts = name.split("/");
-                            modelNames.add(parts[parts.length - 1]);
-                        }
-                    }
-
-                    Log.d(TAG, "Retrieved " + modelNames.size() + " Gemini models from API");
-                    availableModels = modelNames;
-                    return modelNames;
-                }
+    private void ensureModelIsSet() {
+        if (currentModel == null) {
+            List<String> availableModels = LLMClientFactory.getAvailableModels(context,
+                    LLMClientFactory.LLMType.GEMINI);
+            if (!availableModels.isEmpty()) {
+                currentModel = availableModels.get(0);
+                Log.d(TAG, "Using first available model: " + currentModel);
             } else {
-                // Handle error response
-                String errorResponse = "";
-                try (BufferedReader br = new BufferedReader(
-                        new InputStreamReader(conn.getErrorStream(), "utf-8"))) {
-                    StringBuilder response = new StringBuilder();
-                    String responseLine;
-                    while ((responseLine = br.readLine()) != null) {
-                        response.append(responseLine.trim());
-                    }
-                    errorResponse = response.toString();
-                }
-                Log.e(TAG, "Error getting models: " + errorResponse);
-                throw new RuntimeException("Failed to get models: " + responseCode + " - " + errorResponse);
+                throw new IllegalStateException("No Gemini models available. Please set a model first.");
             }
-        } catch (Exception e) {
-            Log.e(TAG, "Error fetching models", e);
-            throw new RuntimeException("Failed to fetch models from Gemini API", e);
         }
-    }
-
-    private String extractClojureCode(String response) {
-        Log.d(TAG, "=== Extracting Clojure code from response length: " + response.length() + " ===");
-
-        if (response == null || response.isEmpty()) {
-            Log.w(TAG, "Empty response received");
-            return "";
-        }
-
-        // First try to find ```clojure
-        String startTag = "```clojure";
-        int startIndex = response.indexOf(startTag);
-
-        // If not found, try just ```
-        if (startIndex == -1) {
-            startTag = "```";
-            startIndex = response.indexOf(startTag);
-        }
-
-        if (startIndex != -1) {
-            // Move past the start tag and any whitespace/newline
-            int codeStart = startIndex + startTag.length();
-            while (codeStart < response.length() &&
-                    (response.charAt(codeStart) == ' ' ||
-                            response.charAt(codeStart) == '\n' ||
-                            response.charAt(codeStart) == '\r')) {
-                codeStart++;
-            }
-
-            // Find the closing ```
-            String endTag = "```";
-            int endIndex = response.indexOf(endTag, codeStart);
-
-            if (endIndex != -1) {
-                String code = response.substring(codeStart, endIndex).trim();
-                Log.d(TAG, "Found code block between markers. Length: " + code.length());
-                return code;
-            } else {
-                Log.w(TAG, "Found start marker but no end marker");
-            }
-        } else {
-            Log.w(TAG, "No code block markers found in response");
-        }
-
-        // If we couldn't extract code between markers, return original
-        return response;
     }
 }
