@@ -231,9 +231,11 @@ public class OpenAIChatClient extends LLMClient {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 String response = callOpenAIAPI(messages);
+                Log.d(TAG, "=== FULL OPENAI RESPONSE ===\n" + response);
+
                 // Extract the Clojure code from the response
                 String extractedCode = extractClojureCode(response);
-                Log.d(TAG, "Extracted Clojure code from response, length: " + extractedCode.length());
+                Log.d(TAG, "=== EXTRACTED CLOJURE CODE ===\n" + extractedCode);
 
                 // Save the model's full response (not just the extracted code)
                 messages.add(new Message("assistant", response));
@@ -268,9 +270,11 @@ public class OpenAIChatClient extends LLMClient {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 String response = callOpenAIAPI(messages);
+                Log.d(TAG, "=== FULL OPENAI RESPONSE ===\n" + response);
+
                 // Extract the Clojure code from the response
                 String extractedCode = extractClojureCode(response);
-                Log.d(TAG, "Extracted Clojure code from response, length: " + extractedCode.length());
+                Log.d(TAG, "=== EXTRACTED CLOJURE CODE ===\n" + extractedCode);
 
                 // Save the model's full response (not just the extracted code)
                 messages.add(new Message("assistant", response));
@@ -319,13 +323,13 @@ public class OpenAIChatClient extends LLMClient {
         ensureModelIsSet();
         Log.d(TAG, "=== Calling OpenAI API ===");
         Log.d(TAG, "Request length: " + requestBody.length());
-        Log.d(TAG, "╔══════════════════════════════════════════╗");
-        Log.d(TAG, "║ START OPENAI API REQUEST AAAAAAAAAAAAAA ║");
-        Log.d(TAG, "╚══════════════════════════════════════════╝");
+        Log.d(TAG, "╔══════════════════════════╗");
+        Log.d(TAG, "║ START OPENAI API REQUEST ║");
+        Log.d(TAG, "╚══════════════════════════╝");
         Log.d(TAG, requestBody);
-        Log.d(TAG, "╔══════════════════════════════════════════╗");
-        Log.d(TAG, "║ STOP OPENAI API REQUEST BBBBBBBBBBBBBBBB ║");
-        Log.d(TAG, "╚══════════════════════════════════════════╝");
+        Log.d(TAG, "╔═════════════════════════╗");
+        Log.d(TAG, "║ STOP OPENAI API REQUEST ║");
+        Log.d(TAG, "╚═════════════════════════╝");
 
         try {
             URL url = new URL("https://api.openai.com/v1/chat/completions");
@@ -350,7 +354,28 @@ public class OpenAIChatClient extends LLMClient {
                     while ((responseLine = br.readLine()) != null) {
                         response.append(responseLine.trim());
                     }
-                    return response.toString();
+                    String jsonResponse = response.toString();
+                    Log.d(TAG, "╔═══════════════════════════╗");
+                    Log.d(TAG, "║ START OPENAI API RESPONSE ║");
+                    Log.d(TAG, "╚═══════════════════════════╝");
+                    Log.d(TAG, jsonResponse);
+                    Log.d(TAG, "╔══════════════════════════╗");
+                    Log.d(TAG, "║ STOP OPENAI API RESPONSE ║");
+                    Log.d(TAG, "╚══════════════════════════╝");
+
+                    // Parse JSON to extract the content
+                    JSONObject jsonObject = new JSONObject(jsonResponse);
+                    JSONArray choices = jsonObject.getJSONArray("choices");
+                    if (choices.length() > 0) {
+                        JSONObject choice = choices.getJSONObject(0);
+                        JSONObject message = choice.getJSONObject("message");
+                        String content = message.getString("content");
+                        Log.d(TAG, "choices.length() = " + choices.length());
+                        Log.d(TAG, "content: " + content);
+                        return content;
+                    }
+                    Log.d(TAG, "jsonResponse: " + jsonResponse);
+                    return jsonResponse;
                 }
             } else {
                 try (BufferedReader br = new BufferedReader(

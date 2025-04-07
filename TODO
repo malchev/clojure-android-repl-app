@@ -2,3 +2,4 @@
 2. Spell out the iterations in the system prompt; tell the model to look at the attached logcat and screenshots; provide a structure to the feedback
 3. Implement retry on socket errors and such
 4. app/src/main/res/values/ids.xml -- make sure actions have buttons
+5. Session APIs aren't being used correctly -- we send everything on each iteration.
