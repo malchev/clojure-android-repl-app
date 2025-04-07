@@ -127,37 +127,109 @@ public class OpenAIChatClient extends LLMClient {
         Log.d(TAG, "│         GENERATING INITIAL CODE           │");
         Log.d(TAG, "│            LLM REQUEST   1                │");
         Log.d(TAG, "└───────────────────────────────────────────┘");
-        Log.d(TAG, "Generating initial code for description: " + description);
 
-        ChatSession session = createChatSession();
-        String formattedPrompt = formatInitialPrompt(description);
-        return session.sendMessage(formattedPrompt);
+        String sessionId = UUID.randomUUID().toString();
+        Log.d(TAG, "Creating new session: " + sessionId);
+
+        // Format the prompt using the helper from LLMClient
+        String prompt = formatInitialPrompt(description);
+
+        // Create a new chat session
+        List<Message> messages = createChatSession(sessionId);
+
+        // Add the system message
+        messages.add(new Message("system",
+                "You are a helpful assistant that generates Clojure code. Always respond with Clojure code in a markdown code block."));
+
+        // Add the user prompt
+        messages.add(new Message("user", prompt));
+
+        // Send the request to OpenAI API
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                String response = callOpenAIAPI(messages);
+                // Extract the Clojure code from the response
+                String extractedCode = extractClojureCode(response);
+                Log.d(TAG, "Extracted Clojure code from response, length: " + extractedCode.length());
+
+                // Save the model's full response (not just the extracted code)
+                messages.add(new Message("assistant", response));
+
+                return extractedCode;
+            } catch (Exception e) {
+                Log.e(TAG, "Error generating initial code", e);
+                throw new RuntimeException("Failed to generate initial code", e);
+            }
+        });
     }
 
     @Override
-    public CompletableFuture<String> generateNextIteration(
-            String description,
-            String currentCode,
-            String logcat,
-            File screenshot,
-            String feedback) {
+    public CompletableFuture<String> generateNextIteration(String description, String currentCode, String logcat,
+            File screenshot, String feedback) {
         ensureModelIsSet();
         Log.d(TAG, "┌───────────────────────────────────────────┐");
         Log.d(TAG, "│         GENERATING NEXT ITERATION         │");
-        Log.d(TAG, "│            LLM REQUEST   2                │");
         Log.d(TAG, "└───────────────────────────────────────────┘");
 
-        Log.d(TAG, "=== Starting Next Iteration ===");
-        Log.d(TAG, "Description: " + description);
-        Log.d(TAG, "Current code length: " + (currentCode != null ? currentCode.length() : 0));
-        Log.d(TAG,
-                "=== Logcat Content Being Sent === (" + (logcat != null ? logcat.split("\n").length : 0) + " lines)");
-        Log.d(TAG, "Screenshot present: " + (screenshot != null ? screenshot.getPath() : "null"));
-        Log.d(TAG, "Feedback: " + feedback);
+        // Get existing session or create new one
+        String sessionId = "app-" + Math.abs(description.hashCode());
+        List<Message> messages = getOrCreateSession(sessionId).getMessageHistory();
 
-        ChatSession session = createChatSession();
-        String formattedPrompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback);
-        return session.sendMessage(formattedPrompt);
+        // Format the iteration prompt
+        String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback);
+
+        // Add the prompt to the session
+        messages.add(new Message("user", prompt));
+
+        // Send the request to OpenAI API
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                String response = callOpenAIAPI(messages);
+                // Extract the Clojure code from the response
+                String extractedCode = extractClojureCode(response);
+                Log.d(TAG, "Extracted Clojure code from response, length: " + extractedCode.length());
+
+                // Save the model's full response (not just the extracted code)
+                messages.add(new Message("assistant", response));
+
+                return extractedCode;
+            } catch (Exception e) {
+                Log.e(TAG, "Error generating next iteration", e);
+                throw new RuntimeException("Failed to generate next iteration", e);
+            }
+        });
+    }
+
+    private List<Message> createChatSession(String sessionId) {
+        List<Message> messages = new ArrayList<>();
+        sessionMessages.put(sessionId, messages);
+        return messages;
+    }
+
+    private String callOpenAIAPI(List<Message> messages) {
+        ensureModelIsSet();
+        Log.d(TAG, "=== Calling OpenAI API with " + messages.size() + " messages ===");
+
+        try {
+            JSONObject requestBody = new JSONObject();
+            requestBody.put("model", modelName);
+            requestBody.put("temperature", 0.7);
+            requestBody.put("max_tokens", 4096);
+
+            JSONArray messagesArray = new JSONArray();
+            for (Message msg : messages) {
+                JSONObject msgObj = new JSONObject();
+                msgObj.put("role", msg.role);
+                msgObj.put("content", msg.content);
+                messagesArray.put(msgObj);
+            }
+            requestBody.put("messages", messagesArray);
+
+            return callOpenAIAPI(requestBody.toString());
+        } catch (Exception e) {
+            Log.e(TAG, "Error preparing OpenAI API request", e);
+            throw new RuntimeException("Failed to prepare OpenAI API request", e);
+        }
     }
 
     private String callOpenAIAPI(String requestBody) {
@@ -216,37 +288,50 @@ public class OpenAIChatClient extends LLMClient {
         }
     }
 
-    public String extractClojureCode(String response) {
-        Log.d(TAG, "Extracting Clojure code from response of length: " + response.length());
+    private String extractClojureCode(String response) {
+        Log.d(TAG, "=== Extracting Clojure code from response length: " + response.length() + " ===");
 
         if (response == null || response.isEmpty()) {
             Log.w(TAG, "Empty response received");
             return "";
         }
 
-        // Try to find the start of a Clojure code block
-        int startIndex = response.indexOf("```clojure");
+        // First try to find ```clojure
+        String startTag = "```clojure";
+        int startIndex = response.indexOf(startTag);
+
+        // If not found, try just ```
         if (startIndex == -1) {
-            // If no Clojure-specific tag, try generic code block
-            startIndex = response.indexOf("```");
-            if (startIndex == -1) {
-                Log.w(TAG, "No code block markers found in response");
-                return response.trim(); // Return the whole response if no markers found
+            startTag = "```";
+            startIndex = response.indexOf(startTag);
+        }
+
+        if (startIndex != -1) {
+            // Move past the start tag and any whitespace/newline
+            int codeStart = startIndex + startTag.length();
+            while (codeStart < response.length() &&
+                    (response.charAt(codeStart) == ' ' ||
+                            response.charAt(codeStart) == '\n' ||
+                            response.charAt(codeStart) == '\r')) {
+                codeStart++;
             }
-            startIndex += 3; // Skip the opening ```
+
+            // Find the closing ```
+            String endTag = "```";
+            int endIndex = response.indexOf(endTag, codeStart);
+
+            if (endIndex != -1) {
+                String code = response.substring(codeStart, endIndex).trim();
+                Log.d(TAG, "Found code block between markers. Length: " + code.length());
+                return code;
+            } else {
+                Log.w(TAG, "Found start marker but no end marker");
+            }
         } else {
-            startIndex += 10; // Skip the opening ```clojure
+            Log.w(TAG, "No code block markers found in response");
         }
 
-        // Find the end of the code block
-        int endIndex = response.indexOf("```", startIndex);
-        if (endIndex == -1) {
-            Log.w(TAG, "No closing code block marker found");
-            return response.substring(startIndex).trim();
-        }
-
-        String code = response.substring(startIndex, endIndex).trim();
-        Log.d(TAG, "Extracted code block of length: " + code.length());
-        return code;
+        // If we couldn't extract code between markers, return original
+        return response;
     }
 }

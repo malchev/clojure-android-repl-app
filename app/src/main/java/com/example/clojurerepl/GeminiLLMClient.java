@@ -118,8 +118,13 @@ public class GeminiLLMClient extends LLMClient {
         // Format the prompt
         String prompt = formatInitialPrompt(description);
 
-        // Send through the chat session
-        return chatSession.sendMessage(prompt);
+        // Send through the chat session and extract code
+        return chatSession.sendMessage(prompt)
+                .thenApply(response -> {
+                    String extractedCode = extractClojureCode(response);
+                    Log.d(TAG, "Extracted Clojure code from response, length: " + extractedCode.length());
+                    return extractedCode;
+                });
     }
 
     @Override
@@ -150,10 +155,14 @@ public class GeminiLLMClient extends LLMClient {
 
         // Format the iteration prompt
         String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback);
-        // Log.d(TAG, "=== Formatted Prompt ===\n" + prompt);
 
-        // Send through the chat session
-        return session.sendMessage(prompt);
+        // Send through the chat session and extract code
+        return session.sendMessage(prompt)
+                .thenApply(response -> {
+                    String extractedCode = extractClojureCode(response);
+                    Log.d(TAG, "Extracted Clojure code from response, length: " + extractedCode.length());
+                    return extractedCode;
+                });
     }
 
     // Helper method to call the Gemini API with message history
