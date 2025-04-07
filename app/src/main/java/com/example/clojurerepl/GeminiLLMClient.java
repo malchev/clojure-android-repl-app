@@ -309,8 +309,7 @@ public class GeminiLLMClient extends LLMClient {
 
     private void ensureModelIsSet() {
         if (currentModel == null) {
-            List<String> availableModels = LLMClientFactory.getAvailableModels(context,
-                    LLMClientFactory.LLMType.GEMINI);
+            List<String> availableModels = fetchAvailableModels(context);
             if (!availableModels.isEmpty()) {
                 currentModel = availableModels.get(0);
                 Log.d(TAG, "Using first available model: " + currentModel);
@@ -318,5 +317,90 @@ public class GeminiLLMClient extends LLMClient {
                 throw new IllegalStateException("No Gemini models available. Please set a model first.");
             }
         }
+    }
+
+    /**
+     * Fetches available Gemini models from the API
+     */
+    public static List<String> fetchAvailableModels(Context context) {
+        Log.d(TAG, "Fetching Gemini models");
+        List<String> models = new ArrayList<>();
+        ApiKeyManager apiKeyManager = ApiKeyManager.getInstance(context);
+        String apiKey = apiKeyManager.getApiKey(LLMClientFactory.LLMType.GEMINI);
+
+        if (apiKey == null || apiKey.isEmpty()) {
+            Log.w(TAG, "No Gemini API key available");
+            return models;
+        }
+
+        try {
+            URL url = new URL(API_BASE_URL + "/models?key=" + apiKey);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setConnectTimeout(HTTP_TIMEOUT);
+            conn.setReadTimeout(HTTP_TIMEOUT);
+
+            int responseCode = conn.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                try (BufferedReader br = new BufferedReader(
+                        new InputStreamReader(conn.getInputStream(), "utf-8"))) {
+                    StringBuilder response = new StringBuilder();
+                    String responseLine;
+                    while ((responseLine = br.readLine()) != null) {
+                        response.append(responseLine.trim());
+                    }
+
+                    JSONObject jsonResponse = new JSONObject(response.toString());
+                    JSONArray modelsArray = jsonResponse.getJSONArray("models");
+
+                    for (int i = 0; i < modelsArray.length(); i++) {
+                        JSONObject model = modelsArray.getJSONObject(i);
+                        String name = model.getString("name");
+                        if (name.contains("gemini")) {
+                            // Extract just the model name from the full path
+                            String[] parts = name.split("/");
+                            models.add(parts[parts.length - 1]);
+                        }
+                    }
+
+                    // Sort models with "pro" models first
+                    models.sort((a, b) -> {
+                        if (a.contains("pro") && !b.contains("pro"))
+                            return -1;
+                        if (!a.contains("pro") && b.contains("pro"))
+                            return 1;
+                        return a.compareTo(b);
+                    });
+
+                    Log.d(TAG, "Successfully fetched Gemini models: " + models);
+                }
+            } else {
+                // Handle error response
+                String errorResponse = "";
+                try (BufferedReader br = new BufferedReader(
+                        new InputStreamReader(conn.getErrorStream(), "utf-8"))) {
+                    StringBuilder response = new StringBuilder();
+                    String responseLine;
+                    while ((responseLine = br.readLine()) != null) {
+                        response.append(responseLine.trim());
+                    }
+                    errorResponse = response.toString();
+                }
+                Log.e(TAG, "Error getting models: " + errorResponse);
+                Log.e(TAG, "Failed to fetch Gemini models. Response code: " + responseCode);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error fetching Gemini models", e);
+        }
+
+        // If API query fails, fall back to common models
+        if (models.isEmpty()) {
+            Log.w(TAG, "Falling back to default Gemini models");
+            models.add("gemini-pro");
+            models.add("gemini-pro-vision");
+        }
+
+        return models;
     }
 }

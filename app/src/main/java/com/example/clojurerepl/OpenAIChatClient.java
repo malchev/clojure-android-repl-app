@@ -39,8 +39,7 @@ public class OpenAIChatClient extends LLMClient {
 
     private void ensureModelIsSet() {
         if (modelName == null) {
-            List<String> availableModels = LLMClientFactory.getAvailableModels(context,
-                    LLMClientFactory.LLMType.OPENAI);
+            List<String> availableModels = fetchAvailableModels(context);
             if (!availableModels.isEmpty()) {
                 modelName = availableModels.get(0);
                 Log.d(TAG, "Using first available model: " + modelName);
@@ -48,6 +47,74 @@ public class OpenAIChatClient extends LLMClient {
                 throw new IllegalStateException("No OpenAI models available. Please set a model first.");
             }
         }
+    }
+
+    /**
+     * Fetches available OpenAI models from the API
+     */
+    public static List<String> fetchAvailableModels(Context context) {
+        Log.d(TAG, "Fetching OpenAI models");
+        List<String> models = new ArrayList<>();
+        ApiKeyManager apiKeyManager = ApiKeyManager.getInstance(context);
+        String apiKey = apiKeyManager.getApiKey(LLMClientFactory.LLMType.OPENAI);
+
+        if (apiKey == null || apiKey.isEmpty()) {
+            Log.w(TAG, "No OpenAI API key available");
+            return models;
+        }
+
+        try {
+            URL url = new URL("https://api.openai.com/v1/models");
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setRequestProperty("Authorization", "Bearer " + apiKey);
+            connection.setRequestProperty("Content-Type", "application/json");
+
+            int responseCode = connection.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+                String inputLine;
+                StringBuilder response = new StringBuilder();
+
+                while ((inputLine = in.readLine()) != null) {
+                    response.append(inputLine);
+                }
+                in.close();
+
+                JSONObject jsonResponse = new JSONObject(response.toString());
+                JSONArray data = jsonResponse.getJSONArray("data");
+
+                for (int i = 0; i < data.length(); i++) {
+                    JSONObject model = data.getJSONObject(i);
+                    String modelId = model.getString("id");
+                    // Only include GPT models
+                    if (modelId.startsWith("gpt-")) {
+                        models.add(modelId);
+                    }
+                }
+
+                // Sort models with GPT-4 first
+                models.sort((a, b) -> {
+                    if (a.startsWith("gpt-4") && !b.startsWith("gpt-4"))
+                        return -1;
+                    if (!a.startsWith("gpt-4") && b.startsWith("gpt-4"))
+                        return 1;
+                    return a.compareTo(b);
+                });
+
+                Log.d(TAG, "Successfully fetched OpenAI models: " + models);
+            } else {
+                Log.e(TAG, "Failed to fetch OpenAI models. Response code: " + responseCode);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error fetching OpenAI models", e);
+        }
+
+        // If API query fails, throw an error
+        if (models.isEmpty()) {
+            throw new RuntimeException("Failed to fetch OpenAI models and no fallback models available");
+        }
+        return models;
     }
 
     private class OpenAIChatSession implements ChatSession {
