@@ -99,6 +99,18 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     @Override
+    public boolean clearApiKey() {
+        try {
+            apiKeyManager.clearApiKey(LLMClientFactory.LLMType.GEMINI);
+            currentModel = null;
+            return true;
+        } catch (Exception e) {
+            Log.e(TAG, "Error clearing Gemini API key", e);
+            return false;
+        }
+    }
+
+    @Override
     public CompletableFuture<String> generateInitialCode(String description) {
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +

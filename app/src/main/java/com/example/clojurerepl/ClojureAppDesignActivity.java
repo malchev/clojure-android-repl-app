@@ -67,6 +67,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     // Add LLM type spinner
     private Spinner llmTypeSpinner;
     private Spinner geminiModelSpinner;
+    private Button clearApiKeyButton;
     private LLMClientFactory.LLMType currentLLMType = LLMClientFactory.LLMType.GEMINI;
 
     // Add this field at the top of the class
@@ -103,6 +104,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 LLMClientFactory.LLMType.values());
         llmAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         llmTypeSpinner.setAdapter(llmAdapter);
+
+        // Initialize clear API key button
+        clearApiKeyButton = findViewById(R.id.clear_api_key_button);
+        clearApiKeyButton.setOnClickListener(v -> clearCurrentApiKey());
 
         // Set default selection to GEMINI
         llmTypeSpinner.setSelection(
@@ -740,17 +745,42 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 ApiKeyManager.getInstance(this).saveApiKey(apiKey, type);
                 Toast.makeText(this, type.name() + " API key saved", Toast.LENGTH_SHORT).show();
 
-                // Update model spinner after key is saved
-                updateModelSpinner(type);
+                // Show progress while fetching models
+                ProgressDialog progressDialog = new ProgressDialog(this);
+                progressDialog.setMessage("Fetching available models...");
+                progressDialog.setCancelable(false);
+                progressDialog.show();
 
-                // Initialize the client with the first model
-                List<String> models = LLMClientFactory.getAvailableModels(this, type);
-                if (!models.isEmpty()) {
-                    String selectedModel = models.get(0);
-                    Log.d(TAG, "Initializing LLM client with model: " + selectedModel);
-                    iterationManager = new ClojureIterationManager(this,
-                            LLMClientFactory.createClient(this, type, selectedModel));
-                }
+                // Use a background thread to fetch models
+                CompletableFuture.supplyAsync(() -> {
+                    try {
+                        return LLMClientFactory.getAvailableModels(this, type);
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error fetching models", e);
+                        return new ArrayList<String>();
+                    }
+                }).thenAccept(models -> {
+                    runOnUiThread(() -> {
+                        progressDialog.dismiss();
+
+                        if (models.isEmpty()) {
+                            Toast.makeText(this, "Failed to fetch models. Using fallback models.", Toast.LENGTH_SHORT)
+                                    .show();
+                        }
+
+                        // Update model spinner with fetched models
+                        updateModelSpinner(type);
+                    });
+                }).exceptionally(e -> {
+                    Log.e(TAG, "Error in model fetching", e);
+                    runOnUiThread(() -> {
+                        progressDialog.dismiss();
+                        Toast.makeText(this, "Failed to fetch models: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                        // Still try to update spinner with fallback models
+                        updateModelSpinner(type);
+                    });
+                    return null;
+                });
             } else {
                 Toast.makeText(this, "API key cannot be empty", Toast.LENGTH_SHORT).show();
                 showApiKeyDialog(type); // Show dialog again if empty
@@ -771,6 +801,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         getMenuInflater().inflate(R.menu.main_menu, menu);
         menu.add(0, R.id.action_clear_session, 0, "Clear Chat Session")
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
+        menu.add(0, R.id.action_clear_api_key, 0, "Clear API Key")
+                .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         return super.onCreateOptionsMenu(menu);
     }
 
@@ -783,6 +815,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             return true;
         } else if (id == R.id.action_save_code) {
             saveCodeToFile();
+            return true;
+        } else if (id == R.id.action_clear_api_key) {
+            clearCurrentApiKey();
             return true;
         } else if (id == android.R.id.home) {
             onBackPressed();
@@ -947,5 +982,41 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             return (String) geminiModelSpinner.getSelectedItem();
         }
         return null;
+    }
+
+    /**
+     * Clears the API key for the currently selected LLM type
+     */
+    private void clearCurrentApiKey() {
+        if (iterationManager == null || iterationManager.getLLMClient() == null) {
+            Toast.makeText(this, "No active LLM client", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Get the current LLM type for the message
+        LLMClientFactory.LLMType currentType = (LLMClientFactory.LLMType) llmTypeSpinner.getSelectedItem();
+
+        // Show confirmation dialog
+        new AlertDialog.Builder(this)
+                .setTitle("Clear API Key")
+                .setMessage("Are you sure you want to clear the API key for " + currentType.name() + "?")
+                .setPositiveButton("Yes", (dialog, which) -> {
+                    // Clear the key using the current client
+                    boolean success = iterationManager.getLLMClient().clearApiKey();
+
+                    if (success) {
+                        Toast.makeText(this, currentType.name() + " API key cleared", Toast.LENGTH_SHORT).show();
+
+                        // Reset the model spinner
+                        geminiModelSpinner.setVisibility(View.GONE);
+
+                        // Show the API key dialog to set a new key
+                        showApiKeyDialog(currentType);
+                    } else {
+                        Toast.makeText(this, "Failed to clear API key", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("No", null)
+                .show();
     }
 }

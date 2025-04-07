@@ -18,6 +18,7 @@ import java.io.File;
 import java.util.UUID;
 import java.util.Map;
 import java.util.HashMap;
+import java.io.IOException;
 
 public class OpenAIChatClient extends LLMClient {
     private static final String TAG = "OpenAIChatClient";
@@ -69,6 +70,8 @@ public class OpenAIChatClient extends LLMClient {
             connection.setRequestMethod("GET");
             connection.setRequestProperty("Authorization", "Bearer " + apiKey);
             connection.setRequestProperty("Content-Type", "application/json");
+            connection.setConnectTimeout(10000); // 10 seconds timeout
+            connection.setReadTimeout(10000);
 
             int responseCode = connection.getResponseCode();
             if (responseCode == HttpURLConnection.HTTP_OK) {
@@ -105,6 +108,7 @@ public class OpenAIChatClient extends LLMClient {
                 Log.d(TAG, "Successfully fetched OpenAI models: " + models);
             } else {
                 Log.e(TAG, "Failed to fetch OpenAI models. Response code: " + responseCode);
+                throw new IOException("API returned code " + responseCode);
             }
         } catch (Exception e) {
             Log.e(TAG, "Error fetching OpenAI models", e);
@@ -181,6 +185,18 @@ public class OpenAIChatClient extends LLMClient {
     public ChatSession getOrCreateSession(String description) {
         String sessionId = "openai-" + System.currentTimeMillis();
         return new OpenAIChatSession(sessionId);
+    }
+
+    @Override
+    public boolean clearApiKey() {
+        try {
+            ApiKeyManager.getInstance(context).clearApiKey(LLMClientFactory.LLMType.OPENAI);
+            modelName = null;
+            return true;
+        } catch (Exception e) {
+            Log.e(TAG, "Error clearing OpenAI API key", e);
+            return false;
+        }
     }
 
     public ChatSession createChatSession() {

@@ -97,6 +97,13 @@ public abstract class LLMClient {
     public abstract ChatSession getOrCreateSession(String description);
 
     /**
+     * Clears the API key for this client type
+     * 
+     * @return true if key was successfully cleared, false otherwise
+     */
+    public abstract boolean clearApiKey();
+
+    /**
      * Extracts Clojure code from a response that may contain markdown formatting.
      * Looks for code blocks marked with ```clojure or ``` tags.
      * Returns the original response if no code blocks are found.

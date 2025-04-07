@@ -58,6 +58,12 @@ public class StubLLMClient extends LLMClient {
     }
 
     @Override
+    public boolean clearApiKey() {
+        // No-op for stub client
+        return true;
+    }
+
+    @Override
     public CompletableFuture<String> generateInitialCode(String description) {
         Log.d(TAG, "Generating initial code for description: " + description);
         // Return a simple test program for now

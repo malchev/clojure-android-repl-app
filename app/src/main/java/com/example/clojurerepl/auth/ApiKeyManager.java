@@ -78,4 +78,19 @@ public class ApiKeyManager {
         editor.apply();
         Log.d(TAG, "API key cleared");
     }
+
+    /**
+     * Clears the stored API key for the specified LLM type
+     * 
+     * @param type The LLM type to clear the key for
+     */
+    public void clearApiKey(LLMClientFactory.LLMType type) {
+        Log.d(TAG, "Clearing API key for: " + type);
+        if (type == LLMClientFactory.LLMType.OPENAI) {
+            prefs.edit().remove(OPENAI_API_KEY).apply();
+        } else {
+            // Default to Gemini
+            prefs.edit().remove(GEMINI_API_KEY).apply();
+        }
+    }
 }
