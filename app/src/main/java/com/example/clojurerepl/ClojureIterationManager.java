@@ -23,7 +23,6 @@ public class ClojureIterationManager {
     private final ScreenshotManager screenshotManager;
 
     private CompletableFuture<IterationResult> currentIterationFuture;
-    private BroadcastReceiver renderCompletionReceiver;
     private ExecutorService executor;
     private CompletableFuture<IterationResult> renderFuture;
     private CompletableFuture<String> generationFuture;
@@ -56,41 +55,6 @@ public class ClojureIterationManager {
 
         // Initialize executor for background tasks
         this.executor = Executors.newCachedThreadPool();
-
-        // Register BroadcastReceiver to handle render activity completion
-        renderCompletionReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                // Handle render completion
-                Log.d(TAG, "Received render completion broadcast");
-
-                if (renderFuture != null && !renderFuture.isDone()) {
-                    boolean success = intent.getBooleanExtra(RenderActivity.EXTRA_SUCCESS, false);
-                    String error = intent.getStringExtra(RenderActivity.EXTRA_ERROR);
-
-                    if (success) {
-                        Log.d(TAG, "Render completed successfully");
-                        // TODO: Get screenshot and logcat
-                        renderFuture.complete(new IterationResult(
-                                "Success", "Logcat", null, true, ""));
-                    } else {
-                        Log.e(TAG, "Render failed: " + error);
-                        renderFuture.completeExceptionally(new RuntimeException(error));
-                    }
-                }
-            }
-        };
-
-        // Register receiver with appropriate flags based on Android version
-        IntentFilter filter = new IntentFilter(RenderActivity.ACTION_RENDER_COMPLETE);
-
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            // Android 13+ requires explicit receiver flag
-            context.registerReceiver(renderCompletionReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-        } else {
-            // Older Android versions
-            context.registerReceiver(renderCompletionReceiver, filter);
-        }
     }
 
     /**
@@ -201,13 +165,6 @@ public class ClojureIterationManager {
     }
 
     public void shutdown() {
-        // Unregister receiver
-        try {
-            context.unregisterReceiver(renderCompletionReceiver);
-        } catch (Exception e) {
-            Log.e(TAG, "Error unregistering receiver", e);
-        }
-
         // Shutdown executor
         if (executor != null) {
             executor.shutdown();
