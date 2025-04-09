@@ -28,22 +28,42 @@ public class StubLLMClient extends LLMClient {
         }
 
         @Override
-        public CompletableFuture<String> sendMessage(String message) {
-            // Add user message to history
-            messages.add(new Message("user", message));
+        public void queueSystemPrompt(String content) {
+            Log.d(TAG, "Queuing system prompt in stub session: " + sessionId);
+            messages.add(new Message("system", content));
+        }
 
-            // If this is the first message, add system prompt
-            if (messages.size() == 1) {
-                messages.add(0, new Message("system", getSystemPrompt()));
-            }
+        @Override
+        public void queueUserMessage(String content) {
+            Log.d(TAG, "Queuing user message in stub session: " + sessionId);
+            messages.add(new Message("user", content));
+        }
 
-            // Generate a stub response
+        @Override
+        public void queueAssistantResponse(String content) {
+            Log.d(TAG, "Queuing assistant response in stub session: " + sessionId);
+            messages.add(new Message("assistant", content));
+        }
+
+        @Override
+        public CompletableFuture<String> sendMessages() {
+            Log.d(TAG, "Sending " + messages.size() + " messages in stub session: " + sessionId);
+
             return CompletableFuture.supplyAsync(() -> {
-                // Simple stub response
-                String response = generateStubResponse(message);
+                // Find the latest user message
+                String userMessage = "";
+                for (int i = messages.size() - 1; i >= 0; i--) {
+                    if ("user".equals(messages.get(i).role)) {
+                        userMessage = messages.get(i).content;
+                        break;
+                    }
+                }
+
+                // Generate stub response
+                String response = generateStubResponse(userMessage);
 
                 // Add assistant message to history
-                messages.add(new Message("assistant", response));
+                queueAssistantResponse(response);
 
                 return response;
             });
@@ -53,11 +73,6 @@ public class StubLLMClient extends LLMClient {
         public void reset() {
             messages.clear();
             Log.d(TAG, "Reset stub chat session: " + sessionId);
-        }
-
-        @Override
-        public List<Message> getMessageHistory() {
-            return messages;
         }
     }
 
@@ -78,7 +93,51 @@ public class StubLLMClient extends LLMClient {
 
     @Override
     public CompletableFuture<String> generateInitialCode(String description) {
-        Log.d(TAG, "Generating initial code for description: " + description);
+        Log.d(TAG, "Generating initial code for description: " + description + " using stub client");
+
+        // Get or create a session for this app description
+        ChatSession session = getOrCreateSession(description);
+
+        // Reset session to start fresh
+        session.reset();
+
+        // Add system message at the beginning
+        session.queueSystemPrompt(getSystemPrompt());
+
+        // Format the prompt using the helper from LLMClient
+        String prompt = formatInitialPrompt(description);
+
+        // Queue the user message
+        session.queueUserMessage(prompt);
+
+        // Send all messages and get the response
+        return session.sendMessages();
+    }
+
+    @Override
+    public CompletableFuture<String> generateNextIteration(
+            String description,
+            String currentCode,
+            String logcat,
+            File screenshot,
+            String feedback) {
+        Log.d(TAG, "Generating next iteration for description: " + description + " using stub client");
+
+        // Get existing session for this app description
+        ChatSession session = getOrCreateSession(description);
+
+        // Format the iteration prompt
+        String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback);
+
+        // Queue the user message
+        session.queueUserMessage(prompt);
+
+        // Send all messages and get the response
+        return session.sendMessages();
+    }
+
+    private String generateStubResponse(String message) {
+        Log.d(TAG, "Generating stub response for: " + message);
         // Return a simple test program for now
         String testProgram = String.format(";; Button test\n" +
                 "(defn -main []\n" +
@@ -98,31 +157,8 @@ public class StubLLMClient extends LLMClient {
                 "        (onClick [this view]\n" +
                 "          (.setText button \"Clicked!\"))))\n" +
                 "    (.addView *content-layout* button params)\n" +
-                "    \"Button created\"))", description.substring(0, Math.min(10, description.length())));
+                "    \"Button created\"))", message.substring(0, Math.min(10, message.length())));
         Log.d(TAG, "StubLLM generated code: " + testProgram);
-        return CompletableFuture.completedFuture(testProgram);
-    }
-
-    @Override
-    public CompletableFuture<String> generateNextIteration(
-            String description,
-            String currentCode,
-            String logcat,
-            File screenshot,
-            String feedback) {
-        Log.d(TAG, "Generating next iteration with feedback: " + feedback);
-        Log.d(TAG, "Screenshot present: " + (screenshot != null));
-        Log.d(TAG, "Current code length: " + currentCode.length());
-        // Just return the current code with a comment about the feedback
-        String nextIteration = "; Feedback received: " + feedback + "\n" + currentCode;
-        Log.d(TAG, "StubLLM generated next iteration: " + nextIteration);
-        return CompletableFuture.completedFuture(nextIteration);
-    }
-
-    private String generateStubResponse(String message) {
-        Log.d(TAG, "Generating stub response for: " + message);
-
-        // Simple response with a clojure code block
-        return "```clojure\n(ns example.core\n  (:gen-class))\n\n(defn -main [& args]\n  (println \"Hello, world!\"))\n```";
+        return testProgram;
     }
 }

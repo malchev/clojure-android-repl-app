@@ -123,46 +123,58 @@ public class OpenAIChatClient extends LLMClient {
 
     private class OpenAIChatSession implements ChatSession {
         private final String sessionId;
-        private final List<Message> sessionMessages = new ArrayList<>();
+        private final List<Message> messages;
 
         public OpenAIChatSession(String sessionId) {
             this.sessionId = sessionId;
+
+            // Use existing messages or create new list
+            if (sessionMessages.containsKey(sessionId)) {
+                this.messages = sessionMessages.get(sessionId);
+            } else {
+                this.messages = new ArrayList<>();
+                sessionMessages.put(sessionId, this.messages);
+            }
+
+            Log.d(TAG, "OpenAI chat session initialized: " + sessionId +
+                    " with " + messages.size() + " messages");
         }
 
         @Override
-        public CompletableFuture<String> sendMessage(String message) {
-            Log.d(TAG, "Created new OpenAI chat session: " + sessionId);
-            Log.d(TAG, "Reset chat session: " + sessionId);
-            sessionMessages.clear();
-            sessionMessages.add(new Message("user", message));
+        public void queueSystemPrompt(String content) {
+            Log.d(TAG, "Queuing system prompt in session: " + sessionId);
+            messages.add(new Message("system", content));
+        }
+
+        @Override
+        public void queueUserMessage(String content) {
+            Log.d(TAG, "Queuing user message in session: " + sessionId);
+            messages.add(new Message("user", content));
+        }
+
+        @Override
+        public void queueAssistantResponse(String content) {
+            Log.d(TAG, "Queuing assistant response in session: " + sessionId);
+            messages.add(new Message("assistant", content));
+        }
+
+        @Override
+        public CompletableFuture<String> sendMessages() {
+            Log.d(TAG, "Sending " + messages.size() + " messages in session: " + sessionId);
 
             return CompletableFuture.supplyAsync(() -> {
                 try {
-                    JSONObject requestBody = new JSONObject();
-                    requestBody.put("model", modelName);
-                    requestBody.put("temperature", 0.7);
-                    requestBody.put("max_tokens", 4096);
+                    String response = callOpenAIAPI(messages);
+                    Log.d(TAG, "=== FULL OPENAI RESPONSE ===\n" + response);
 
-                    JSONArray messagesArray = new JSONArray();
-                    for (Message msg : sessionMessages) {
-                        JSONObject msgObj = new JSONObject();
-                        msgObj.put("role", msg.role);
-                        msgObj.put("content", msg.content);
-                        messagesArray.put(msgObj);
-                    }
-                    requestBody.put("messages", messagesArray);
+                    // Add assistant message to history
+                    queueAssistantResponse(response);
 
-                    String response = callOpenAIAPI(requestBody.toString());
-                    JSONObject jsonResponse = new JSONObject(response);
-                    JSONArray choices = jsonResponse.getJSONArray("choices");
-                    if (choices.length() > 0) {
-                        JSONObject choice = choices.getJSONObject(0);
-                        JSONObject messageObj = choice.getJSONObject("message");
-                        String content = messageObj.getString("content");
-                        sessionMessages.add(new Message("assistant", content));
-                        return content;
-                    }
-                    throw new RuntimeException("No response from OpenAI");
+                    // Extract the Clojure code from the response
+                    String extractedCode = extractClojureCode(response);
+                    Log.d(TAG, "=== EXTRACTED CLOJURE CODE ===\n" + extractedCode);
+
+                    return extractedCode;
                 } catch (Exception e) {
                     Log.e(TAG, "Error in chat session", e);
                     throw new RuntimeException("Failed to get response from OpenAI", e);
@@ -172,18 +184,15 @@ public class OpenAIChatClient extends LLMClient {
 
         @Override
         public void reset() {
-            sessionMessages.clear();
-        }
-
-        @Override
-        public List<Message> getMessageHistory() {
-            return new ArrayList<>(sessionMessages);
+            Log.d(TAG, "Resetting chat session: " + sessionId);
+            messages.clear();
         }
     }
 
     @Override
     public ChatSession getOrCreateSession(String description) {
-        String sessionId = "openai-" + System.currentTimeMillis();
+        // Use a consistent session ID based on description hash code
+        String sessionId = "openai-app-" + Math.abs(description.hashCode());
         return new OpenAIChatSession(sessionId);
     }
 
@@ -204,43 +213,23 @@ public class OpenAIChatClient extends LLMClient {
         ensureModelIsSet();
         Log.d(TAG, "┌───────────────────────────────────────────┐");
         Log.d(TAG, "│         GENERATING INITIAL CODE           │");
-        Log.d(TAG, "│            LLM REQUEST   1                │");
         Log.d(TAG, "└───────────────────────────────────────────┘");
 
-        String sessionId = UUID.randomUUID().toString();
-        Log.d(TAG, "Creating new session: " + sessionId);
+        // Get or create a session for this app description
+        ChatSession session = getOrCreateSession(description);
+
+        // Reset session to start fresh
+        session.reset();
+
+        // Make sure we have a system message at the beginning
+        session.queueSystemPrompt(getSystemPrompt());
 
         // Format the prompt using the helper from LLMClient
         String prompt = formatInitialPrompt(description);
 
-        // Create a new chat session
-        List<Message> messages = createChatSession(sessionId);
-
-        // Add the system message
-        messages.add(new Message("system", getSystemPrompt()));
-
-        // Add the user prompt
-        messages.add(new Message("user", prompt));
-
-        // Send the request to OpenAI API
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                String response = callOpenAIAPI(messages);
-                Log.d(TAG, "=== FULL OPENAI RESPONSE ===\n" + response);
-
-                // Extract the Clojure code from the response
-                String extractedCode = extractClojureCode(response);
-                Log.d(TAG, "=== EXTRACTED CLOJURE CODE ===\n" + extractedCode);
-
-                // Save the model's full response (not just the extracted code)
-                messages.add(new Message("assistant", response));
-
-                return extractedCode;
-            } catch (Exception e) {
-                Log.e(TAG, "Error generating initial code", e);
-                throw new RuntimeException("Failed to generate initial code", e);
-            }
-        });
+        // Queue the user message and send all messages
+        session.queueUserMessage(prompt);
+        return session.sendMessages();
     }
 
     @Override
@@ -251,41 +240,15 @@ public class OpenAIChatClient extends LLMClient {
         Log.d(TAG, "│         GENERATING NEXT ITERATION         │");
         Log.d(TAG, "└───────────────────────────────────────────┘");
 
-        // Get existing session or create new one
-        String sessionId = "app-" + Math.abs(description.hashCode());
-        List<Message> messages = getOrCreateSession(sessionId).getMessageHistory();
+        // Get existing session for this app description
+        ChatSession session = getOrCreateSession(description);
 
         // Format the iteration prompt
         String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback);
 
-        // Add the prompt to the session
-        messages.add(new Message("user", prompt));
-
-        // Send the request to OpenAI API
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                String response = callOpenAIAPI(messages);
-                Log.d(TAG, "=== FULL OPENAI RESPONSE ===\n" + response);
-
-                // Extract the Clojure code from the response
-                String extractedCode = extractClojureCode(response);
-                Log.d(TAG, "=== EXTRACTED CLOJURE CODE ===\n" + extractedCode);
-
-                // Save the model's full response (not just the extracted code)
-                messages.add(new Message("assistant", response));
-
-                return extractedCode;
-            } catch (Exception e) {
-                Log.e(TAG, "Error generating next iteration", e);
-                throw new RuntimeException("Failed to generate next iteration", e);
-            }
-        });
-    }
-
-    private List<Message> createChatSession(String sessionId) {
-        List<Message> messages = new ArrayList<>();
-        sessionMessages.put(sessionId, messages);
-        return messages;
+        // Queue the user message and send all messages
+        session.queueUserMessage(prompt);
+        return session.sendMessages();
     }
 
     private String callOpenAIAPI(List<Message> messages) {
@@ -365,11 +328,8 @@ public class OpenAIChatClient extends LLMClient {
                         JSONObject choice = choices.getJSONObject(0);
                         JSONObject message = choice.getJSONObject("message");
                         String content = message.getString("content");
-                        Log.d(TAG, "choices.length() = " + choices.length());
-                        Log.d(TAG, "content: " + content);
                         return content;
                     }
-                    Log.d(TAG, "jsonResponse: " + jsonResponse);
                     return jsonResponse;
                 }
             } else {

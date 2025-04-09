@@ -95,18 +95,46 @@ public abstract class LLMClient {
 
     // Chat session interface
     public interface ChatSession {
+        /**
+         * Resets the chat session by clearing all messages
+         */
         void reset();
 
-        CompletableFuture<String> sendMessage(String message);
+        /**
+         * Queues a system prompt message to be sent in the next API call
+         *
+         * @param content The system prompt content
+         */
+        void queueSystemPrompt(String content);
 
-        List<Message> getMessageHistory();
+        /**
+         * Queues a user message to be sent in the next API call
+         *
+         * @param content The user message content
+         */
+        void queueUserMessage(String content);
+
+        /**
+         * Queues an assistant (model) response to be sent in the next API call
+         * Typically used when loading previous conversations
+         *
+         * @param content The assistant response content
+         */
+        void queueAssistantResponse(String content);
+
+        /**
+         * Sends all queued messages to the API and returns the response
+         *
+         * @return A CompletableFuture containing the extracted code response
+         */
+        CompletableFuture<String> sendMessages();
     }
 
     public abstract ChatSession getOrCreateSession(String description);
 
     /**
      * Clears the API key for this client type
-     * 
+     *
      * @return true if key was successfully cleared, false otherwise
      */
     public abstract boolean clearApiKey();

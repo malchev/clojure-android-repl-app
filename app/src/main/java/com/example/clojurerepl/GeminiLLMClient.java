@@ -43,36 +43,38 @@ public class GeminiLLMClient extends LLMClient {
             Log.d(TAG, "Created new chat session: " + sessionId);
         }
 
-        public void addUserMessage(String content) {
-            messageHistory.add(new Message("user", content));
-        }
-
-        public void addModelMessage(String content) {
-            messageHistory.add(new Message("model", content));
+        @Override
+        public void queueSystemPrompt(String content) {
+            Log.d(TAG, "Queuing system prompt in session: " + sessionId);
+            messageHistory.add(new Message("system", content));
         }
 
         @Override
-        public CompletableFuture<String> sendMessage(String message) {
-            // Add the message to history first
-            addUserMessage(message);
+        public void queueUserMessage(String content) {
+            Log.d(TAG, "Queuing user message in session: " + sessionId);
+            messageHistory.add(new Message("user", content));
+        }
 
-            // Make the API call with the full history
+        @Override
+        public void queueAssistantResponse(String content) {
+            Log.d(TAG, "Queuing assistant response in session: " + sessionId);
+            messageHistory.add(new Message("assistant", content));
+        }
+
+        @Override
+        public CompletableFuture<String> sendMessages() {
+            Log.d(TAG, "Sending " + messageHistory.size() + " messages in session: " + sessionId);
+
             return CompletableFuture.supplyAsync(() -> {
                 try {
-                    // Check if this is the first message in the session
-                    if (messageHistory.size() == 1) {
-                        // Add system message at the beginning for context
-                        messageHistory.add(0, new Message("system", getSystemPrompt()));
-                    }
-
                     // Call the API with the full context
-                    String response = callGeminiAPI(message, messageHistory);
+                    String response = callGeminiAPI(messageHistory);
 
                     // Extract Clojure code from the response
                     String code = extractClojureCode(response);
 
                     // Save the original response to history
-                    addModelMessage(response);
+                    queueAssistantResponse(response);
 
                     // Return the extracted code
                     return code;
@@ -87,11 +89,6 @@ public class GeminiLLMClient extends LLMClient {
         public void reset() {
             messageHistory.clear();
             Log.d(TAG, "Reset chat session: " + sessionId);
-        }
-
-        @Override
-        public List<Message> getMessageHistory() {
-            return messageHistory;
         }
     }
 
@@ -132,11 +129,17 @@ public class GeminiLLMClient extends LLMClient {
         // Reset session to start fresh
         chatSession.reset();
 
+        // Queue the system prompt to set expectations
+        chatSession.queueSystemPrompt(getSystemPrompt());
+
         // Format the prompt
         String prompt = formatInitialPrompt(description);
 
-        // Send through the chat session and extract code
-        return chatSession.sendMessage(prompt)
+        // Queue the user message
+        chatSession.queueUserMessage(prompt);
+
+        // Send all messages and get the response
+        return chatSession.sendMessages()
                 .thenApply(response -> {
                     String extractedCode = extractClojureCode(response);
                     Log.d(TAG, "Extracted Clojure code from response, length: " + extractedCode.length());
@@ -153,13 +156,10 @@ public class GeminiLLMClient extends LLMClient {
             String feedback) {
         // Get the iteration number from the chat session
         ChatSession session = getOrCreateSession(description);
-        int iterationNum = (session.getMessageHistory().size() / 2) + 1;
-        String formattedNum = String.format("%3d", iterationNum);
 
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +
                 "│         GENERATING NEXT ITERATION         │\n" +
-                "│            LLM REQUEST " + formattedNum + "                │\n" +
                 "└───────────────────────────────────────────┘");
 
         Log.d(TAG, "=== Starting Next Iteration ===");
@@ -173,8 +173,11 @@ public class GeminiLLMClient extends LLMClient {
         // Format the iteration prompt
         String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback);
 
-        // Send through the chat session and extract code
-        return session.sendMessage(prompt)
+        // Queue the user message
+        session.queueUserMessage(prompt);
+
+        // Send all messages and get the response
+        return session.sendMessages()
                 .thenApply(response -> {
                     String extractedCode = extractClojureCode(response);
                     Log.d(TAG, "Extracted Clojure code from response, length: " + extractedCode.length());
@@ -183,14 +186,14 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     // Helper method to call the Gemini API with message history
-    private String callGeminiAPI(String prompt, List<Message> history) {
+    private String callGeminiAPI(List<Message> history) {
         try {
             Log.d(TAG, "=== Calling Gemini API ===");
             Log.d(TAG, "Message history size: " + history.size());
             for (int i = 0; i < history.size(); i++) {
                 Message msg = history.get(i);
                 Log.d(TAG, String.format("Message %d - Role: %s\nContent:\n%s",
-                        i, msg.role, msg.content));
+                        i, msg.role, msg.content.length() > 100 ? msg.content.substring(0, 100) + "..." : msg.content));
             }
 
             String apiKey = apiKeyManager.getApiKey(LLMClientFactory.LLMType.GEMINI);
@@ -306,14 +309,6 @@ public class GeminiLLMClient extends LLMClient {
             Log.e(TAG, "Error extracting text from Gemini response", e);
             return "Error: " + e.getMessage();
         }
-    }
-
-    // Helper method for simple API calls without history
-    private String callGeminiAPI(String prompt) {
-        // Create a temporary session and send message
-        List<Message> tempHistory = new ArrayList<>();
-        tempHistory.add(new Message("user", prompt));
-        return callGeminiAPI(prompt, tempHistory);
     }
 
     public String getModel() {
