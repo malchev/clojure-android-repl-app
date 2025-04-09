@@ -31,8 +31,6 @@ import android.content.Context;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.io.File;
-import android.content.BroadcastReceiver;
-import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.view.View;
 import android.view.MotionEvent;
@@ -67,11 +65,10 @@ public class RenderActivity extends AppCompatActivity {
     private String codeHash;
     private boolean shouldKillOnDestroy = false;
 
-    private BroadcastReceiver completionReceiver;
-    private boolean hasNotifiedCompletion = false;
-
     // Add a field to track screenshots
     private List<File> capturedScreenshots = new ArrayList<>();
+    // Add a field to track result of Clojure compilation and execution
+    private String clojureStatus = null;
 
     // Add a flag to track when back is pressed
     private boolean isBackPressed = false;
@@ -79,9 +76,6 @@ public class RenderActivity extends AppCompatActivity {
     // Add a field to track the last screenshot time
     private long lastScreenshotTime = 0;
     private static final long MIN_SCREENSHOT_INTERVAL_MS = 500; // Minimum time between screenshots
-
-    // Add a flag to track if we've already sent screenshots
-    private boolean screenshotsSent = false;
 
     // Add this field to RenderActivity
     private int processId;
@@ -291,18 +285,6 @@ public class RenderActivity extends AppCompatActivity {
                 showError("Error: " + e.getMessage());
             }
 
-            // Register for completion notifications
-            completionReceiver = new BroadcastReceiver() {
-                @Override
-                public void onReceive(Context context, Intent intent) {
-                    if (ACTION_RENDER_COMPLETE.equals(intent.getAction())) {
-                        finish();
-                    }
-                }
-            };
-            registerReceiver(completionReceiver, new IntentFilter(ACTION_RENDER_COMPLETE),
-                    Context.RECEIVER_NOT_EXPORTED);
-
             // Add touch interceptor to detect user interactions
             contentLayout.setOnTouchListener(new View.OnTouchListener() {
                 @Override
@@ -358,34 +340,45 @@ public class RenderActivity extends AppCompatActivity {
             String logcatContent = String.join("\n", processLogs);
             Log.d(TAG, "Captured " + processLogs.size() + " logcat lines");
 
-            // Send screenshots and logs to parent
-            sendScreenshotsAndLogsToParent(logcatContent);
+            // Determine the correct parent activity to return to
+            Class<?> parentActivityClass;
+            try {
+                parentActivityClass = Class.forName(launchingActivity);
+                Log.d(TAG, "Sending results to: " + parentActivityClass.getSimpleName());
+            } catch (ClassNotFoundException e) {
+                Log.e(TAG, "Could not find parent activity class: " + launchingActivity);
+                parentActivityClass = MainActivity.class; // Default to MainActivity if not found
+            }
 
-            // Create the result intent for broadcast
-            Intent broadcastIntent = new Intent(ACTION_RENDER_COMPLETE);
-            broadcastIntent.putExtra("success", true);
+            Intent parentIntent = new Intent(this, parentActivityClass);
 
-            // Add all screenshot paths to broadcast
+            // Use FLAG_ACTIVITY_CLEAR_TOP to ensure we go back to the existing instance
+            parentIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+
+            parentIntent.putExtra("success", clojureStatus == null);
+
+            // Add all screenshot paths to intent
             if (!capturedScreenshots.isEmpty()) {
                 String[] screenshotPaths = new String[capturedScreenshots.size()];
                 for (int i = 0; i < capturedScreenshots.size(); i++) {
                     screenshotPaths[i] = capturedScreenshots.get(i).getAbsolutePath();
                 }
-                broadcastIntent.putExtra("screenshot_paths", screenshotPaths);
-
-                // For compatibility, still include the last screenshot as "screenshot_path"
-                broadcastIntent.putExtra("screenshot_path",
-                        capturedScreenshots.get(capturedScreenshots.size() - 1).getAbsolutePath());
+                parentIntent.putExtra("screenshot_paths", screenshotPaths);
             }
 
-            // Add the logcat content to the broadcast as well
-            broadcastIntent.putExtra("process_logcat", logcatContent);
+            // Add the logcat content to the intent as well
+            parentIntent.putExtra("process_logcat", logcatContent);
 
-            // Broadcast the completion
-            sendBroadcast(broadcastIntent);
+            // Add the feedback to the intent
+            if (clojureStatus != null) {
+                Log.d(TAG, "XXXXXX Adding error to parent intent: " + clojureStatus);
+                parentIntent.putExtra("error", clojureStatus);
+            }
 
             // Set flag to kill process on destroy
             shouldKillOnDestroy = true;
+
+            startActivity(parentIntent);
 
             // Continue with back press
             RenderActivity.super.onBackPressed();
@@ -534,6 +527,7 @@ public class RenderActivity extends AppCompatActivity {
             Thread.currentThread().setContextClassLoader(classLoader);
         }
 
+        boolean success = true;
         try {
             // Set up the Android delegate
             AndroidClassLoaderDelegate delegate = new AndroidClassLoaderDelegate(
@@ -554,9 +548,6 @@ public class RenderActivity extends AppCompatActivity {
             Log.e(TAG, "Error setting up class loader", e);
             throw new RuntimeException(e);
         }
-
-        // After successful compilation and execution
-        notifyCompletion(true, null);
 
         // After rendering is complete, take an initial screenshot
         new Handler().postDelayed(() -> {
@@ -647,14 +638,15 @@ public class RenderActivity extends AppCompatActivity {
             } catch (Exception e) {
                 Log.e(TAG, "Error in Clojure compilation", e);
                 lastResult = "Error: " + e.getMessage();
-                final String errorMessage = e.getMessage();
-                runOnUiThread(() -> showError(errorMessage));
+                clojureStatus = e.getMessage(); // TODO: Have showError return this
+                showError(clojureStatus);
             }
-
         } catch (Exception e) {
-            Log.e(TAG, "Error in compilation", e);
-            final String errorMessage = e.getMessage();
-            runOnUiThread(() -> showError("Error: " + errorMessage));
+            Log.e(TAG, "Error setting up Clojure environment", e);
+            // Throw runtime exception for environment setup errors, as they indicate an app
+            // bug
+            // rather than a user code error
+            throw new RuntimeException("Error setting up Clojure environment: " + e.getMessage(), e);
         } finally {
             Log.d(TAG, "Cleaning up bindings");
             Var.popThreadBindings();
@@ -730,21 +722,6 @@ public class RenderActivity extends AppCompatActivity {
 
             contentLayout.addView(errorContainer);
         });
-
-        notifyCompletion(false, message);
-    }
-
-    private void notifyCompletion(boolean success, String error) {
-        if (hasNotifiedCompletion)
-            return;
-        hasNotifiedCompletion = true;
-
-        Intent intent = new Intent(ACTION_RENDER_COMPLETE);
-        intent.putExtra(EXTRA_SUCCESS, success);
-        if (error != null) {
-            intent.putExtra(EXTRA_ERROR, error);
-        }
-        sendBroadcast(intent);
     }
 
     @Override
@@ -761,10 +738,6 @@ public class RenderActivity extends AppCompatActivity {
         if (shouldKillOnDestroy && isInRenderProcess()) {
             Log.d(TAG, "Killing render process: " + android.os.Process.myPid());
             android.os.Process.killProcess(android.os.Process.myPid());
-        }
-
-        if (completionReceiver != null) {
-            unregisterReceiver(completionReceiver);
         }
     }
 
@@ -973,49 +946,5 @@ public class RenderActivity extends AppCompatActivity {
                 disableTouchListeners((ViewGroup) child);
             }
         }
-    }
-
-    // Update the method to respect the launching activity
-    private synchronized void sendScreenshotsAndLogsToParent(String logcatContent) {
-        if (screenshotsSent) {
-            Log.d(TAG, "Screenshots already sent, ignoring duplicate request");
-            return;
-        }
-
-        screenshotsSent = true;
-
-        // Create a copy of the list to ensure thread safety
-        List<File> screenshotsToSend = new ArrayList<>(capturedScreenshots);
-
-        // Determine the correct parent activity to return to
-        Class<?> parentActivityClass;
-        try {
-            parentActivityClass = Class.forName(launchingActivity);
-            Log.d(TAG, "Sending results to: " + parentActivityClass.getSimpleName());
-        } catch (ClassNotFoundException e) {
-            Log.e(TAG, "Could not find parent activity class: " + launchingActivity);
-            parentActivityClass = MainActivity.class; // Default to MainActivity if not found
-        }
-
-        Intent parentIntent = new Intent(this, parentActivityClass);
-
-        if (!screenshotsToSend.isEmpty()) {
-            Log.d(TAG, "Sending " + screenshotsToSend.size() + " screenshots to parent activity");
-
-            String[] screenshotPaths = new String[screenshotsToSend.size()];
-            for (int i = 0; i < screenshotsToSend.size(); i++) {
-                screenshotPaths[i] = screenshotsToSend.get(i).getAbsolutePath();
-            }
-            parentIntent.putExtra("screenshot_paths", screenshotPaths);
-        } else {
-            Log.d(TAG, "No screenshots to send");
-        }
-
-        // Add the logcat content
-        parentIntent.putExtra("process_logcat", logcatContent);
-
-        // Use FLAG_ACTIVITY_CLEAR_TOP to ensure we go back to the existing instance
-        parentIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        startActivity(parentIntent);
     }
 }

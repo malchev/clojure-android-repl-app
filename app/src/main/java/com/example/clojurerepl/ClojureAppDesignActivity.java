@@ -31,6 +31,8 @@ import android.os.Handler;
 import android.content.ComponentName;
 import android.text.InputType;
 import android.text.method.LinkMovementMethod;
+import android.view.ViewGroup;
+import android.widget.ListView;
 
 public class ClojureAppDesignActivity extends AppCompatActivity {
     private static final String TAG = "ClojureAppDesign";
@@ -72,6 +74,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
     // Add this field at the top of the class
     private AlertDialog apiKeyDialog;
+
+    // Add a class field to store the prefilled feedback
+    private String lastErrorFeedback = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -173,14 +178,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         screenshotsContainer = findViewById(R.id.screenshots_container);
 
         appDescriptionInput.setText(
-                "Create a game of life app. It's in the form of a 50x50 grid. Each square of the grid is tappable, and when tapped, it switches colors between white (dead) and black (alive). There are three buttons beneath the grid: play, stop, and step. Play runs the game with a delay of half a second between steps until the grid turns all white. Stop stops a play run. Step does a single iteration of the grid state.");
+                "Create an app that implements Conway's Game of Life. It's in the form of a 20x20 grid. Each square of the grid is tappable, and when tapped, it switches colors between white (dead) and black (alive). There are three buttons beneath the grid: play, stop, and step. Play runs the game with a delay of half a second between steps until the grid turns all white. Stop stops a play run. Step does a single iteration of the grid state.");
     }
 
     private void startNewDesign() {
         Log.d(TAG, "\n" +
                 "╔═══════════════════════════════════════════╗\n" +
                 "║         STARTING NEW APP DESIGN           ║\n" +
-                "║            ITERATION   1                  ║\n" +
                 "╚═══════════════════════════════════════════╝");
 
         String description = appDescriptionInput.getText().toString();
@@ -273,54 +277,17 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     }
 
     private void showFeedbackDialog() {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Needs Work");
-
-        // Create array of feedback options
-        final String[] options = {
-                "There is a Clojure compilation error. Check attached logcat",
-                "There are mismatched parentheses or square brackets. Check attached logcat",
-                "App compiles but fails with a runtime error. Check attached logcat",
-                "Nothing shows up on the screen. Check attached logcat",
-                "Custom feedback..." // Keep the custom feedback option
-        };
-
-        builder.setItems(options, (dialog, which) -> {
-            if (which == options.length - 1) {
-                // Last option - show custom feedback dialog
-                AlertDialog.Builder customBuilder = new AlertDialog.Builder(this);
-                customBuilder.setTitle("Enter Feedback");
-
-                final EditText input = new EditText(this);
-                input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-                input.setMinLines(3);
-                input.setMaxLines(5);
-                customBuilder.setView(input);
-
-                customBuilder.setPositiveButton("Submit", (dialogInterface, i) -> {
-                    String feedback = input.getText().toString();
-                    if (!feedback.isEmpty()) {
-                        submitFeedbackWithText(feedback);
-                    }
-                });
-                customBuilder.setNegativeButton("Cancel", (dialogInterface, i) -> dialogInterface.cancel());
-
-                customBuilder.show();
-            } else {
-                // Selected a predefined option
-                submitFeedbackWithText(options[which]);
-            }
-        });
-
-        builder.show();
+        showFeedbackDialog(null);
     }
 
     private void submitFeedbackWithText(String feedback) {
         Log.d(TAG, "\n" +
                 "╔═══════════════════════════════════════════╗\n" +
                 "║         STARTING NEXT ITERATION           ║\n" +
-                "║            ITERATION " + String.format("%3d", (iterationCount + 1)) + "                ║\n" +
                 "╚═══════════════════════════════════════════╝");
+
+        // Clear stored error feedback since we're starting a new iteration
+        lastErrorFeedback = null;
 
         // Make sure buttons are enabled
         thumbsUpButton.setEnabled(true);
@@ -403,13 +370,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Generate next iteration
         iterationManager.generateNextIteration(currentDescription, feedback, result)
-                .thenAccept(code -> {
-                    Log.d(TAG, "Generated next iteration code: " + (code != null ? "length=" + code.length() : "null"));
-
-                    // Extract clean code from the LLM response
-                    String cleanCode = extractClojureCode(code);
-                    Log.d(TAG,
-                            "Extracted clean code: " + (cleanCode != null ? "length=" + cleanCode.length() : "null"));
+                .thenAccept(cleanCode -> {
+                    Log.d(TAG, "Generated next iteration code: "
+                            + (cleanCode != null ? "length=" + cleanCode.length() : "null"));
 
                     runOnUiThread(() -> {
                         if (cleanCode != null && !cleanCode.isEmpty()) {
@@ -504,6 +467,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        Log.d(TAG, "onNewIntent called with intent: " + intent);
 
         // First check for screenshot data (existing functionality)
         if (intent.hasExtra("screenshot_paths")) {
@@ -524,23 +488,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 saveCodeToFile();
             }
         }
-        // Keep existing single screenshot path handling for compatibility
-        else if (intent.hasExtra("screenshot_path")) {
-            String screenshotPath = intent.getStringExtra("screenshot_path");
-            Log.d(TAG, "Received screenshot path in onNewIntent: " + screenshotPath);
-
-            // Save the screenshot
-            currentScreenshots.clear();
-            currentScreenshots.add(new File(screenshotPath));
-
-            // Display the screenshot
-            displayScreenshot(new File(screenshotPath));
-
-            // Save the current code when returning from RenderActivity
-            if (currentCode != null && !currentCode.isEmpty()) {
-                saveCodeToFile();
-            }
-        }
 
         // Check if we have process logcat data
         if (intent.hasExtra("process_logcat")) {
@@ -553,13 +500,17 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             }
         }
 
-        // Now check for design code
-        if (intent.hasExtra("design_code")) {
-            String encodedCode = intent.getStringExtra("design_code");
-            String encoding = intent.getStringExtra("encoding");
+        // Check for error feedback from RenderActivity
+        if (intent.hasExtra("error")) {
+            String errorFeedback = intent.getStringExtra("error");
 
-            // Use the new method to handle design code
-            handleDesignCodeIntent(encodedCode, encoding);
+            // Pre-fill the feedback input
+            if (feedbackInput != null) {
+                feedbackInput.setText(errorFeedback);
+            }
+
+            // Show the feedback dialog
+            showFeedbackDialog(errorFeedback);
         }
     }
 
@@ -891,92 +842,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         }
     }
 
-    /**
-     * Updates the current code with code loaded from design_code intent
-     * Properly extracts Clojure code from markdown code blocks if present
-     */
-    private void handleDesignCodeIntent(String encodedCode, String encoding) {
-        Log.d(TAG, "handleDesignCodeIntent: " + encodedCode + " " + encoding);
-        // Create temporary LLM client using factory
-        LLMClient tempClient = LLMClientFactory.createClient(this, LLMClientFactory.LLMType.GEMINI);
-
-        // Decode if base64 encoded
-        if ("base64".equals(encoding) && encodedCode != null) {
-            try {
-                byte[] decodedBytes = android.util.Base64.decode(encodedCode, android.util.Base64.DEFAULT);
-                String decodedCode = new String(decodedBytes, "UTF-8");
-                Log.d(TAG, "Received design code via intent, length: " + decodedCode.length());
-
-                // Extract clean Clojure code from potential markdown code blocks
-                String cleanCode = extractClojureCode(decodedCode);
-
-                // Update the current code
-                currentCode = cleanCode;
-                currentCodeView.setText(cleanCode);
-
-                // Auto-save the received code
-                saveCodeToFile();
-
-                Toast.makeText(this, "Design code loaded successfully", Toast.LENGTH_SHORT).show();
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to decode base64 design code", e);
-                Toast.makeText(this, "Error loading design code: " + e.getMessage(), Toast.LENGTH_LONG).show();
-            }
-        } else {
-            // Handle non-encoded content
-            String cleanCode = extractClojureCode(encodedCode);
-            currentCode = cleanCode;
-            currentCodeView.setText(cleanCode);
-            saveCodeToFile();
-            Toast.makeText(this, "Design code loaded successfully", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    /**
-     * Extracts clean Clojure code from text that may contain markdown code blocks
-     * Properly removes ```clojure and ``` markers, returning ONLY the code between
-     * them
-     */
-    private String extractClojureCode(String input) {
-        Log.d(TAG, "Extracting Clojure code from input: " + input);
-        if (input == null || input.isEmpty()) {
-            Log.d(TAG, "Input is null or empty, returning empty string");
-            return "";
-        }
-
-        // Check if the input contains markdown code block markers
-        if (input.contains("```")) {
-            try {
-                // Look for a code block
-                int startMarkerPos = input.indexOf("```");
-                if (startMarkerPos != -1) {
-                    // Find the end of the start marker line
-                    int lineEnd = input.indexOf('\n', startMarkerPos);
-                    if (lineEnd != -1) {
-                        // Skip past the entire marker line
-                        int codeStart = lineEnd + 1;
-
-                        // Find the closing code block marker
-                        int endMarkerPos = input.indexOf("```", codeStart);
-                        if (endMarkerPos != -1) {
-                            // Extract just the code between the markers
-                            String extractedCode = input.substring(codeStart, endMarkerPos).trim();
-                            Log.d(TAG, "Successfully extracted code. Length: " + extractedCode.length());
-                            return extractedCode;
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Error extracting code", e);
-            }
-        }
-
-        // If we couldn't extract a code block or there are no markers, return the
-        // original input
-        Log.d(TAG, "No code block markers found, using original input");
-        return input;
-    }
-
     public String getSelectedModel() {
         if (geminiModelSpinner != null) {
             return (String) geminiModelSpinner.getSelectedItem();
@@ -1018,5 +883,134 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 })
                 .setNegativeButton("No", null)
                 .show();
+    }
+
+    /**
+     * Shows the feedback dialog, optionally with pre-filled error text
+     */
+    private void showFeedbackDialog(String prefilledFeedback) {
+        // Store in a final variable for lambda usage
+        final String finalFeedback;
+
+        if (prefilledFeedback != null && !prefilledFeedback.isEmpty()) {
+            // Store prefilled feedback for future dialog displays
+            lastErrorFeedback = prefilledFeedback;
+            finalFeedback = prefilledFeedback;
+        } else if (lastErrorFeedback != null) {
+            // Use stored feedback if available
+            finalFeedback = lastErrorFeedback;
+        } else {
+            finalFeedback = null;
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Provide Feedback");
+
+        // Create array of feedback options
+        final String[] options = {
+                "There is a Clojure compilation error. Check attached logcat",
+                "There are mismatched parentheses or square brackets. Check attached logcat",
+                "App compiles but fails with a runtime error. Check attached logcat",
+                "Nothing shows up on the screen. Check attached logcat",
+                "Custom feedback...", // Always keep as second-to-last option
+                "Use the error feedback below..." // Always keep as last option when error exists
+        };
+
+        // Determine if we have prefilled feedback to display
+        boolean hasFeedback = finalFeedback != null && !finalFeedback.isEmpty();
+
+        // Create list adapter for dialog
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_list_item_single_choice, options);
+
+        // Build dialog
+        View dialogView = getLayoutInflater().inflate(R.layout.dialog_feedback, null);
+        ListView listView = dialogView.findViewById(R.id.feedback_options_list);
+        listView.setAdapter(adapter);
+        listView.setChoiceMode(ListView.CHOICE_MODE_SINGLE);
+
+        // Add error text view if we have feedback
+        if (hasFeedback) {
+            TextView errorTextView = dialogView.findViewById(R.id.error_text);
+            errorTextView.setText(finalFeedback);
+            errorTextView.setVisibility(View.VISIBLE);
+            errorTextView.setTextIsSelectable(true);
+        } else {
+            dialogView.findViewById(R.id.error_container).setVisibility(View.GONE);
+        }
+
+        // Set up dialog
+        builder.setView(dialogView);
+        builder.setPositiveButton("Submit", null); // We'll override this below
+        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.dismiss());
+
+        // Create and show dialog
+        final AlertDialog dialog = builder.create();
+        dialog.show();
+
+        // Set up item selection behavior
+        listView.setOnItemClickListener((parent, view, position, id) -> {
+            // Enable Submit button once an item is selected
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true);
+        });
+
+        // Override the positive button to handle submission
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            int selectedPosition = listView.getCheckedItemPosition();
+            Log.d(TAG, "Submit clicked with selection: " + selectedPosition);
+
+            if (selectedPosition == ListView.INVALID_POSITION) {
+                Toast.makeText(this, "Please select an option", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            if (selectedPosition == options.length - 1 && hasFeedback) {
+                // "Use the error feedback below..." option (only available when there's
+                // feedback)
+                submitFeedbackWithText(finalFeedback);
+                dialog.dismiss();
+            } else if (selectedPosition == options.length - 2) {
+                // "Custom feedback..." option
+                dialog.dismiss();
+                showCustomFeedbackDialog(hasFeedback ? finalFeedback : null);
+            } else {
+                // Standard options
+                submitFeedbackWithText(options[selectedPosition]);
+                dialog.dismiss();
+            }
+        });
+
+        // Disable submit button until an option is selected
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+    }
+
+    /**
+     * Shows a dialog for entering custom feedback, optionally with pre-filled text
+     */
+    private void showCustomFeedbackDialog(String prefilledFeedback) {
+        AlertDialog.Builder customBuilder = new AlertDialog.Builder(this);
+        customBuilder.setTitle("Enter Feedback");
+
+        final EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        input.setMinLines(3);
+        input.setMaxLines(5);
+
+        // Pre-fill the input if text is provided
+        if (prefilledFeedback != null && !prefilledFeedback.isEmpty()) {
+            input.setText(prefilledFeedback);
+        }
+
+        customBuilder.setView(input);
+
+        customBuilder.setPositiveButton("Submit", (dialogInterface, i) -> {
+            String feedback = input.getText().toString();
+            if (!feedback.isEmpty()) {
+                submitFeedbackWithText(feedback);
+            }
+        });
+        customBuilder.setNegativeButton("Cancel", (dialogInterface, i) -> dialogInterface.cancel());
+
+        customBuilder.show();
     }
 }
