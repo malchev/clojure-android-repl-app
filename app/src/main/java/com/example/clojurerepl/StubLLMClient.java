@@ -20,7 +20,7 @@ public class StubLLMClient extends LLMClient {
 
     private class StubChatSession implements ChatSession {
         private String sessionId;
-        private List<Message> messageHistory = new ArrayList<>();
+        private List<Message> messages = new ArrayList<>();
 
         public StubChatSession(String sessionId) {
             this.sessionId = sessionId;
@@ -29,22 +29,35 @@ public class StubLLMClient extends LLMClient {
 
         @Override
         public CompletableFuture<String> sendMessage(String message) {
-            Log.d(TAG, "Stub chat session sending message: " + message);
-            messageHistory.add(new Message("user", message));
-            String response = "Stub response for: " + message;
-            messageHistory.add(new Message("model", response));
-            return CompletableFuture.completedFuture(response);
+            // Add user message to history
+            messages.add(new Message("user", message));
+
+            // If this is the first message, add system prompt
+            if (messages.size() == 1) {
+                messages.add(0, new Message("system", getSystemPrompt()));
+            }
+
+            // Generate a stub response
+            return CompletableFuture.supplyAsync(() -> {
+                // Simple stub response
+                String response = generateStubResponse(message);
+
+                // Add assistant message to history
+                messages.add(new Message("assistant", response));
+
+                return response;
+            });
         }
 
         @Override
         public void reset() {
-            messageHistory.clear();
+            messages.clear();
             Log.d(TAG, "Reset stub chat session: " + sessionId);
         }
 
         @Override
         public List<Message> getMessageHistory() {
-            return messageHistory;
+            return messages;
         }
     }
 
@@ -104,5 +117,12 @@ public class StubLLMClient extends LLMClient {
         String nextIteration = "; Feedback received: " + feedback + "\n" + currentCode;
         Log.d(TAG, "StubLLM generated next iteration: " + nextIteration);
         return CompletableFuture.completedFuture(nextIteration);
+    }
+
+    private String generateStubResponse(String message) {
+        Log.d(TAG, "Generating stub response for: " + message);
+
+        // Simple response with a clojure code block
+        return "```clojure\n(ns example.core\n  (:gen-class))\n\n(defn -main [& args]\n  (println \"Hello, world!\"))\n```";
     }
 }

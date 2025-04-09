@@ -59,6 +59,12 @@ public class GeminiLLMClient extends LLMClient {
             // Make the API call with the full history
             return CompletableFuture.supplyAsync(() -> {
                 try {
+                    // Check if this is the first message in the session
+                    if (messageHistory.size() == 1) {
+                        // Add system message at the beginning for context
+                        messageHistory.add(0, new Message("system", getSystemPrompt()));
+                    }
+
                     // Call the API with the full context
                     String response = callGeminiAPI(message, messageHistory);
 

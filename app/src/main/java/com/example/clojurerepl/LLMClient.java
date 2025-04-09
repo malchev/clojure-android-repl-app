@@ -46,7 +46,15 @@ public abstract class LLMClient {
 
     protected String formatInitialPrompt(String description) {
         Log.d(TAG, "Formatting initial prompt with description: " + description);
-        return promptTemplate + "\n\nDesired app description:\n" + description;
+        return "Desired app description:\n" + description;
+    }
+
+    /**
+     * Returns the system prompt to be used when initializing a conversation.
+     * This prompt provides instruction on how to generate Clojure code.
+     */
+    protected String getSystemPrompt() {
+        return promptTemplate + "\n\nAlways respond with Clojure code in a markdown code block.";
     }
 
     protected String formatIterationPrompt(String description,

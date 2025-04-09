@@ -199,10 +199,6 @@ public class OpenAIChatClient extends LLMClient {
         }
     }
 
-    public ChatSession createChatSession() {
-        return getOrCreateSession(null);
-    }
-
     @Override
     public CompletableFuture<String> generateInitialCode(String description) {
         ensureModelIsSet();
@@ -221,8 +217,7 @@ public class OpenAIChatClient extends LLMClient {
         List<Message> messages = createChatSession(sessionId);
 
         // Add the system message
-        messages.add(new Message("system",
-                "You are a helpful assistant that generates Clojure code. Always respond with Clojure code in a markdown code block."));
+        messages.add(new Message("system", getSystemPrompt()));
 
         // Add the user prompt
         messages.add(new Message("user", prompt));
