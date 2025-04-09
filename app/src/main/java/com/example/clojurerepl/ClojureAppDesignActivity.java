@@ -52,6 +52,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     private Button submitFeedbackButton;
     private Button confirmSuccessButton;
 
+    // Add a field for the clear chat history button
+    private Button clearChatHistoryButton;
+
     private ClojureIterationManager iterationManager;
     private String currentDescription;
     private String currentCode;
@@ -113,6 +116,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Initialize clear API key button
         clearApiKeyButton = findViewById(R.id.clear_api_key_button);
         clearApiKeyButton.setOnClickListener(v -> clearCurrentApiKey());
+
+        // Initialize clear chat history button
+        clearChatHistoryButton = findViewById(R.id.clear_chat_history_button);
+        clearChatHistoryButton.setOnClickListener(v -> clearChatHistory());
 
         // Set default selection to GEMINI
         llmTypeSpinner.setSelection(
@@ -770,6 +777,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         } else if (id == R.id.action_clear_api_key) {
             clearCurrentApiKey();
             return true;
+        } else if (id == R.id.action_clear_session) {
+            clearChatHistory();
+            return true;
         } else if (id == android.R.id.home) {
             onBackPressed();
             return true;
@@ -1012,5 +1022,47 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         customBuilder.setNegativeButton("Cancel", (dialogInterface, i) -> dialogInterface.cancel());
 
         customBuilder.show();
+    }
+
+    /**
+     * Clears the chat history for the current LLM client session and reinitializes
+     * with system prompt
+     */
+    private void clearChatHistory() {
+        if (iterationManager == null || iterationManager.getLLMClient() == null) {
+            Toast.makeText(this, "No active LLM client", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Show confirmation dialog
+        new AlertDialog.Builder(this)
+                .setTitle("Clear Chat History")
+                .setMessage(
+                        "Are you sure you want to clear the chat history? This will reset the conversation with the AI but keep your current code.")
+                .setPositiveButton("Yes", (dialog, which) -> {
+                    // Check if we have description to reinitialize
+                    if (currentDescription == null || currentDescription.isEmpty()) {
+                        Toast.makeText(this, "No active description to reinitialize with", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    // Get the LLM client and reset its session
+                    LLMClient llmClient = iterationManager.getLLMClient();
+                    if (llmClient != null) {
+                        // Clear existing session
+                        Log.d(TAG, "Clearing chat history and reinitializing with system prompt");
+                        llmClient.getOrCreateSession(currentDescription).reset();
+
+                        // Reinitialize the session with the current description
+                        // This will automatically add the system prompt
+                        llmClient.getOrCreateSession(currentDescription);
+
+                        Toast.makeText(this, "Chat history cleared", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(this, "Failed to clear chat history", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("No", null)
+                .show();
     }
 }
