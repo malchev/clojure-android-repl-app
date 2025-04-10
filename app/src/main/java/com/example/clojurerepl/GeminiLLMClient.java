@@ -26,6 +26,8 @@ public class GeminiLLMClient extends LLMClient {
     private Map<String, ChatSession> chatSessions = new HashMap<>();
 
     private static final int HTTP_TIMEOUT = 30000; // 30 seconds timeout
+    // Define a prefix for system prompts converted to user messages
+    private static final String SYSTEM_PROMPT_PREFIX = "[SYSTEM INSTRUCTION]: ";
 
     public GeminiLLMClient(Context context) {
         super(context);
@@ -45,8 +47,10 @@ public class GeminiLLMClient extends LLMClient {
 
         @Override
         public void queueSystemPrompt(String content) {
-            Log.d(TAG, "Queuing system prompt in session: " + sessionId);
-            messageHistory.add(new Message("system", content));
+            Log.d(TAG, "Queuing system prompt as user message with prefix in session: " + sessionId);
+            // Gemini doesn't support system role, so convert it to a user message with a
+            // prefix
+            messageHistory.add(new Message("user", SYSTEM_PROMPT_PREFIX + content));
         }
 
         @Override
@@ -237,7 +241,23 @@ public class GeminiLLMClient extends LLMClient {
                     "║ START GEMINI API REQUEST ║\n" +
                     "╚══════════════════════════╝");
             String requestStr = requestBody.toString();
-            Log.d(TAG, requestStr);
+
+            // Pretty print the JSON for better readability in logs
+            try {
+                // Convert the JSON string to a pretty-printed version with 2-space indentation
+                String prettyJson = formatJson(requestStr);
+
+                // Log each line separately for better readability in logcat
+                String[] lines = prettyJson.split("\n");
+                for (String line : lines) {
+                    Log.d(TAG, line);
+                }
+            } catch (Exception e) {
+                // Fall back to normal logging if pretty printing fails
+                Log.d(TAG, requestStr);
+                Log.w(TAG, "Failed to pretty print JSON: " + e.getMessage());
+            }
+
             Log.d(TAG, "Request length: " + requestStr.length() + "\n" +
                     "╔═════════════════════════╗\n" +
                     "║ STOP GEMINI API REQUEST ║\n" +
@@ -396,11 +416,34 @@ public class GeminiLLMClient extends LLMClient {
 
         // If API query fails, fall back to common models
         if (models.isEmpty()) {
-            Log.w(TAG, "Falling back to default Gemini models");
-            models.add("gemini-pro");
-            models.add("gemini-pro-vision");
+            // Throw an error
+            throw new RuntimeException("No Gemini models available");
         }
 
         return models;
+    }
+
+    /**
+     * Formats a JSON string with proper indentation.
+     * 
+     * @param jsonString The raw JSON string to format
+     * @return A properly indented JSON string
+     * @throws Exception If the JSON formatting fails
+     */
+    private String formatJson(String jsonString) throws Exception {
+        // First character determines if it's an object or array
+        jsonString = jsonString.trim();
+        if (jsonString.startsWith("{")) {
+            // It's a JSONObject
+            JSONObject json = new JSONObject(jsonString);
+            return json.toString(2); // 2 spaces for indentation
+        } else if (jsonString.startsWith("[")) {
+            // It's a JSONArray
+            JSONArray json = new JSONArray(jsonString);
+            return json.toString(2); // 2 spaces for indentation
+        } else {
+            // Not valid JSON structure, return as-is
+            return jsonString;
+        }
     }
 }
