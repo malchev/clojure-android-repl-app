@@ -57,6 +57,26 @@ public abstract class LLMClient {
         return promptTemplate + "\n\nAlways respond with Clojure code in a markdown code block.";
     }
 
+    public ChatSession preparePromptForInitialCode(String description) {
+        // Get or create a session for this app description
+        ChatSession session = getOrCreateSession(description);
+
+        // Reset session to start fresh
+        session.reset();
+
+        // Make sure we have a system message at the beginning
+        session.queueSystemPrompt(getSystemPrompt());
+
+        // Format the prompt using the helper from LLMClient
+        String prompt = formatInitialPrompt(description);
+
+        // Queue the user message and send all messages
+        session.queueUserMessage(prompt);
+        return session;
+    }
+
+    public abstract CompletableFuture<String> generateInitialCode(String description);
+
     protected String formatIterationPrompt(String description,
             String currentCode,
             String logcat,
@@ -72,8 +92,6 @@ public abstract class LLMClient {
                         "Please provide an improved version addressing the feedback.",
                 promptTemplate, currentCode, logcat, feedback);
     }
-
-    public abstract CompletableFuture<String> generateInitialCode(String description);
 
     public abstract CompletableFuture<String> generateNextIteration(
             String description,

@@ -1049,13 +1049,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     // Get the LLM client and reset its session
                     LLMClient llmClient = iterationManager.getLLMClient();
                     if (llmClient != null) {
-                        // Clear existing session
-                        Log.d(TAG, "Clearing chat history and reinitializing with system prompt");
-                        llmClient.getOrCreateSession(currentDescription).reset();
-
                         // Reinitialize the session with the current description
                         // This will automatically add the system prompt
-                        llmClient.getOrCreateSession(currentDescription);
+                        Log.d(TAG, "Clearing chat history and reinitializing with system prompt");
+                        llmClient.preparePromptForInitialCode(currentDescription);
 
                         Toast.makeText(this, "Chat history cleared", Toast.LENGTH_SHORT).show();
                     } else {

@@ -215,20 +215,7 @@ public class OpenAIChatClient extends LLMClient {
         Log.d(TAG, "│         GENERATING INITIAL CODE           │");
         Log.d(TAG, "└───────────────────────────────────────────┘");
 
-        // Get or create a session for this app description
-        ChatSession session = getOrCreateSession(description);
-
-        // Reset session to start fresh
-        session.reset();
-
-        // Make sure we have a system message at the beginning
-        session.queueSystemPrompt(getSystemPrompt());
-
-        // Format the prompt using the helper from LLMClient
-        String prompt = formatInitialPrompt(description);
-
-        // Queue the user message and send all messages
-        session.queueUserMessage(prompt);
+        ChatSession session = preparePromptForInitialCode(description);
         return session.sendMessages();
     }
 

@@ -123,20 +123,7 @@ public class GeminiLLMClient extends LLMClient {
 
         Log.d(TAG, "Generating initial code for description: " + description);
 
-        // Get or create a chat session for this app
-        ChatSession chatSession = getOrCreateSession(description);
-
-        // Reset session to start fresh
-        chatSession.reset();
-
-        // Queue the system prompt to set expectations
-        chatSession.queueSystemPrompt(getSystemPrompt());
-
-        // Format the prompt
-        String prompt = formatInitialPrompt(description);
-
-        // Queue the user message
-        chatSession.queueUserMessage(prompt);
+        ChatSession chatSession = preparePromptForInitialCode(description);
 
         // Send all messages and get the response
         return chatSession.sendMessages()

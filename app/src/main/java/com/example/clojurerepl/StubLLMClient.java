@@ -96,19 +96,7 @@ public class StubLLMClient extends LLMClient {
         Log.d(TAG, "Generating initial code for description: " + description + " using stub client");
 
         // Get or create a session for this app description
-        ChatSession session = getOrCreateSession(description);
-
-        // Reset session to start fresh
-        session.reset();
-
-        // Add system message at the beginning
-        session.queueSystemPrompt(getSystemPrompt());
-
-        // Format the prompt using the helper from LLMClient
-        String prompt = formatInitialPrompt(description);
-
-        // Queue the user message
-        session.queueUserMessage(prompt);
+        ChatSession session = preparePromptForInitialCode(description);
 
         // Send all messages and get the response
         return session.sendMessages();
