@@ -3,6 +3,7 @@
 -- app/src/main/res/values/ids.xml -- make sure actions have buttons
 -- In showError, maybe send more error info.  Refactor to not collect the error info on the UI thread
 -- in the Gemini API, what are the permissible roles, and what is the meaning of parts?
+-- simplify the system prompt (don't give choices about app lifecycle callbacks)
 -- Fix GeminiLLMClient
 	How do I set the system prompt? A "system" role is not supported?
 	Also:
@@ -29,3 +30,4 @@
 -- Don't hardcode strings for intents and intent data.
 -- The clear history button doesn't make sense, you can just generate the app again.  Maybe call it "prune history" and remove the intermediate steps but keep the last couple of items
 -- When switching the LLM provider or the LLM, reset everything
+-- Implement ClaudeLLMClient
