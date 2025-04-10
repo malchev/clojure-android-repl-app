@@ -86,11 +86,11 @@ public abstract class LLMClient {
                 ", screenshot: " + (screenshot != null ? screenshot.getPath() : "null") +
                 ", feedback: " + feedback);
         return String.format(
-                "Please provide an improved version addredding the feedback, considering attached logcat output.\n" +
+                "Please provide an improved version addressing the feedback, considering attached logcat output.\n" +
                         "User feedback: %s\n" +
                         "Logcat output:\n```\n%s\n```\n\n" +
                         "Please provide an improved version addressing the feedback.",
-                promptTemplate, currentCode, logcat, feedback);
+                feedback, logcat);
     }
 
     public abstract CompletableFuture<String> generateNextIteration(

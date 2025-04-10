@@ -2,7 +2,13 @@
 -- Implement retry on socket errors and API errors
 -- app/src/main/res/values/ids.xml -- make sure actions have buttons
 -- In showError, maybe send more error info.  Refactor to not collect the error info on the UI thread
+-- in the Gemini API, what are the permissible roles, and what is the meaning of parts?
 -- Fix GeminiLLMClient
+	How do I set the system prompt? A "system" role is not supported?
+	Also:
+		04-09 21:22:09.045 22304 23391 D GeminiLLMClient: === Complete LLM Response ===
+		04-09 21:22:09.045 22304 23391 D GeminiLLMClient: I apologize, but you did not attach any logcat output. I will address potential issues based on common pitfalls in Android/Clojure development and the given requirements. I'll focus on improving the following:
+		(Start by printing out the JSON sent to Gemini line by line)
 -- Capture AndroidRuntime errors as feedback items
 -- What are these?
 	04-09 20:54:22.729 16944 16944 W System.err: WARNING: *context* already refers to: #'clojure.core/*context* in namespace: user, being replaced by: #'user/*context*
@@ -22,3 +28,4 @@
 	04-09 20:57:54.302 17671 17671 W System.err: Warning: Type `clojure.lang.AFunction` was not found, it is required for default or static interface methods desugaring of `clojure.core$toggle_cell`
 -- Don't hardcode strings for intents and intent data.
 -- The clear history button doesn't make sense, you can just generate the app again.  Maybe call it "prune history" and remove the intermediate steps but keep the last couple of items
+-- When switching the LLM provider or the LLM, reset everything
