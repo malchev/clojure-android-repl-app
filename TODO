@@ -1,5 +1,24 @@
-1. Make sure logcat and screenshots are sent to the model
-2. Spell out the iterations in the system prompt; tell the model to look at the attached logcat and screenshots; provide a structure to the feedback
-3. Implement retry on socket errors and such
-4. app/src/main/res/values/ids.xml -- make sure actions have buttons
-5. In showError, maybe send more error info.  Refactor to not collect the error info on the UI thread
+-- Send screenshots to the model
+-- Implement retry on socket errors and API errors
+-- app/src/main/res/values/ids.xml -- make sure actions have buttons
+-- In showError, maybe send more error info.  Refactor to not collect the error info on the UI thread
+-- Fix GeminiLLMClient
+-- Capture AndroidRuntime errors as feedback items
+-- What are these?
+	04-09 20:54:22.729 16944 16944 W System.err: WARNING: *context* already refers to: #'clojure.core/*context* in namespace: user, being replaced by: #'user/*context*
+	04-09 20:54:22.729 16944 16944 W System.err: WARNING: *content-layout* already refers to: #'clojure.core/*content-layout* in namespace: user, being replaced by: #'user/*content-layout*
+	04-09 20:54:22.729 16944 16944 W System.err: WARNING: *cache-dir* already refers to: #'clojure.core/*cache-dir* in namespace: user, being replaced by: #'user/*cache-dir*
+-- What are these?
+	04-09 20:57:54.022 17671 17671 W System.err: Warning: Type `clojure.lang.AFunction` was not found, it is required for default or static interface methods desugaring of `clojure.core$eval1`
+	04-09 20:57:54.059 17671 17671 W System.err: Warning: Type `clojure.lang.AFunction` was not found, it is required for default or static interface methods desugaring of `clojure.core$eval3`
+	04-09 20:57:54.083 17671 17671 W System.err: Warning: Type `clojure.lang.AFunction` was not found, it is required for default or static interface methods desugaring of `clojure.core$eval5`
+	04-09 20:57:54.105 17671 17671 W System.err: Warning: Type `clojure.lang.AFunction` was not found, it is required for default or static interface methods desugaring of `clojure.core$eval7`
+	04-09 20:57:54.126 17671 17671 W System.err: Warning: Type `clojure.lang.AFunction` was not found, it is required for default or static interface methods desugaring of `clojure.core$eval9`
+	04-09 20:57:54.146 17671 17671 W System.err: Warning: Type `clojure.lang.AFunction` was not found, it is required for default or static interface methods desugaring of `clojure.core$eval11`
+	04-09 20:57:54.167 17671 17671 W System.err: Warning: Type `clojure.lang.AFunction` was not found, it is required for default or static interface methods desugaring of `clojure.core$eval13`
+	04-09 20:57:54.188 17671 17671 W System.err: Warning: Type `clojure.lang.AFunction` was not found, it is required for default or static interface methods desugaring of `clojure.core$eval15`
+	04-09 20:57:54.209 17671 17671 W System.err: Warning: Type `clojure.lang.AFunction` was not found, it is required for default or static interface methods desugaring of `clojure.core$eval17`
+	04-09 20:57:54.268 17671 17671 W System.err: Warning: Type `clojure.lang.AFunction` was not found, it is required for default or static interface methods desugaring of `clojure.core$log_debug`
+	04-09 20:57:54.302 17671 17671 W System.err: Warning: Type `clojure.lang.AFunction` was not found, it is required for default or static interface methods desugaring of `clojure.core$toggle_cell`
+-- Don't hardcode strings for intents and intent data.
+-- The clear history button doesn't make sense, you can just generate the app again.  Maybe call it "prune history" and remove the intermediate steps but keep the last couple of items

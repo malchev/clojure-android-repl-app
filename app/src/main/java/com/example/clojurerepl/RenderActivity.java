@@ -339,6 +339,13 @@ public class RenderActivity extends AppCompatActivity {
             List<String> processLogs = LogcatReader.getLogsForProcess(processId);
             String logcatContent = String.join("\n", processLogs);
             Log.d(TAG, "Captured " + processLogs.size() + " logcat lines");
+            Log.d(TAG, "┌───────────────────────────────────────────┐");
+            Log.d(TAG, "│            BEGIN LOGCAT CONTENT           │");
+            Log.d(TAG, "└───────────────────────────────────────────┘");
+            Log.d(TAG, logcatContent);
+            Log.d(TAG, "┌───────────────────────────────────────────┐");
+            Log.d(TAG, "│             END LOGCAT CONTENT            │");
+            Log.d(TAG, "└───────────────────────────────────────────┘");
 
             // Determine the correct parent activity to return to
             Class<?> parentActivityClass;
@@ -371,7 +378,7 @@ public class RenderActivity extends AppCompatActivity {
 
             // Add the feedback to the intent
             if (clojureStatus != null) {
-                Log.d(TAG, "XXXXXX Adding error to parent intent: " + clojureStatus);
+                Log.d(TAG, "Adding error to parent intent: " + clojureStatus);
                 parentIntent.putExtra("error", clojureStatus);
             }
 

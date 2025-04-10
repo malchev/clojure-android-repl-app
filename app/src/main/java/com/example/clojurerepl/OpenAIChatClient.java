@@ -161,6 +161,10 @@ public class OpenAIChatClient extends LLMClient {
         @Override
         public CompletableFuture<String> sendMessages() {
             Log.d(TAG, "Sending " + messages.size() + " messages in session: " + sessionId);
+            // Print the message types and the first 50 characters of the content
+            for (Message msg : messages) {
+                Log.d(TAG, "Message type: " + msg.role + ", content: " + msg.content.substring(0, 50));
+            }
 
             return CompletableFuture.supplyAsync(() -> {
                 try {
