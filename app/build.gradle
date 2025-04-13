@@ -19,14 +19,24 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // For release builds, use the full ProGuard config but don't shrink
+            minifyEnabled true
+            shrinkResources false
+            proguardFiles 'proguard-rules.pro'
+        }
+        debug {
+            // For debug builds, also use the same config to ensure consistent behavior
+            minifyEnabled true
+            shrinkResources false
+            proguardFiles 'proguard-rules.pro'
         }
     }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+        // Keep this disabled to avoid desugaring issues with Clojure
+        coreLibraryDesugaringEnabled false
     }
 
     packagingOptions {
