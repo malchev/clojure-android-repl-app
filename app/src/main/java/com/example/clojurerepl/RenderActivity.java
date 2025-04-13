@@ -328,22 +328,6 @@ public class RenderActivity extends AppCompatActivity {
             try {
                 // Refer all clojure.core functions
                 RT.var("clojure.core", "refer").invoke(RT.var("clojure.core", "symbol").invoke("clojure.core"));
-
-                // Define the vars in the user namespace
-                RT.var("clojure.core", "intern").invoke(
-                        userNS,
-                        Symbol.intern("*context*"),
-                        this);
-                RT.var("clojure.core", "intern").invoke(
-                        userNS,
-                        Symbol.intern("*content-layout*"),
-                        new UiSafeViewGroup(contentLayout));
-                RT.var("clojure.core", "intern").invoke(
-                        userNS,
-                        Symbol.intern("*cache-dir*"),
-                        getAppCacheDir().getAbsolutePath());
-
-                Log.d(TAG, "Vars defined in user namespace");
             } finally {
                 Var.popThreadBindings();
             }
