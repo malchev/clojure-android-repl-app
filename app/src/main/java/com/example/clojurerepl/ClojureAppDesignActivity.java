@@ -33,6 +33,8 @@ import android.text.InputType;
 import android.text.method.LinkMovementMethod;
 import android.view.ViewGroup;
 import android.widget.ListView;
+import com.example.clojurerepl.session.DesignSession;
+import com.example.clojurerepl.session.SessionManager;
 
 public class ClojureAppDesignActivity extends AppCompatActivity {
     private static final String TAG = "ClojureAppDesign";
@@ -81,10 +83,53 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     // Add a class field to store the prefilled feedback
     private String lastErrorFeedback = null;
 
+    // Add session support
+    private SessionManager sessionManager;
+    private DesignSession currentSession;
+    private String sessionId;
+
+    // Add a flag to track when the models are loaded
+    private boolean modelsLoaded = false;
+    private boolean pendingModelSelection = false;
+    private String pendingModelName = null;
+    // Add a flag to block spinner events during initial loading
+    private boolean blockSpinnerEvents = false;
+    // Add a field to store the initial model for session restore
+    private String sessionRestoreModel = null;
+    // Add a flag to lock the client once set up from session
+    private boolean lockClient = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_clojure_design);
+
+        // Set spinner event blocker during initialization
+        blockSpinnerEvents = true;
+
+        // Initialize session manager
+        sessionManager = SessionManager.getInstance(this);
+
+        // Check if we're opening an existing session
+        sessionId = getIntent().getStringExtra("session_id");
+        if (sessionId != null) {
+            // Load existing session
+            currentSession = sessionManager.getSessionById(sessionId);
+            if (currentSession != null) {
+                Log.d(TAG, "Loaded existing session: " + currentSession.getId());
+            } else {
+                Log.e(TAG, "Session not found: " + sessionId);
+                Toast.makeText(this, "Session not found", Toast.LENGTH_SHORT).show();
+                // Create a new session instead
+                currentSession = new DesignSession();
+                sessionId = currentSession.getId();
+            }
+        } else {
+            // Create a new session
+            currentSession = new DesignSession();
+            sessionId = currentSession.getId();
+            Log.d(TAG, "Created new session: " + sessionId);
+        }
 
         // Initialize views
         appDescriptionInput = findViewById(R.id.app_description_input);
@@ -131,19 +176,40 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 LLMClientFactory.LLMType selectedType = (LLMClientFactory.LLMType) parent.getItemAtPosition(position);
                 ApiKeyManager apiKeyManager = ApiKeyManager.getInstance(ClojureAppDesignActivity.this);
 
+                // Ignore selection events during initialization when blockSpinnerEvents is true
+                if (blockSpinnerEvents) {
+                    Log.d(TAG, "Ignoring LLM type selection event during initialization");
+                    return;
+                }
+
                 if (selectedType == LLMClientFactory.LLMType.GEMINI) {
                     if (!apiKeyManager.hasApiKey(LLMClientFactory.LLMType.GEMINI)) {
                         showApiKeyDialog(LLMClientFactory.LLMType.GEMINI);
                     } else {
+                        // Skip update if client is locked due to session restore
+                        if (lockClient) {
+                            Log.d(TAG, "Client locked - skipping model spinner update for GEMINI");
+                            return;
+                        }
                         updateModelSpinner(LLMClientFactory.LLMType.GEMINI);
                     }
                 } else if (selectedType == LLMClientFactory.LLMType.OPENAI) {
                     if (!apiKeyManager.hasApiKey(LLMClientFactory.LLMType.OPENAI)) {
                         showApiKeyDialog(LLMClientFactory.LLMType.OPENAI);
                     } else {
+                        // Skip update if client is locked due to session restore
+                        if (lockClient) {
+                            Log.d(TAG, "Client locked - skipping model spinner update for OPENAI");
+                            return;
+                        }
                         updateModelSpinner(LLMClientFactory.LLMType.OPENAI);
                     }
                 } else {
+                    // Skip update if client is locked due to session restore
+                    if (lockClient) {
+                        Log.d(TAG, "Client locked - skipping client creation for other LLM type");
+                        return;
+                    }
                     geminiModelSpinner.setVisibility(View.GONE);
                     iterationManager = new ClojureIterationManager(ClojureAppDesignActivity.this,
                             LLMClientFactory.createClient(ClojureAppDesignActivity.this, selectedType));
@@ -184,8 +250,154 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Get the screenshots container
         screenshotsContainer = findViewById(R.id.screenshots_container);
 
+        // Make sure screenshots container is initially visible
+        if (screenshotsContainer != null) {
+            screenshotsContainer.setVisibility(View.VISIBLE);
+        }
+
+        // Make sure screenshot view is initially visible
+        if (screenshotView != null) {
+            screenshotView.setVisibility(View.VISIBLE);
+        }
+
         appDescriptionInput.setText(
                 "Create an app that implements Conway's Game of Life. It's in the form of a 20x20 grid. Each square of the grid is tappable, and when tapped, it switches colors between white (dead) and black (alive). There are three buttons beneath the grid: play, stop, and step. Play runs the game with a delay of half a second between steps until the grid turns all white. Stop stops a play run. Step does a single iteration of the grid state.");
+
+        // If we loaded an existing session, update the UI
+        if (currentSession != null && currentSession.getDescription() != null) {
+            appDescriptionInput.setText(currentSession.getDescription());
+            currentDescription = currentSession.getDescription();
+
+            if (currentSession.getCurrentCode() != null) {
+                currentCode = currentSession.getCurrentCode();
+                currentCodeView.setText(currentCode);
+
+                // Show feedback buttons
+                feedbackButtonsContainer.setVisibility(View.VISIBLE);
+                thumbsUpButton.setVisibility(View.VISIBLE);
+                thumbsDownButton.setVisibility(View.VISIBLE);
+                runButton.setVisibility(View.VISIBLE);
+            }
+
+            // Set the iteration count
+            iterationCount = currentSession.getIterationCount();
+
+            // Set the LLM type and model in the UI
+            if (currentSession.getLlmType() != null) {
+                int position = Arrays.asList(LLMClientFactory.LLMType.values())
+                        .indexOf(currentSession.getLlmType());
+                if (position >= 0) {
+                    llmTypeSpinner.setSelection(position);
+                }
+
+                // Set the model if available
+                if (currentSession.getLlmModel() != null) {
+                    // Save session restore model
+                    sessionRestoreModel = currentSession.getLlmModel();
+
+                    // Create the client directly with the saved model
+                    Log.d(TAG, "Session restore: Creating LLM client with model " + sessionRestoreModel);
+                    LLMClient llmClient = LLMClientFactory.createClient(
+                            this,
+                            currentSession.getLlmType(),
+                            sessionRestoreModel);
+                    iterationManager = new ClojureIterationManager(this, llmClient);
+
+                    // LOCK the client so it cannot be changed by any subsequent operation
+                    lockClient = true;
+
+                    // We'll wait until llmTypeSpinner's selection listener fires to trigger model
+                    // enumeration
+                } else {
+                    sessionRestoreModel = null;
+                    lockClient = false;
+                }
+            }
+
+            // Restore logcat output if available
+            if (currentSession.getLastLogcat() != null && !currentSession.getLastLogcat().isEmpty()) {
+                processLogcat = currentSession.getLastLogcat();
+                logcatOutput.setText(processLogcat);
+                Log.d(TAG, "Restored logcat output from session");
+            }
+
+            // Restore screenshots if available
+            if (currentSession.getScreenshotPaths() != null && !currentSession.getScreenshotPaths().isEmpty()) {
+                List<String> paths = currentSession.getScreenshotPaths();
+                Log.d(TAG, "Restoring " + paths.size() + " screenshots from session");
+
+                // Convert paths to File objects for currentScreenshots
+                currentScreenshots.clear();
+                List<String> validPaths = new ArrayList<>();
+
+                for (String path : paths) {
+                    File screenshotFile = new File(path);
+                    if (screenshotFile.exists()) {
+                        currentScreenshots.add(screenshotFile);
+                        validPaths.add(path);
+                        Log.d(TAG, "Found valid screenshot: " + path);
+                    } else {
+                        Log.w(TAG, "Screenshot file no longer exists: " + path);
+                    }
+                }
+
+                // Only display screenshots if we have valid ones
+                if (!currentScreenshots.isEmpty()) {
+                    // Convert to array for display function
+                    String[] pathsArray = validPaths.toArray(new String[0]);
+
+                    // Display both in the main view and in the container
+                    if (currentScreenshots.size() > 0) {
+                        displayScreenshot(currentScreenshots.get(0));
+                        Log.d(TAG, "Displayed first screenshot in main view: " + validPaths.get(0));
+                    }
+
+                    displayScreenshots(pathsArray);
+                    Log.d(TAG, "Displayed " + pathsArray.length + " screenshots in container");
+                } else {
+                    Log.w(TAG, "No valid screenshots to display");
+                }
+            }
+
+            // Restore error feedback if available
+            if (currentSession.hasError() && currentSession.getLastErrorFeedback() != null) {
+                lastErrorFeedback = currentSession.getLastErrorFeedback();
+                feedbackInput.setText(lastErrorFeedback);
+                Log.d(TAG, "Restored error feedback from session");
+            }
+        }
+
+        // Reset blockSpinnerEvents after initialization
+        blockSpinnerEvents = false;
+
+        // Now that initialization is complete, restore chat history if available
+        if (currentSession != null && currentSession.getChatHistory() != null
+                && !currentSession.getChatHistory().isEmpty()
+                && iterationManager != null) {
+
+            // Get chat session and restore messages
+            LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
+                    .getOrCreateSession(currentSession.getDescription());
+
+            // Reset the session to clear any default messages
+            chatSession.reset();
+
+            // Then add all messages from the saved session
+            List<LLMClient.Message> savedMessages = currentSession.getChatHistory();
+            Log.d(TAG, "Restoring " + savedMessages.size() + " messages to chat session");
+
+            for (LLMClient.Message message : savedMessages) {
+                if ("system".equals(message.role)) {
+                    chatSession.queueSystemPrompt(message.content);
+                } else if ("user".equals(message.role)) {
+                    chatSession.queueUserMessage(message.content);
+                } else if ("assistant".equals(message.role)) {
+                    chatSession.queueAssistantResponse(message.content);
+                }
+            }
+
+            Log.d(TAG, "Chat history restored");
+        }
     }
 
     private void startNewDesign() {
@@ -211,12 +423,37 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         LLMClient llmClient = LLMClientFactory.createClient(this, currentType, selectedModel);
         iterationManager = new ClojureIterationManager(this, llmClient);
 
+        // Update or create session
+        if (currentSession == null) {
+            currentSession = new DesignSession();
+            sessionId = currentSession.getId();
+        }
+
+        // Update session data
+        currentSession.setDescription(description);
+        currentSession.setLlmType(currentType);
+        currentSession.setLlmModel(selectedModel);
+
+        // Save session
+        sessionManager.addSession(currentSession);
+
         // Get the LLM to generate the code first
         iterationManager.getLLMClient().generateInitialCode(description)
                 .thenAccept(code -> {
                     runOnUiThread(() -> {
                         currentCode = code;
                         currentCodeView.setText(code);
+
+                        // Update session with code
+                        currentSession.setCurrentCode(code);
+                        currentSession.incrementIterationCount();
+
+                        // Save chat history to session
+                        LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
+                                .getOrCreateSession(description);
+                        currentSession.setChatHistory(chatSession.getMessages());
+
+                        sessionManager.updateSession(currentSession);
 
                         // Show the feedback buttons
                         feedbackButtonsContainer.setVisibility(View.VISIBLE);
@@ -292,10 +529,50 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Clear stored error feedback since we're starting a new iteration
         lastErrorFeedback = null;
 
+        // Check if models are still loading
+        if (pendingModelSelection || !modelsLoaded) {
+            Toast.makeText(this, "Models are still loading, please wait a moment and try again", Toast.LENGTH_SHORT)
+                    .show();
+            return;
+        }
+
         // Make sure buttons are enabled
         thumbsUpButton.setEnabled(true);
         thumbsDownButton.setEnabled(true);
         runButton.setEnabled(true);
+
+        // Ensure we have a valid description
+        if (currentDescription == null || currentDescription.isEmpty()) {
+            currentDescription = appDescriptionInput.getText().toString();
+            if (currentDescription.isEmpty()) {
+                Toast.makeText(this, "Please enter a description", Toast.LENGTH_SHORT).show();
+                return;
+            }
+        }
+
+        // Ensure we have a valid LLM client
+        if (iterationManager == null) {
+            // Get the current LLM type and model
+            LLMClientFactory.LLMType currentType = (LLMClientFactory.LLMType) llmTypeSpinner.getSelectedItem();
+            String selectedModel = (String) geminiModelSpinner.getSelectedItem();
+
+            // If no model is selected yet, show error and return
+            if (selectedModel == null) {
+                Toast.makeText(this, "No LLM model selected. Please wait for models to load.", Toast.LENGTH_SHORT)
+                        .show();
+                return;
+            }
+
+            // Create LLM client using factory with the selected model
+            LLMClient llmClient = LLMClientFactory.createClient(this, currentType, selectedModel);
+            iterationManager = new ClojureIterationManager(this, llmClient);
+        }
+
+        // Ensure we have current code
+        if (currentCode == null || currentCode.isEmpty()) {
+            Toast.makeText(this, "No code to improve. Please generate initial code first.", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
         // Get the current screenshot if any
         File currentScreenshot = null;
@@ -306,6 +583,17 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Get the current logcat output
         String logcatText = logcatOutput.getText().toString();
 
+        // Disable buttons during generation
+        thumbsUpButton.setEnabled(false);
+        thumbsDownButton.setEnabled(false);
+        runButton.setEnabled(false);
+
+        // Show a progress dialog
+        ProgressDialog progressDialog = new ProgressDialog(this);
+        progressDialog.setMessage("Generating next iteration...");
+        progressDialog.setCancelable(false);
+        progressDialog.show();
+
         // Generate next iteration
         iterationManager.getLLMClient().generateNextIteration(
                 currentDescription,
@@ -315,8 +603,24 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 feedback)
                 .thenAccept(code -> {
                     runOnUiThread(() -> {
+                        // Dismiss progress dialog
+                        progressDialog.dismiss();
+
                         currentCode = code;
                         currentCodeView.setText(code);
+
+                        // Update session with new code
+                        if (currentSession != null) {
+                            currentSession.setCurrentCode(code);
+                            currentSession.incrementIterationCount();
+
+                            // Save chat history to session
+                            LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
+                                    .getOrCreateSession(currentDescription);
+                            currentSession.setChatHistory(chatSession.getMessages());
+
+                            sessionManager.updateSession(currentSession);
+                        }
 
                         // Make sure buttons are enabled after response
                         thumbsUpButton.setEnabled(true);
@@ -329,6 +633,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 .exceptionally(throwable -> {
                     Log.e(TAG, "Error generating next iteration", throwable);
                     runOnUiThread(() -> {
+                        // Dismiss progress dialog
+                        progressDialog.dismiss();
+
                         Toast.makeText(this, "Error generating next iteration: " + throwable.getMessage(),
                                 Toast.LENGTH_LONG).show();
                         // Make sure buttons are enabled on error
@@ -383,6 +690,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                             if (currentSession != null) {
                                 currentSession.setCurrentCode(cleanCode);
                                 currentSession.incrementIterationCount();
+
+                                // Save chat history to session
+                                LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
+                                        .getOrCreateSession(currentDescription);
+                                currentSession.setChatHistory(chatSession.getMessages());
+
                                 sessionManager.updateSession(currentSession);
                             }
 
@@ -474,6 +787,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         super.onNewIntent(intent);
         Log.d(TAG, "onNewIntent called with intent: " + intent);
 
+        // Make sure view containers are visible
+        screenshotView.setVisibility(View.VISIBLE);
+        screenshotsContainer.setVisibility(View.VISIBLE);
+
         // First check for screenshot data (existing functionality)
         if (intent.hasExtra(RenderActivity.EXTRA_SCREENSHOT_PATHS)) {
             String[] screenshotPaths = intent.getStringArrayExtra(RenderActivity.EXTRA_SCREENSHOT_PATHS);
@@ -492,6 +809,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             if (currentCode != null && !currentCode.isEmpty()) {
                 saveCodeToFile();
             }
+
+            // Save screenshots to session
+            if (currentSession != null && screenshotPaths.length > 0) {
+                List<String> paths = new ArrayList<>(Arrays.asList(screenshotPaths));
+                currentSession.setScreenshotPaths(paths);
+                sessionManager.updateSession(currentSession);
+                Log.d(TAG, "Saved " + paths.size() + " screenshot paths to session");
+            }
         }
 
         // Check if we have process logcat data
@@ -503,6 +828,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             if (logcatOutput != null) {
                 logcatOutput.setText(processLogcat);
             }
+
+            // Save logcat to session
+            if (currentSession != null && processLogcat != null && !processLogcat.isEmpty()) {
+                currentSession.setLastLogcat(processLogcat);
+                sessionManager.updateSession(currentSession);
+                Log.d(TAG, "Saved logcat to session");
+            }
         }
 
         // Check for error feedback from RenderActivity
@@ -512,6 +844,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             // Pre-fill the feedback input
             if (feedbackInput != null) {
                 feedbackInput.setText(errorFeedback);
+            }
+
+            // Save error info to session
+            if (currentSession != null) {
+                currentSession.setLastErrorFeedback(errorFeedback);
+                currentSession.setHasError(true);
+                sessionManager.updateSession(currentSession);
+                Log.d(TAG, "Saved error feedback to session");
             }
 
             // Show the feedback dialog
@@ -535,8 +875,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 Bitmap bitmap = BitmapFactory.decodeFile(screenshotFile.getAbsolutePath());
 
                 if (bitmap != null) {
-                    screenshotView.setImageBitmap(bitmap);
+                    // Make sure the view is visible
                     screenshotView.setVisibility(View.VISIBLE);
+
+                    // Set the bitmap
+                    screenshotView.setImageBitmap(bitmap);
                     Log.d(TAG, "Successfully loaded screenshot bitmap, dimensions: "
                             + bitmap.getWidth() + "x" + bitmap.getHeight());
                 } else {
@@ -561,6 +904,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         }
 
         Log.d(TAG, "Displaying " + screenshotPaths.length + " screenshots");
+
+        // Make the container visible
+        screenshotsContainer.setVisibility(View.VISIBLE);
 
         // Add each screenshot to the container
         for (String path : screenshotPaths) {
@@ -600,11 +946,21 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     }
 
     private void updateModelSpinner(LLMClientFactory.LLMType type) {
+        updateModelSpinner(type, false);
+    }
+
+    private void updateModelSpinner(LLMClientFactory.LLMType type, boolean restoring) {
         // Show a progress indicator
         ProgressDialog progressDialog = new ProgressDialog(this);
         progressDialog.setMessage("Fetching available models...");
         progressDialog.setCancelable(false);
         progressDialog.show();
+
+        // Store if we need to select a model after loading
+        pendingModelSelection = (currentSession != null && currentSession.getLlmModel() != null);
+        if (pendingModelSelection) {
+            pendingModelName = currentSession.getLlmModel();
+        }
 
         // Wait a moment to ensure the models are fetched
         new Handler().postDelayed(() -> {
@@ -622,26 +978,63 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 if (models.isEmpty()) {
                     Log.w(TAG, "No models available for type: " + type);
                     geminiModelSpinner.setVisibility(View.GONE);
+                    modelsLoaded = false;
                     return;
                 }
 
                 ArrayAdapter<String> modelAdapter = new ArrayAdapter<>(this,
                         android.R.layout.simple_spinner_item, models);
                 modelAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+
+                // Temporarily disable spinner listener while updating UI
+                AdapterView.OnItemSelectedListener existingListener = geminiModelSpinner.getOnItemSelectedListener();
+                geminiModelSpinner.setOnItemSelectedListener(null);
+
                 geminiModelSpinner.setAdapter(modelAdapter);
                 geminiModelSpinner.setVisibility(View.VISIBLE);
 
-                // Create new iteration manager with the first available model
-                String selectedModel = models.get(0);
-                Log.d(TAG, "Selecting model: " + selectedModel);
-                iterationManager = new ClojureIterationManager(this,
-                        LLMClientFactory.createClient(this, type, selectedModel));
+                // If we have a saved model from a session, select it
+                if (pendingModelSelection && pendingModelName != null) {
+                    for (int i = 0; i < models.size(); i++) {
+                        if (models.get(i).equals(pendingModelName)) {
+                            geminiModelSpinner.setSelection(i);
+                            Log.d(TAG, "Setting spinner to saved model: " + pendingModelName);
+                            break;
+                        }
+                    }
+                    pendingModelSelection = false;
+                }
+
+                // Restore the listener
+                geminiModelSpinner.setOnItemSelectedListener(existingListener);
+
+                // Create new iteration manager with the selected model but only if:
+                // 1. Not already created during session restore
+                // 2. Not locked due to session restore
+                // 3. No session restore model exists
+                if (!restoring && !lockClient && sessionRestoreModel == null) {
+                    String selectedModel = (String) geminiModelSpinner.getSelectedItem();
+                    Log.d(TAG, "Creating new LLM client with model: " + selectedModel);
+
+                    iterationManager = new ClojureIterationManager(this,
+                            LLMClientFactory.createClient(this, type, selectedModel));
+                } else {
+                    if (lockClient) {
+                        Log.d(TAG, "Skipping LLM client creation - client is locked due to session restore");
+                    } else {
+                        Log.d(TAG, "Skipping LLM client creation - already created or using sessionRestoreModel");
+                    }
+                }
+
+                // Mark models as loaded
+                modelsLoaded = true;
             })).exceptionally(e -> {
                 progressDialog.dismiss();
                 Log.e(TAG, "Error updating model spinner", e);
                 runOnUiThread(() -> {
                     Toast.makeText(this, "Failed to fetch models: " + e.getMessage(), Toast.LENGTH_LONG).show();
                     geminiModelSpinner.setVisibility(View.GONE);
+                    modelsLoaded = false;
                 });
                 return null;
             });
@@ -653,12 +1046,39 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         geminiModelSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                // Ignore selection events during initialization to prevent race conditions
+                if (blockSpinnerEvents) {
+                    Log.d(TAG, "Ignoring model selection event during initialization");
+                    return;
+                }
+
                 String selectedModel = (String) parent.getItemAtPosition(position);
                 Log.d(TAG, "User selected model: " + selectedModel);
                 LLMClientFactory.LLMType currentType = (LLMClientFactory.LLMType) llmTypeSpinner.getSelectedItem();
-                iterationManager = new ClojureIterationManager(
-                        ClojureAppDesignActivity.this,
-                        LLMClientFactory.createClient(ClojureAppDesignActivity.this, currentType, selectedModel));
+
+                // Check if client is locked (session restore)
+                if (lockClient) {
+                    Log.d(TAG, "Client is locked due to session restore. Ignoring selection change.");
+                    return;
+                }
+
+                // Only recreate the iteration manager if models are loaded (avoids initial
+                // selection issues)
+                // AND if this is not the session model we already created a client for
+                if (modelsLoaded && (sessionRestoreModel == null || !selectedModel.equals(sessionRestoreModel))) {
+                    Log.d(TAG, "Creating new LLM client for user-selected model: " + selectedModel);
+                    iterationManager = new ClojureIterationManager(
+                            ClojureAppDesignActivity.this,
+                            LLMClientFactory.createClient(ClojureAppDesignActivity.this, currentType, selectedModel));
+
+                    // Update session with new model
+                    if (currentSession != null) {
+                        currentSession.setLlmModel(selectedModel);
+                        sessionManager.updateSession(currentSession);
+                    }
+                } else if (sessionRestoreModel != null && selectedModel.equals(sessionRestoreModel)) {
+                    Log.d(TAG, "Skipping client creation - already using session model: " + sessionRestoreModel);
+                }
             }
 
             @Override
@@ -812,6 +1232,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             writer = new java.io.FileWriter(latestFile);
             writer.write(currentCode);
             writer.close();
+
+            // Update session with current code
+            if (currentSession != null) {
+                currentSession.setCurrentCode(currentCode);
+                sessionManager.updateSession(currentSession);
+            }
 
             Log.d(TAG, "Code saved to: " + codeFile.getAbsolutePath() + " (Iteration " + iterationCount + ")");
             // Only show toast for manual saves, not automatic ones

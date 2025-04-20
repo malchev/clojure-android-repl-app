@@ -67,6 +67,18 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.ClojureREPL">
 
+        <!-- Design Sessions Activity (new main launcher) -->
+        <activity
+            android:name=".DesignSessionsActivity"
+            android:exported="true"
+            android:label="Clojure App Designer"
+            android:theme="@style/Theme.AppCompat.Light">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -93,10 +105,6 @@
             android:theme="@style/Theme.AppCompat.Light"
             android:launchMode="singleTask"
             android:taskAffinity=".designer">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
         </activity>
 
         <receiver
