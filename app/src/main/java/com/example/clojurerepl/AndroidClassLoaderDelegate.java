@@ -72,11 +72,13 @@ public class AndroidClassLoaderDelegate {
 
             // Proceed with normal class definition...
             // Convert JVM bytecode to DEX using D8
-            D8Command command = D8Command.builder()
+            D8Command.Builder builder = D8Command.builder()
                     .addClassProgramData(bytes, Origin.unknown())
                     .setMode(CompilationMode.DEBUG)
                     .setOutput(dexPath.toPath(), OutputMode.DexIndexed)
-                    .build();
+                    .setEnableDesugaring(false);
+
+            D8Command command = builder.build();
 
             D8.run(command);
 
