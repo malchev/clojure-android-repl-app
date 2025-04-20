@@ -138,7 +138,7 @@ public class BytecodeCache {
             clearCacheForHash(codeHash);
             return false;
         }
-        Log.w(TAG, "Hash directory '" + hashDir.getAbsolutePath() + "' does not exist for: " + codeHash);
+        Log.d(TAG, "Hash directory '" + hashDir.getAbsolutePath() + "' does not exist for: " + codeHash);
         return false;
     }
 
