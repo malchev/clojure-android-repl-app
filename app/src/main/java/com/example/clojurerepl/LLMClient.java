@@ -146,6 +146,13 @@ public abstract class LLMClient {
          * @return A CompletableFuture containing the extracted code response
          */
         CompletableFuture<String> sendMessages();
+
+        /**
+         * Retrieves the current list of messages in the chat session
+         *
+         * @return A list of Message objects representing the chat history
+         */
+        List<Message> getMessages();
     }
 
     public abstract ChatSession getOrCreateSession(String description);

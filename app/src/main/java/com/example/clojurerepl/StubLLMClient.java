@@ -74,6 +74,11 @@ public class StubLLMClient extends LLMClient {
             messages.clear();
             Log.d(TAG, "Reset stub chat session: " + sessionId);
         }
+
+        @Override
+        public List<Message> getMessages() {
+            return new ArrayList<>(messages);
+        }
     }
 
     @Override

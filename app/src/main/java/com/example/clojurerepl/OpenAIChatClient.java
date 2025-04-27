@@ -191,6 +191,11 @@ public class OpenAIChatClient extends LLMClient {
             Log.d(TAG, "Resetting chat session: " + sessionId);
             messages.clear();
         }
+
+        @Override
+        public List<Message> getMessages() {
+            return new ArrayList<>(messages);
+        }
     }
 
     @Override

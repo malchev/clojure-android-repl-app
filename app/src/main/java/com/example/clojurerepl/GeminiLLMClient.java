@@ -94,6 +94,11 @@ public class GeminiLLMClient extends LLMClient {
             messageHistory.clear();
             Log.d(TAG, "Reset chat session: " + sessionId);
         }
+
+        @Override
+        public List<Message> getMessages() {
+            return new ArrayList<>(messageHistory);
+        }
     }
 
     @Override
