@@ -226,12 +226,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
                         // Only launch RenderActivity after we have the code
                         if (currentCode != null && !currentCode.isEmpty()) {
-                            Intent intent = new Intent(this, RenderActivity.class);
-                            intent.putExtra(RenderActivity.EXTRA_CODE, currentCode);
-                            intent.putExtra(RenderActivity.EXTRA_LAUNCHING_ACTIVITY,
-                                    ClojureAppDesignActivity.class.getName());
-                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                            startActivity(intent);
+                            runCurrentCode();
                         }
 
                         generateButton.setEnabled(true);
@@ -328,13 +323,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                         thumbsDownButton.setEnabled(true);
                         runButton.setEnabled(true);
 
-                        // Launch RenderActivity with new code
-                        Intent intent = new Intent(this, RenderActivity.class);
-                        intent.putExtra(RenderActivity.EXTRA_CODE, code);
-                        intent.putExtra(RenderActivity.EXTRA_LAUNCHING_ACTIVITY,
-                                ClojureAppDesignActivity.class.getName());
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        startActivity(intent);
+                        runCurrentCode();
                     });
                 })
                 .exceptionally(throwable -> {
@@ -389,6 +378,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                             currentCode = cleanCode;
                             currentCodeView.setText(cleanCode);
                             feedbackInput.setText("");
+
+                            // Update session with new code
+                            if (currentSession != null) {
+                                currentSession.setCurrentCode(cleanCode);
+                                currentSession.incrementIterationCount();
+                                sessionManager.updateSession(currentSession);
+                            }
 
                             // Auto-save the new iteration
                             saveCodeToFile();
