@@ -301,6 +301,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                             this,
                             currentSession.getLlmType(),
                             sessionRestoreModel);
+                    assert iterationManager == null : "iterationManager should be null before creating new instance";
                     iterationManager = new ClojureIterationManager(this, llmClient, sessionId);
 
                     // LOCK the client so it cannot be changed by any subsequent operation
@@ -421,6 +422,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Create LLM client using factory with the selected model
         LLMClient llmClient = LLMClientFactory.createClient(this, currentType, selectedModel);
+        assert iterationManager == null : "iterationManager should be null before creating new instance";
         iterationManager = new ClojureIterationManager(this, llmClient, sessionId);
 
         // Update or create session
@@ -565,6 +567,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
             // Create LLM client using factory with the selected model
             LLMClient llmClient = LLMClientFactory.createClient(this, currentType, selectedModel);
+            assert iterationManager == null : "iterationManager should be null before creating new instance";
             iterationManager = new ClojureIterationManager(this, llmClient, sessionId);
         }
 
@@ -1022,6 +1025,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     String selectedModel = (String) geminiModelSpinner.getSelectedItem();
                     Log.d(TAG, "Creating new LLM client with model: " + selectedModel);
 
+                    assert iterationManager == null : "iterationManager should be null before creating new instance";
                     iterationManager = new ClojureIterationManager(this,
                             LLMClientFactory.createClient(this, type, selectedModel), sessionId);
                 } else {
@@ -1073,6 +1077,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 // AND if this is not the session model we already created a client for
                 if (modelsLoaded && (sessionRestoreModel == null || !selectedModel.equals(sessionRestoreModel))) {
                     Log.d(TAG, "Creating new LLM client for user-selected model: " + selectedModel);
+                    assert iterationManager == null : "iterationManager should be null before creating new instance";
                     iterationManager = new ClojureIterationManager(
                             ClojureAppDesignActivity.this,
                             LLMClientFactory.createClient(ClojureAppDesignActivity.this, currentType, selectedModel),
