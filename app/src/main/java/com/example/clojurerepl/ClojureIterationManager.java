@@ -21,6 +21,7 @@ public class ClojureIterationManager {
     private final LLMClient llmClient;
     private final LogcatMonitor logcatMonitor;
     private final ScreenshotManager screenshotManager;
+    private final String sessionId;
 
     private CompletableFuture<IterationResult> currentIterationFuture;
     private ExecutorService executor;
@@ -47,11 +48,12 @@ public class ClojureIterationManager {
 
     private final List<IterationResult> iterationHistory = new ArrayList<>();
 
-    public ClojureIterationManager(Context context, LLMClient llmClient) {
+    public ClojureIterationManager(Context context, LLMClient llmClient, String sessionId) {
         this.context = context.getApplicationContext();
         this.llmClient = llmClient;
         this.logcatMonitor = new LogcatMonitor();
         this.screenshotManager = new ScreenshotManager(context);
+        this.sessionId = sessionId;
 
         // Initialize executor for background tasks
         this.executor = Executors.newCachedThreadPool();
@@ -185,5 +187,9 @@ public class ClojureIterationManager {
 
     public LLMClient getLLMClient() {
         return llmClient;
+    }
+
+    public String getSessionId() {
+        return sessionId;
     }
 }

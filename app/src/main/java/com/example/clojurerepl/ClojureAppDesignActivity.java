@@ -212,7 +212,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     }
                     geminiModelSpinner.setVisibility(View.GONE);
                     iterationManager = new ClojureIterationManager(ClojureAppDesignActivity.this,
-                            LLMClientFactory.createClient(ClojureAppDesignActivity.this, selectedType));
+                            LLMClientFactory.createClient(ClojureAppDesignActivity.this, selectedType), sessionId);
                 }
             }
 
@@ -301,7 +301,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                             this,
                             currentSession.getLlmType(),
                             sessionRestoreModel);
-                    iterationManager = new ClojureIterationManager(this, llmClient);
+                    iterationManager = new ClojureIterationManager(this, llmClient, sessionId);
 
                     // LOCK the client so it cannot be changed by any subsequent operation
                     lockClient = true;
@@ -421,7 +421,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Create LLM client using factory with the selected model
         LLMClient llmClient = LLMClientFactory.createClient(this, currentType, selectedModel);
-        iterationManager = new ClojureIterationManager(this, llmClient);
+        iterationManager = new ClojureIterationManager(this, llmClient, sessionId);
 
         // Update or create session
         if (currentSession == null) {
@@ -565,7 +565,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
             // Create LLM client using factory with the selected model
             LLMClient llmClient = LLMClientFactory.createClient(this, currentType, selectedModel);
-            iterationManager = new ClojureIterationManager(this, llmClient);
+            iterationManager = new ClojureIterationManager(this, llmClient, sessionId);
         }
 
         // Ensure we have current code
@@ -1017,7 +1017,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     Log.d(TAG, "Creating new LLM client with model: " + selectedModel);
 
                     iterationManager = new ClojureIterationManager(this,
-                            LLMClientFactory.createClient(this, type, selectedModel));
+                            LLMClientFactory.createClient(this, type, selectedModel), sessionId);
                 } else {
                     if (lockClient) {
                         Log.d(TAG, "Skipping LLM client creation - client is locked due to session restore");
@@ -1069,7 +1069,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     Log.d(TAG, "Creating new LLM client for user-selected model: " + selectedModel);
                     iterationManager = new ClojureIterationManager(
                             ClojureAppDesignActivity.this,
-                            LLMClientFactory.createClient(ClojureAppDesignActivity.this, currentType, selectedModel));
+                            LLMClientFactory.createClient(ClojureAppDesignActivity.this, currentType, selectedModel),
+                            sessionId);
 
                     // Update session with new model
                     if (currentSession != null) {
