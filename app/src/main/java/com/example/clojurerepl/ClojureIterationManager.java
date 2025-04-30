@@ -60,6 +60,54 @@ public class ClojureIterationManager {
     }
 
     /**
+     * Generates initial Clojure code based on a description.
+     * This is the entry point for starting a new design.
+     * 
+     * @param description The app description to generate code for
+     * @return A CompletableFuture that will be completed with the generated code
+     */
+    public CompletableFuture<String> generateInitialCode(String description) {
+        // Cancel any previous generation task that might be running
+        if (generationFuture != null && !generationFuture.isDone()) {
+            generationFuture.cancel(true);
+        }
+
+        Log.d(TAG, "Starting initial code generation with description: " + description);
+
+        // Create a new future for this generation
+        generationFuture = new CompletableFuture<>();
+
+        // Run in background thread
+        executor.execute(() -> {
+            try {
+                // Call the LLM client which returns a CompletableFuture
+                CompletableFuture<String> llmFuture = llmClient.generateInitialCode(description);
+
+                // When the LLM response is ready, complete our future
+                llmFuture.thenAccept(code -> {
+                    Log.d(TAG, "Received initial code from LLM, length: " +
+                            (code != null ? code.length() : "null"));
+
+                    // Extract clean code from markdown blocks if present
+                    String cleanCode = extractClojureCode(code);
+                    Log.d(TAG, "Extracted clean initial code. Length: " +
+                            (cleanCode != null ? cleanCode.length() : "null"));
+
+                    generationFuture.complete(cleanCode);
+                }).exceptionally(ex -> {
+                    generationFuture.completeExceptionally(ex);
+                    return null;
+                });
+            } catch (Exception e) {
+                Log.e(TAG, "Error generating initial code", e);
+                generationFuture.completeExceptionally(e);
+            }
+        });
+
+        return generationFuture;
+    }
+
+    /**
      * Extracts clean Clojure code from text that may contain markdown code block
      * markers
      * Helper method to ensure consistent code extraction across the app

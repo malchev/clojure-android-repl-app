@@ -437,8 +437,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Save session
         sessionManager.addSession(currentSession);
 
-        // Get the LLM to generate the code first
-        iterationManager.getLLMClient().generateInitialCode(description)
+        // Get the LLM to generate the code first - using IterationManager now
+        iterationManager.generateInitialCode(description)
                 .thenAccept(code -> {
                     runOnUiThread(() -> {
                         currentCode = code;
@@ -594,13 +594,19 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         progressDialog.setCancelable(false);
         progressDialog.show();
 
-        // Generate next iteration
-        iterationManager.getLLMClient().generateNextIteration(
-                currentDescription,
+        // Create an IterationResult with the current state
+        ClojureIterationManager.IterationResult result = new ClojureIterationManager.IterationResult(
                 currentCode,
                 logcatText,
                 currentScreenshot,
-                feedback)
+                true,
+                feedback);
+
+        // Generate next iteration using the iteration manager's method
+        iterationManager.generateNextIteration(
+                currentDescription,
+                feedback,
+                result)
                 .thenAccept(code -> {
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
@@ -673,7 +679,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 true,
                 feedback);
 
-        // Generate next iteration
+        // Generate next iteration using the iteration manager's method
         iterationManager.generateNextIteration(currentDescription, feedback, result)
                 .thenAccept(cleanCode -> {
                     Log.d(TAG, "Generated next iteration code: "

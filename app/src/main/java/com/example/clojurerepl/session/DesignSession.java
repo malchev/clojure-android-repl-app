@@ -146,25 +146,25 @@ public class DesignSession {
         this.chatHistory.add(message);
         this.updatedAt = new Date();
     }
-    
+
     public String getLastLogcat() {
         return lastLogcat;
     }
-    
+
     public void setLastLogcat(String lastLogcat) {
         this.lastLogcat = lastLogcat;
         this.updatedAt = new Date();
     }
-    
+
     public List<String> getScreenshotPaths() {
         return screenshotPaths;
     }
-    
+
     public void setScreenshotPaths(List<String> screenshotPaths) {
         this.screenshotPaths = screenshotPaths;
         this.updatedAt = new Date();
     }
-    
+
     public void addScreenshotPath(String path) {
         if (this.screenshotPaths == null) {
             this.screenshotPaths = new ArrayList<>();
@@ -172,20 +172,20 @@ public class DesignSession {
         this.screenshotPaths.add(path);
         this.updatedAt = new Date();
     }
-    
+
     public String getLastErrorFeedback() {
         return lastErrorFeedback;
     }
-    
+
     public void setLastErrorFeedback(String lastErrorFeedback) {
         this.lastErrorFeedback = lastErrorFeedback;
         this.updatedAt = new Date();
     }
-    
+
     public boolean hasError() {
         return hasError;
     }
-    
+
     public void setHasError(boolean hasError) {
         this.hasError = hasError;
         this.updatedAt = new Date();
@@ -213,12 +213,12 @@ public class DesignSession {
             messagesJson.put(messageJson);
         }
         json.put("chatHistory", messagesJson);
-        
+
         // Add new fields
         if (lastLogcat != null) {
             json.put("lastLogcat", lastLogcat);
         }
-        
+
         if (screenshotPaths != null && !screenshotPaths.isEmpty()) {
             JSONArray screenshotsJson = new JSONArray();
             for (String path : screenshotPaths) {
@@ -226,11 +226,11 @@ public class DesignSession {
             }
             json.put("screenshotPaths", screenshotsJson);
         }
-        
+
         if (lastErrorFeedback != null) {
             json.put("lastErrorFeedback", lastErrorFeedback);
         }
-        
+
         json.put("hasError", hasError);
 
         return json;
@@ -270,12 +270,12 @@ public class DesignSession {
                 }
             }
         }
-        
+
         // Load new fields
         if (json.has("lastLogcat")) {
             session.lastLogcat = json.getString("lastLogcat");
         }
-        
+
         session.screenshotPaths = new ArrayList<>();
         if (json.has("screenshotPaths")) {
             JSONArray screenshotsJson = json.getJSONArray("screenshotPaths");
@@ -283,11 +283,11 @@ public class DesignSession {
                 session.screenshotPaths.add(screenshotsJson.getString(i));
             }
         }
-        
+
         if (json.has("lastErrorFeedback")) {
             session.lastErrorFeedback = json.getString("lastErrorFeedback");
         }
-        
+
         if (json.has("hasError")) {
             session.hasError = json.getBoolean("hasError");
         }
