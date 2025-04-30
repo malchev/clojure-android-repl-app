@@ -47,7 +47,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     private TextView logcatOutput;
     private LinearLayout feedbackButtonsContainer;
     private Button thumbsUpButton;
-    private Button thumbsDownButton;
     private Button runButton;
 
     // Legacy buttons
@@ -145,7 +144,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // New feedback UI
         feedbackButtonsContainer = findViewById(R.id.feedback_buttons_container);
         thumbsUpButton = findViewById(R.id.thumbs_up_button);
-        thumbsDownButton = findViewById(R.id.thumbs_down_button);
         runButton = findViewById(R.id.run_button);
 
         // Legacy buttons to maintain compatibility
@@ -234,12 +232,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         updateModelSpinner(LLMClientFactory.LLMType.GEMINI);
 
         // Set up click listeners
-        generateButton.setOnClickListener(v -> startNewDesign());
+        generateButton.setOnClickListener(v -> handleGenerateButtonClick());
         thumbsUpButton.setOnClickListener(v -> acceptApp());
-        thumbsDownButton.setOnClickListener(v -> {
-            // Make sure we can always show the feedback dialog
-            showFeedbackDialog();
-        });
         runButton.setOnClickListener(v -> runCurrentCode());
 
         // Legacy button listeners
@@ -278,8 +272,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 // Show feedback buttons
                 feedbackButtonsContainer.setVisibility(View.VISIBLE);
                 thumbsUpButton.setVisibility(View.VISIBLE);
-                thumbsDownButton.setVisibility(View.VISIBLE);
                 runButton.setVisibility(View.VISIBLE);
+
+                // Update generate button text for iteration
+                generateButton.setText(R.string.improve_app);
 
                 // Mark that generation has started - disable model selection
                 generationStarted = true;
@@ -418,6 +414,22 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Handles clicks on the Generate button
+     * - Initial click: generates the first version
+     * - Subsequent clicks: shows feedback dialog for iteration
+     */
+    private void handleGenerateButtonClick() {
+        // If we already have code generated, show the feedback dialog
+        if (currentCode != null && !currentCode.isEmpty() && generationStarted) {
+            showFeedbackDialog();
+            return;
+        }
+
+        // Otherwise, start a new design (first generation)
+        startNewDesign();
+    }
+
     private void startNewDesign() {
         String description = appDescriptionInput.getText().toString();
         if (description.isEmpty()) {
@@ -505,8 +517,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                         // Show the feedback buttons
                         feedbackButtonsContainer.setVisibility(View.VISIBLE);
                         thumbsUpButton.setVisibility(View.VISIBLE);
-                        thumbsDownButton.setVisibility(View.VISIBLE);
                         runButton.setVisibility(View.VISIBLE);
+
+                        // Change generate button text to "Improve App" for subsequent clicks
+                        generateButton.setText(R.string.improve_app);
 
                         // Only launch RenderActivity after we have the code
                         if (currentCode != null && !currentCode.isEmpty()) {
@@ -538,16 +552,17 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Show and enable all feedback buttons
         feedbackButtonsContainer.setVisibility(View.VISIBLE);
         thumbsUpButton.setVisibility(View.VISIBLE);
-        thumbsDownButton.setVisibility(View.VISIBLE);
         runButton.setVisibility(View.VISIBLE);
         submitFeedbackButton.setVisibility(View.GONE); // Hide this until feedback is entered
         confirmSuccessButton.setVisibility(View.GONE); // Hide this until needed
 
         // Enable all buttons
         thumbsUpButton.setEnabled(true);
-        thumbsDownButton.setEnabled(true);
         runButton.setEnabled(true);
         generateButton.setEnabled(true);
+
+        // Update generate button text for subsequent iterations
+        generateButton.setText(R.string.improve_app);
 
         // Update logcat output if available
         if (result.logcat != null) {
@@ -585,7 +600,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Make sure buttons are enabled
         thumbsUpButton.setEnabled(true);
-        thumbsDownButton.setEnabled(true);
         runButton.setEnabled(true);
 
         // Ensure we have a valid description
@@ -639,7 +653,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Disable buttons during generation
         thumbsUpButton.setEnabled(false);
-        thumbsDownButton.setEnabled(false);
         runButton.setEnabled(false);
 
         // Show a progress dialog
@@ -684,7 +697,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
                         // Make sure buttons are enabled after response
                         thumbsUpButton.setEnabled(true);
-                        thumbsDownButton.setEnabled(true);
                         runButton.setEnabled(true);
 
                         runCurrentCode();
@@ -700,7 +712,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                                 Toast.LENGTH_LONG).show();
                         // Make sure buttons are enabled on error
                         thumbsUpButton.setEnabled(true);
-                        thumbsDownButton.setEnabled(true);
                         runButton.setEnabled(true);
                     });
                     return null;
@@ -783,7 +794,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     private void acceptApp() {
         // Re-enable buttons after accepting
         thumbsUpButton.setEnabled(true);
-        thumbsDownButton.setEnabled(true);
         runButton.setEnabled(true);
 
         // Here we encode the current code using base64 before sending
@@ -1270,7 +1280,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.main_menu, menu);
-        menu.add(0, R.id.action_clear_session, 0, "Clear Chat Session")
+        menu.add(0, R.id.action_clear_history, 0, "Clear Chat History")
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         menu.add(0, R.id.action_clear_api_key, 0, "Clear API Key")
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
@@ -1292,7 +1302,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         } else if (id == R.id.action_clear_api_key) {
             clearCurrentApiKey();
             return true;
-        } else if (id == R.id.action_clear_session) {
+        } else if (id == R.id.action_clear_history) {
             clearChatHistory();
             return true;
         } else if (id == R.id.action_new_session) {
@@ -1628,6 +1638,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
                     // Hide feedback buttons
                     feedbackButtonsContainer.setVisibility(View.GONE);
+
+                    // Reset generate button text back to initial state
+                    generateButton.setText(R.string.generate_app);
 
                     // Clear any existing session
                     currentSession = new DesignSession();

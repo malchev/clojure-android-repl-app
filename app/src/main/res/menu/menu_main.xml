@@ -2,8 +2,8 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
       xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
-        android:id="@+id/action_clear_session"
-        android:title="Clear Chat Session"
+        android:id="@+id/action_clear_history"
+        android:title="Clear Chat History"
         android:orderInCategory="100"
         app:showAsAction="never"/>
 </menu>

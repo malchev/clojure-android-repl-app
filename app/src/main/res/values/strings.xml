@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Clojure REPL</string>
+    <string name="generate_app">Generate App</string>
+    <string name="improve_app">Provide Feedback</string>
+    <string name="run_code">Run Code</string>
+    <string name="accept_app">Accept App</string>
 </resources> 

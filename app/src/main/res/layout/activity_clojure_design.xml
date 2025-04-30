@@ -20,7 +20,7 @@
         android:id="@+id/generate_button"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Generate App" />
+        android:text="@string/generate_app" />
 
     <ScrollView
         android:layout_width="match_parent"
@@ -116,24 +116,12 @@
         android:padding="16dp">
 
         <Button
-            android:id="@+id/thumbs_down_button"
-            android:layout_width="0dp"
-            android:layout_height="60dp"
-            android:layout_weight="1"
-            android:layout_marginEnd="8dp"
-            android:text="NEEDS WORK"
-            android:textSize="14sp"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#FF0000" />
-
-        <Button
             android:id="@+id/run_button"
             android:layout_width="0dp"
             android:layout_height="60dp"
             android:layout_weight="1"
-            android:layout_marginStart="4dp"
-            android:layout_marginEnd="4dp"
-            android:text="RUN CODE"
+            android:layout_marginEnd="8dp"
+            android:text="@string/run_code"
             android:textSize="14sp"
             android:textColor="#FFFFFF"
             android:backgroundTint="#2196F3" />
@@ -144,7 +132,7 @@
             android:layout_height="60dp"
             android:layout_weight="1"
             android:layout_marginStart="8dp"
-            android:text="ACCEPT APP"
+            android:text="@string/accept_app"
             android:textSize="14sp"
             android:textColor="#FFFFFF"
             android:backgroundTint="#00FF00" />
