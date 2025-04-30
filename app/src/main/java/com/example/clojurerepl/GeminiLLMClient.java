@@ -327,6 +327,11 @@ public class GeminiLLMClient extends LLMClient {
         return currentModel;
     }
 
+    @Override
+    public LLMClientFactory.LLMType getType() {
+        return LLMClientFactory.LLMType.GEMINI;
+    }
+
     public void setModel(String model) {
         this.currentModel = model;
         Log.d(TAG, "Set Gemini model to: " + model);

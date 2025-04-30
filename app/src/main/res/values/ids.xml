@@ -4,4 +4,5 @@
     <item name="action_save_code" type="id" />
     <item name="action_clear_session" type="id" />
     <item name="action_clear_api_key" type="id" />
+    <item name="action_new_session" type="id" />
 </resources>

@@ -99,6 +99,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     // Add a flag to lock the client once set up from session
     private boolean lockClient = false;
 
+    // Flag to track if app generation has started
+    private boolean generationStarted = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -158,14 +161,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         llmAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         llmTypeSpinner.setAdapter(llmAdapter);
 
-        // Initialize clear API key button
-        clearApiKeyButton = findViewById(R.id.clear_api_key_button);
-        clearApiKeyButton.setOnClickListener(v -> clearCurrentApiKey());
-
-        // Initialize clear chat history button
-        clearChatHistoryButton = findViewById(R.id.clear_chat_history_button);
-        clearChatHistoryButton.setOnClickListener(v -> clearChatHistory());
-
         // Set default selection to GEMINI
         llmTypeSpinner.setSelection(
                 Arrays.asList(LLMClientFactory.LLMType.values()).indexOf(LLMClientFactory.LLMType.GEMINI));
@@ -179,6 +174,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 // Ignore selection events during initialization when blockSpinnerEvents is true
                 if (blockSpinnerEvents) {
                     Log.d(TAG, "Ignoring LLM type selection event during initialization");
+                    return;
+                }
+
+                // Spinner is disabled after generation has started, so this check is now
+                // redundant
+                // but keeping it for safety and clarity
+                if (generationStarted) {
+                    Log.d(TAG, "Model selection is locked - ignoring change attempt");
                     return;
                 }
 
@@ -277,6 +280,20 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 thumbsUpButton.setVisibility(View.VISIBLE);
                 thumbsDownButton.setVisibility(View.VISIBLE);
                 runButton.setVisibility(View.VISIBLE);
+
+                // Mark that generation has started - disable model selection
+                generationStarted = true;
+
+                // Disable the spinners since this is an active session with code
+                llmTypeSpinner.setEnabled(false);
+                geminiModelSpinner.setEnabled(false);
+
+                // Show toast message to inform the user
+                new Handler().postDelayed(() -> {
+                    Toast.makeText(this,
+                            "Model selection is locked for existing session. Start a new session to change models.",
+                            Toast.LENGTH_LONG).show();
+                }, 1000); // Slight delay for better UX
             }
 
             // Set the iteration count
@@ -402,28 +419,56 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     }
 
     private void startNewDesign() {
-        Log.d(TAG, "\n" +
-                "╔═══════════════════════════════════════════╗\n" +
-                "║         STARTING NEW APP DESIGN           ║\n" +
-                "╚═══════════════════════════════════════════╝");
-
         String description = appDescriptionInput.getText().toString();
         if (description.isEmpty()) {
             Toast.makeText(this, "Please enter a description", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        generateButton.setEnabled(false);
-        currentDescription = description;
-
         // Get the current LLM type and model
         LLMClientFactory.LLMType currentType = (LLMClientFactory.LLMType) llmTypeSpinner.getSelectedItem();
         String selectedModel = (String) geminiModelSpinner.getSelectedItem();
 
+        // Check if a model has been selected
+        if (selectedModel == null) {
+            Toast.makeText(this, "Please select a model before generating code", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Check if the selected model is the prompt item
+        if (selectedModel.equals("-- Select a model --")) {
+            Toast.makeText(this, "Please select a specific model from the dropdown", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        Log.d(TAG, "\n" +
+                "╔═══════════════════════════════════════════╗\n" +
+                "║         STARTING NEW APP DESIGN           ║\n" +
+                "╚═══════════════════════════════════════════╝");
+
+        generateButton.setEnabled(false);
+        currentDescription = description;
+
         // Create LLM client using factory with the selected model
         LLMClient llmClient = LLMClientFactory.createClient(this, currentType, selectedModel);
-        assert iterationManager == null : "iterationManager should be null before creating new instance";
+        if (iterationManager != null) {
+            Log.d(TAG, "Shutting down existing iterationManager before creating a new one");
+            iterationManager.shutdown();
+            iterationManager = null;
+        }
         iterationManager = new ClojureIterationManager(this, llmClient, sessionId);
+
+        // Mark that generation has started - disable model selection
+        generationStarted = true;
+
+        // Disable the spinners instead of resetting their values later
+        llmTypeSpinner.setEnabled(false);
+        geminiModelSpinner.setEnabled(false);
+
+        // Show toast message to inform the user
+        Toast.makeText(this,
+                "Model selection is locked. Start a new session to change models.",
+                Toast.LENGTH_LONG).show();
 
         // Update or create session
         if (currentSession == null) {
@@ -562,6 +607,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             if (selectedModel == null) {
                 Toast.makeText(this, "No LLM model selected. Please wait for models to load.", Toast.LENGTH_SHORT)
                         .show();
+                return;
+            }
+
+            // Check if the selected model is the prompt item
+            if (selectedModel.equals("-- Select a model --")) {
+                Toast.makeText(this, "Please select a specific model from the dropdown", Toast.LENGTH_SHORT).show();
                 return;
             }
 
@@ -991,8 +1042,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     return;
                 }
 
+                // Add a prompt item as the first item in the spinner
+                List<String> modelList = new ArrayList<>(models);
+                modelList.add(0, "-- Select a model --");
+
                 ArrayAdapter<String> modelAdapter = new ArrayAdapter<>(this,
-                        android.R.layout.simple_spinner_item, models);
+                        android.R.layout.simple_spinner_item, modelList);
                 modelAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
 
                 // Temporarily disable spinner listener while updating UI
@@ -1002,38 +1057,45 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 geminiModelSpinner.setAdapter(modelAdapter);
                 geminiModelSpinner.setVisibility(View.VISIBLE);
 
+                // Select the prompt item by default
+                geminiModelSpinner.setSelection(0);
+
                 // If we have a saved model from a session, select it
                 if (pendingModelSelection && pendingModelName != null) {
-                    for (int i = 0; i < models.size(); i++) {
-                        if (models.get(i).equals(pendingModelName)) {
+                    for (int i = 0; i < modelList.size(); i++) {
+                        if (modelList.get(i).equals(pendingModelName)) {
                             geminiModelSpinner.setSelection(i);
                             Log.d(TAG, "Setting spinner to saved model: " + pendingModelName);
                             break;
                         }
                     }
                     pendingModelSelection = false;
+                } else {
+                    // Keep the prompt selected
+                    Log.d(TAG, "Not selecting any model automatically, keeping prompt selected");
                 }
 
                 // Restore the listener
                 geminiModelSpinner.setOnItemSelectedListener(existingListener);
 
-                // Create new iteration manager with the selected model but only if:
-                // 1. Not already created during session restore
-                // 2. Not locked due to session restore
-                // 3. No session restore model exists
-                if (!restoring && !lockClient && sessionRestoreModel == null) {
-                    String selectedModel = (String) geminiModelSpinner.getSelectedItem();
-                    Log.d(TAG, "Creating new LLM client with model: " + selectedModel);
+                // Only create iterationManager if we're restoring a session with a model
+                // Skip auto-creation to avoid premature model loading
+                if (restoring && lockClient && sessionRestoreModel != null) {
+                    // Only in case of a session restore with a locked client
+                    Log.d(TAG, "Creating new LLM client with session restore model: " + sessionRestoreModel);
 
-                    assert iterationManager == null : "iterationManager should be null before creating new instance";
-                    iterationManager = new ClojureIterationManager(this,
-                            LLMClientFactory.createClient(this, type, selectedModel), sessionId);
-                } else {
-                    if (lockClient) {
-                        Log.d(TAG, "Skipping LLM client creation - client is locked due to session restore");
-                    } else {
-                        Log.d(TAG, "Skipping LLM client creation - already created or using sessionRestoreModel");
+                    if (iterationManager != null) {
+                        Log.d(TAG,
+                                "Shutting down existing iterationManager before creating a new one for session restore");
+                        iterationManager.shutdown();
+                        iterationManager = null;
                     }
+
+                    iterationManager = new ClojureIterationManager(this,
+                            LLMClientFactory.createClient(this, type, sessionRestoreModel), sessionId);
+                    Log.d(TAG, "Created iterationManager for session restore");
+                } else {
+                    Log.d(TAG, "Skipping automatic iterationManager creation - waiting for user selection");
                 }
 
                 // Mark models as loaded
@@ -1062,6 +1124,20 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     return;
                 }
 
+                // Spinner is disabled after generation has started, so this check is now
+                // redundant
+                // but keeping it for safety and clarity
+                if (generationStarted && iterationManager != null) {
+                    Log.d(TAG, "Model selection is locked - ignoring change attempt");
+                    return;
+                }
+
+                // Ignore the prompt selection (position 0)
+                if (position == 0) {
+                    Log.d(TAG, "Prompt item selected, not creating LLM client");
+                    return;
+                }
+
                 String selectedModel = (String) parent.getItemAtPosition(position);
                 Log.d(TAG, "User selected model: " + selectedModel);
                 LLMClientFactory.LLMType currentType = (LLMClientFactory.LLMType) llmTypeSpinner.getSelectedItem();
@@ -1077,7 +1153,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 // AND if this is not the session model we already created a client for
                 if (modelsLoaded && (sessionRestoreModel == null || !selectedModel.equals(sessionRestoreModel))) {
                     Log.d(TAG, "Creating new LLM client for user-selected model: " + selectedModel);
-                    assert iterationManager == null : "iterationManager should be null before creating new instance";
+
+                    // Check if we need to shut down the existing iterationManager
+                    if (iterationManager != null) {
+                        Log.d(TAG, "Shutting down existing iterationManager before creating a new one");
+                        iterationManager.shutdown();
+                        iterationManager = null;
+                    }
+
                     iterationManager = new ClojureIterationManager(
                             ClojureAppDesignActivity.this,
                             LLMClientFactory.createClient(ClojureAppDesignActivity.this, currentType, selectedModel),
@@ -1191,6 +1274,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         menu.add(0, R.id.action_clear_api_key, 0, "Clear API Key")
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
+        menu.add(0, R.id.action_new_session, 0, "New Session")
+                .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         return super.onCreateOptionsMenu(menu);
     }
 
@@ -1209,6 +1294,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             return true;
         } else if (id == R.id.action_clear_session) {
             clearChatHistory();
+            return true;
+        } else if (id == R.id.action_new_session) {
+            startNewSession();
             return true;
         } else if (id == android.R.id.home) {
             onBackPressed();
@@ -1494,6 +1582,62 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     } else {
                         Toast.makeText(this, "Failed to clear chat history", Toast.LENGTH_SHORT).show();
                     }
+                })
+                .setNegativeButton("No", null)
+                .show();
+    }
+
+    /**
+     * Clears the generation state, allowing model selection again
+     */
+    private void clearGeneration() {
+        generationStarted = false;
+        if (iterationManager != null) {
+            iterationManager.shutdown();
+            iterationManager = null;
+        }
+
+        // Re-enable spinners when generation is cleared
+        llmTypeSpinner.setEnabled(true);
+        geminiModelSpinner.setEnabled(true);
+
+        Log.d(TAG, "Generation state cleared - model selection unlocked");
+    }
+
+    /**
+     * Starts a completely new session, resetting all state
+     */
+    private void startNewSession() {
+        new AlertDialog.Builder(this)
+                .setTitle("Start New Session")
+                .setMessage("This will clear the current design and reset model selection. Are you sure?")
+                .setPositiveButton("Yes", (dialog, which) -> {
+                    // Clear generation state (which now also re-enables spinners)
+                    clearGeneration();
+
+                    // Clear the code and description
+                    currentCode = null;
+                    currentDescription = null;
+                    currentCodeView.setText("");
+                    appDescriptionInput.setText("");
+
+                    // Clear screenshots and logcat
+                    currentScreenshots.clear();
+                    processLogcat = "";
+                    logcatOutput.setText("");
+
+                    // Hide feedback buttons
+                    feedbackButtonsContainer.setVisibility(View.GONE);
+
+                    // Clear any existing session
+                    currentSession = new DesignSession();
+                    sessionId = currentSession.getId();
+                    sessionManager.addSession(currentSession);
+
+                    // Reset iteration count
+                    iterationCount = 0;
+
+                    Toast.makeText(this, "New session started", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("No", null)
                 .show();

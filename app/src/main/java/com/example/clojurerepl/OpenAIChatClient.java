@@ -38,6 +38,11 @@ public class OpenAIChatClient extends LLMClient {
         return modelName;
     }
 
+    @Override
+    public LLMClientFactory.LLMType getType() {
+        return LLMClientFactory.LLMType.OPENAI;
+    }
+
     private void ensureModelIsSet() {
         if (modelName == null) {
             List<String> availableModels = fetchAvailableModels(context);

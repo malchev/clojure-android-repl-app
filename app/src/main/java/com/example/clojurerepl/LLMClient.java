@@ -22,6 +22,20 @@ public abstract class LLMClient {
         loadPromptTemplate();
     }
 
+    /**
+     * Gets the LLM type for this client
+     * 
+     * @return The LLMType enum value
+     */
+    public abstract LLMClientFactory.LLMType getType();
+
+    /**
+     * Gets the current model name for this client
+     * 
+     * @return The model name as a string
+     */
+    public abstract String getModel();
+
     private void loadPromptTemplate() {
         Log.d(TAG, "Loading prompt template");
         try {

@@ -202,22 +202,6 @@
                 android:layout_weight="1"
                 android:layout_height="wrap_content"
                 android:visibility="gone" />
-
-            <Button
-                android:id="@+id/clear_chat_history_button"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Clear History"
-                android:textSize="12sp"
-                android:padding="8dp" />
-
-            <Button
-                android:id="@+id/clear_api_key_button"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Clear Key"
-                android:textSize="12sp"
-                android:padding="8dp" />
         </LinearLayout>
 
     </LinearLayout>

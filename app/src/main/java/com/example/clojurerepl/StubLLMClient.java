@@ -97,6 +97,16 @@ public class StubLLMClient extends LLMClient {
     }
 
     @Override
+    public LLMClientFactory.LLMType getType() {
+        return LLMClientFactory.LLMType.STUB;
+    }
+
+    @Override
+    public String getModel() {
+        return "stub-model";
+    }
+
+    @Override
     public CompletableFuture<String> generateInitialCode(String description) {
         Log.d(TAG, "Generating initial code for description: " + description + " using stub client");
 
