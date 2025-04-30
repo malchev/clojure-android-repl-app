@@ -64,6 +64,28 @@ public abstract class LLMClient {
     }
 
     /**
+     * Format initial prompt with option to provide starting code
+     * 
+     * @param description The app description
+     * @param initialCode Optional initial code to use as a starting point (may be
+     *                    null)
+     * @return Formatted prompt string
+     */
+    protected String formatInitialPrompt(String description, String initialCode) {
+        Log.d(TAG, "Formatting initial prompt with description: " + description +
+                ", initial code provided: " + (initialCode != null && !initialCode.isEmpty()));
+
+        if (initialCode != null && !initialCode.isEmpty()) {
+            return "Implement the following app:\n" + description +
+                    "\n\nUse the following code as a starting point. Improve and expand upon it to meet all requirements:\n```clojure\n"
+                    +
+                    initialCode + "\n```";
+        } else {
+            return formatInitialPrompt(description);
+        }
+    }
+
+    /**
      * Returns the system prompt to be used when initializing a conversation.
      * This prompt provides instruction on how to generate Clojure code.
      */
@@ -89,7 +111,43 @@ public abstract class LLMClient {
         return session;
     }
 
+    /**
+     * Prepares a prompt for initial code generation with optional starting code
+     * 
+     * @param description The app description
+     * @param initialCode Optional initial code to use as a starting point (may be
+     *                    null)
+     * @return The prepared ChatSession
+     */
+    public ChatSession preparePromptForInitialCode(String description, String initialCode) {
+        // Get or create a session for this app description
+        ChatSession session = getOrCreateSession(description);
+
+        // Reset session to start fresh
+        session.reset();
+
+        // Make sure we have a system message at the beginning
+        session.queueSystemPrompt(getSystemPrompt());
+
+        // Format the prompt using the helper from LLMClient with initial code
+        String prompt = formatInitialPrompt(description, initialCode);
+
+        // Queue the user message and send all messages
+        session.queueUserMessage(prompt);
+        return session;
+    }
+
     public abstract CompletableFuture<String> generateInitialCode(String description);
+
+    /**
+     * Generate initial code with optional starting code
+     * 
+     * @param description The app description
+     * @param initialCode Optional initial code to use as a starting point (may be
+     *                    null)
+     * @return A CompletableFuture containing the generated code
+     */
+    public abstract CompletableFuture<String> generateInitialCode(String description, String initialCode);
 
     protected String formatIterationPrompt(String description,
             String currentCode,

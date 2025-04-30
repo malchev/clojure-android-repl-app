@@ -118,6 +118,18 @@ public class StubLLMClient extends LLMClient {
     }
 
     @Override
+    public CompletableFuture<String> generateInitialCode(String description, String initialCode) {
+        Log.d(TAG, "Generating initial code for description: " + description +
+                " using stub client, with initial code: " + (initialCode != null ? "yes" : "no"));
+
+        // Get or create a session for this app description
+        ChatSession session = preparePromptForInitialCode(description, initialCode);
+
+        // Send all messages and get the response
+        return session.sendMessages();
+    }
+
+    @Override
     public CompletableFuture<String> generateNextIteration(
             String description,
             String currentCode,

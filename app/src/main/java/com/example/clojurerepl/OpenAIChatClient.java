@@ -234,6 +234,18 @@ public class OpenAIChatClient extends LLMClient {
     }
 
     @Override
+    public CompletableFuture<String> generateInitialCode(String description, String initialCode) {
+        ensureModelIsSet();
+        Log.d(TAG, "┌───────────────────────────────────────────┐");
+        Log.d(TAG, "│         GENERATING INITIAL CODE           │");
+        Log.d(TAG, "│       WITH EXISTING CODE AS BASE          │");
+        Log.d(TAG, "└───────────────────────────────────────────┘");
+
+        ChatSession session = preparePromptForInitialCode(description, initialCode);
+        return session.sendMessages();
+    }
+
+    @Override
     public CompletableFuture<String> generateNextIteration(String description, String currentCode, String logcat,
             File screenshot, String feedback) {
         ensureModelIsSet();

@@ -67,12 +67,27 @@ public class ClojureIterationManager {
      * @return A CompletableFuture that will be completed with the generated code
      */
     public CompletableFuture<String> generateInitialCode(String description) {
+        return generateInitialCode(description, null);
+    }
+
+    /**
+     * Generates initial Clojure code based on a description and optional initial
+     * code.
+     * This allows providing existing code as a starting point for the generation.
+     * 
+     * @param description The app description to generate code for
+     * @param initialCode Optional initial code to use as a starting point (may be
+     *                    null)
+     * @return A CompletableFuture that will be completed with the generated code
+     */
+    public CompletableFuture<String> generateInitialCode(String description, String initialCode) {
         // Cancel any previous generation task that might be running
         if (generationFuture != null && !generationFuture.isDone()) {
             generationFuture.cancel(true);
         }
 
-        Log.d(TAG, "Starting initial code generation with description: " + description);
+        Log.d(TAG, "Starting initial code generation with description: " + description +
+                ", initial code provided: " + (initialCode != null && !initialCode.isEmpty()));
 
         // Create a new future for this generation
         generationFuture = new CompletableFuture<>();
@@ -81,7 +96,12 @@ public class ClojureIterationManager {
         executor.execute(() -> {
             try {
                 // Call the LLM client which returns a CompletableFuture
-                CompletableFuture<String> llmFuture = llmClient.generateInitialCode(description);
+                CompletableFuture<String> llmFuture;
+                if (initialCode != null && !initialCode.isEmpty()) {
+                    llmFuture = llmClient.generateInitialCode(description, initialCode);
+                } else {
+                    llmFuture = llmClient.generateInitialCode(description);
+                }
 
                 // When the LLM response is ready, complete our future
                 llmFuture.thenAccept(code -> {

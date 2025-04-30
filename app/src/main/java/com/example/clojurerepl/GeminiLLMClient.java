@@ -144,6 +144,29 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     @Override
+    public CompletableFuture<String> generateInitialCode(String description, String initialCode) {
+        Log.d(TAG, "\n" +
+                "┌───────────────────────────────────────────┐\n" +
+                "│         GENERATING INITIAL CODE           │\n" +
+                "│       WITH EXISTING CODE AS BASE          │\n" +
+                "└───────────────────────────────────────────┘");
+
+        Log.d(TAG, "Generating initial code for description: " + description +
+                ", using initial code: " + (initialCode != null ? "yes" : "no"));
+
+        // Use the overloaded method that accepts initial code
+        ChatSession chatSession = preparePromptForInitialCode(description, initialCode);
+
+        // Send all messages and get the response
+        return chatSession.sendMessages()
+                .thenApply(response -> {
+                    String extractedCode = extractClojureCode(response);
+                    Log.d(TAG, "Extracted Clojure code from response, length: " + extractedCode.length());
+                    return extractedCode;
+                });
+    }
+
+    @Override
     public CompletableFuture<String> generateNextIteration(
             String description,
             String currentCode,

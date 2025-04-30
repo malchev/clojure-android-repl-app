@@ -496,8 +496,16 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Save session
         sessionManager.addSession(currentSession);
 
+        // Check if we have existing code to use as a starting point
+        String existingCode = null;
+        if (currentCode != null && !currentCode.isEmpty()) {
+            existingCode = currentCode;
+            Log.d(TAG, "Using existing code as a starting point. Length: " + existingCode.length());
+            Toast.makeText(this, "Using existing code as a starting point", Toast.LENGTH_SHORT).show();
+        }
+
         // Get the LLM to generate the code first - using IterationManager now
-        iterationManager.generateInitialCode(description)
+        iterationManager.generateInitialCode(description, existingCode)
                 .thenAccept(code -> {
                     runOnUiThread(() -> {
                         currentCode = code;
