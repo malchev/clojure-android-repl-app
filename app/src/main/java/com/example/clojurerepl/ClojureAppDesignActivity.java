@@ -112,6 +112,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Initialize session manager
         sessionManager = SessionManager.getInstance(this);
 
+        // Check if this is a request from MainActivity with initial code
+        if (getIntent().getBooleanExtra("from_main_activity", false)) {
+            handleCodeFromMainActivity();
+            // Early return as handleCodeFromMainActivity will set up everything needed
+            return;
+        }
+
+        // Regular session handling logic for normal startup
         // Check if we're opening an existing session
         sessionId = getIntent().getStringExtra("session_id");
         if (sessionId != null) {
@@ -133,6 +141,141 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             Log.d(TAG, "Created new session: " + sessionId);
         }
 
+        // Initialize views and continue with normal session setup
+        initializeViews();
+        setupSessionState();
+    }
+
+    /**
+     * Handles incoming code from MainActivity, creating a new design session
+     * and initializing it with the provided code.
+     */
+    private void handleCodeFromMainActivity() {
+        // Get the initial code and description from the intent
+        String initialCode = getIntent().getStringExtra("initial_code");
+        String description = getIntent().getStringExtra("description");
+
+        if (initialCode == null || initialCode.isEmpty()) {
+            Toast.makeText(this, "No code provided from MainActivity", Toast.LENGTH_SHORT).show();
+            finish(); // Return to previous activity if no code provided
+            return;
+        }
+
+        if (description == null || description.isEmpty()) {
+            description = "Improve this Clojure app"; // Default description
+        }
+
+        Log.d(TAG, "Received code from MainActivity. Length: " + initialCode.length());
+        Log.d(TAG, "Description: " + description);
+
+        // Create a new session for this code
+        currentSession = new DesignSession();
+        sessionId = currentSession.getId();
+        currentDescription = description;
+
+        // Initialize views
+        initializeViews();
+
+        // Set the description text
+        appDescriptionInput.setText(description);
+
+        // Store the initial code for later use when the generate button is clicked
+        currentCode = initialCode;
+
+        // Show the initial code in the code view with a prefix
+        currentCodeView.setText("Ready to improve:\n\n" + initialCode);
+
+        // Update session data
+        currentSession.setDescription(description);
+        currentSession.setCurrentCode(initialCode);
+
+        // Make run and feedback buttons visible and enabled
+        feedbackButtonsContainer.setVisibility(View.VISIBLE);
+        thumbsUpButton.setVisibility(View.VISIBLE);
+        runButton.setVisibility(View.VISIBLE);
+
+        // Make sure buttons are enabled
+        thumbsUpButton.setEnabled(true);
+        runButton.setEnabled(true);
+
+        // Change generate button text to "Improve App" since we already have code
+        generateButton.setText(R.string.improve_app);
+
+        // Save the session now, even without LLM type and model
+        // The session validation we added will allow this to work
+        sessionManager.addSession(currentSession);
+
+        // Add a toast to instruct the user with combined message
+        Toast.makeText(this,
+                "You can run this code now or click 'Improve App' to enhance it with AI",
+                Toast.LENGTH_LONG).show();
+    }
+
+    /**
+     * Starts the design process with an initial code as the starting point
+     */
+    private void startDesignWithInitialCode(String description, String initialCode) {
+        Log.d(TAG, "\n" +
+                "╔═══════════════════════════════════════════╗\n" +
+                "║       IMPROVING EXISTING CODE WITH AI     ║\n" +
+                "╚═══════════════════════════════════════════╝");
+
+        // Show that we're processing in the code view
+        currentCodeView.setText("Improving code with AI...\nThis may take a minute...\n\n" + initialCode);
+
+        // Get the LLM to generate improved code using the initial code
+        iterationManager.generateInitialCode(description, initialCode)
+                .thenAccept(code -> {
+                    runOnUiThread(() -> {
+                        currentCode = code;
+                        currentCodeView.setText(code);
+
+                        // Update session with code
+                        currentSession.setCurrentCode(code);
+                        currentSession.incrementIterationCount();
+
+                        // Save chat history to session
+                        LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
+                                .getOrCreateSession(description);
+                        currentSession.setChatHistory(chatSession.getMessages());
+
+                        sessionManager.updateSession(currentSession);
+
+                        // Show the feedback buttons
+                        feedbackButtonsContainer.setVisibility(View.VISIBLE);
+                        thumbsUpButton.setVisibility(View.VISIBLE);
+                        runButton.setVisibility(View.VISIBLE);
+
+                        // Change generate button text to "Improve App" for subsequent clicks
+                        generateButton.setText(R.string.improve_app);
+                        generateButton.setEnabled(true); // Make sure button is re-enabled
+
+                        // Only launch RenderActivity after we have the code
+                        if (currentCode != null && !currentCode.isEmpty()) {
+                            runCurrentCode();
+                        }
+
+                        iterationCount = 1;
+
+                        // Show completion message
+                        Toast.makeText(this, "Code improved successfully! Running...", Toast.LENGTH_SHORT).show();
+                    });
+                })
+                .exceptionally(throwable -> {
+                    Log.e(TAG, "Error generating code", throwable);
+                    runOnUiThread(() -> {
+                        Toast.makeText(this, "Error generating code: " + throwable.getMessage(),
+                                Toast.LENGTH_LONG).show();
+                        generateButton.setEnabled(true); // Make sure button is re-enabled in case of error
+                    });
+                    return null;
+                });
+    }
+
+    /**
+     * Initialize all UI views
+     */
+    private void initializeViews() {
         // Initialize views
         appDescriptionInput = findViewById(R.id.app_description_input);
         generateButton = findViewById(R.id.generate_button);
@@ -259,7 +402,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         appDescriptionInput.setText(
                 "Create an app that implements Conway's Game of Life. It's in the form of a 20x20 grid. Each square of the grid is tappable, and when tapped, it switches colors between white (dead) and black (alive). There are three buttons beneath the grid: play, stop, and step. Play runs the game with a delay of half a second between steps until the grid turns all white. Stop stops a play run. Step does a single iteration of the grid state.");
+    }
 
+    /**
+     * Setup session state based on the current session
+     */
+    private void setupSessionState() {
         // If we loaded an existing session, update the UI
         if (currentSession != null && currentSession.getDescription() != null) {
             appDescriptionInput.setText(currentSession.getDescription());
@@ -277,25 +425,36 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 // Update generate button text for iteration
                 generateButton.setText(R.string.improve_app);
 
-                // Mark that generation has started - disable model selection
-                generationStarted = true;
+                // Mark that generation has started only if LLM type has been set
+                // This will determine if we lock the model selectors
+                boolean llmTypeIsSet = currentSession.getLlmType() != null &&
+                        currentSession.getLlmModel() != null;
+                generationStarted = llmTypeIsSet;
 
-                // Disable the spinners since this is an active session with code
-                llmTypeSpinner.setEnabled(false);
-                geminiModelSpinner.setEnabled(false);
+                // Only disable the spinners if LLM type and model are set
+                llmTypeSpinner.setEnabled(!llmTypeIsSet);
+                geminiModelSpinner.setEnabled(!llmTypeIsSet);
 
-                // Show toast message to inform the user
-                new Handler().postDelayed(() -> {
-                    Toast.makeText(this,
-                            "Model selection is locked for existing session. Start a new session to change models.",
-                            Toast.LENGTH_LONG).show();
-                }, 1000); // Slight delay for better UX
+                // Show toast message to inform the user if LLM is locked
+                if (llmTypeIsSet) {
+                    new Handler().postDelayed(() -> {
+                        Toast.makeText(this,
+                                "Model selection is locked for existing session. Start a new session to change models.",
+                                Toast.LENGTH_LONG).show();
+                    }, 1000); // Slight delay for better UX
+                } else {
+                    new Handler().postDelayed(() -> {
+                        Toast.makeText(this,
+                                "Please select an LLM model to continue with this session.",
+                                Toast.LENGTH_LONG).show();
+                    }, 1000); // Slight delay for better UX
+                }
             }
 
             // Set the iteration count
             iterationCount = currentSession.getIterationCount();
 
-            // Set the LLM type and model in the UI
+            // Set the LLM type and model in the UI if they exist
             if (currentSession.getLlmType() != null) {
                 int position = Arrays.asList(LLMClientFactory.LLMType.values())
                         .indexOf(currentSession.getLlmType());
@@ -326,6 +485,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     sessionRestoreModel = null;
                     lockClient = false;
                 }
+            } else {
+                // If LLM type is not set, make sure model selectors are enabled
+                llmTypeSpinner.setEnabled(true);
+                geminiModelSpinner.setEnabled(true);
+                generationStarted = false;
+                lockClient = false;
             }
 
             // Restore logcat output if available
@@ -420,13 +585,93 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
      * - Subsequent clicks: shows feedback dialog for iteration
      */
     private void handleGenerateButtonClick() {
-        // If we already have code generated, show the feedback dialog
+        // Always get the latest description text from the input field
+        String currentDescriptionText = appDescriptionInput.getText().toString().trim();
+        if (!currentDescriptionText.isEmpty() && !currentDescriptionText.equals(currentDescription)) {
+            Log.d(TAG, "Description updated from: '" + currentDescription + "' to: '" + currentDescriptionText + "'");
+            currentDescription = currentDescriptionText;
+
+            // Update the session if it exists
+            if (currentSession != null) {
+                currentSession.setDescription(currentDescription);
+                sessionManager.updateSession(currentSession);
+            }
+        }
+
+        // If we already have code generated and generation has started, show the
+        // feedback dialog
         if (currentCode != null && !currentCode.isEmpty() && generationStarted) {
             showFeedbackDialog();
             return;
         }
 
-        // Otherwise, start a new design (first generation)
+        // If we have initial code from MainActivity but haven't started generation yet,
+        // use it as the base for improvement
+        if (currentCode != null && !currentCode.isEmpty() && !generationStarted) {
+            // Get the updated description (user may have edited it)
+            String description = appDescriptionInput.getText().toString();
+            if (description.isEmpty()) {
+                Toast.makeText(this, "Please enter a description", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            currentDescription = description;
+
+            // Update session with the possibly edited description
+            if (currentSession != null) {
+                currentSession.setDescription(description);
+            }
+
+            // Get the current LLM type and model
+            LLMClientFactory.LLMType currentType = (LLMClientFactory.LLMType) llmTypeSpinner.getSelectedItem();
+            String selectedModel = (String) geminiModelSpinner.getSelectedItem();
+
+            // Check if a model has been selected
+            if (selectedModel == null) {
+                Toast.makeText(this, "Please select a model before generating code", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // Check if the selected model is the prompt item
+            if (selectedModel.equals("-- Select a model --")) {
+                Toast.makeText(this, "Please select a specific model from the dropdown", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // Now that user has selected a valid model, set it in the session
+            currentSession.setLlmType(currentType);
+            currentSession.setLlmModel(selectedModel);
+
+            // Create LLM client and iteration manager
+            LLMClient llmClient = LLMClientFactory.createClient(this, currentType, selectedModel);
+            if (iterationManager != null) {
+                iterationManager.shutdown();
+                iterationManager = null;
+            }
+            iterationManager = new ClojureIterationManager(this, llmClient, sessionId);
+
+            // Now that we have valid LLM info, save the session
+            sessionManager.addSession(currentSession);
+
+            // Disable button during generation
+            generateButton.setEnabled(false);
+
+            // Mark that generation has started - disable model selection
+            generationStarted = true;
+            llmTypeSpinner.setEnabled(false);
+            geminiModelSpinner.setEnabled(false);
+
+            // Show toast message to inform the user
+            Toast.makeText(this,
+                    "Model selection is locked. Start a new session to change models.",
+                    Toast.LENGTH_LONG).show();
+
+            // Start design with the initial code
+            String initialCode = currentCode;
+            startDesignWithInitialCode(description, initialCode);
+            return;
+        }
+
+        // Otherwise, start a new design (first generation with no initial code)
         startNewDesign();
     }
 
@@ -609,6 +854,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Make sure buttons are enabled
         thumbsUpButton.setEnabled(true);
         runButton.setEnabled(true);
+        generateButton.setEnabled(true);
 
         // Ensure we have a valid description
         if (currentDescription == null || currentDescription.isEmpty()) {
@@ -662,6 +908,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Disable buttons during generation
         thumbsUpButton.setEnabled(false);
         runButton.setEnabled(false);
+        generateButton.setEnabled(false); // Also disable the generate button
 
         // Show a progress dialog
         ProgressDialog progressDialog = new ProgressDialog(this);
@@ -706,6 +953,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                         // Make sure buttons are enabled after response
                         thumbsUpButton.setEnabled(true);
                         runButton.setEnabled(true);
+                        generateButton.setEnabled(true); // Re-enable the generate button
 
                         runCurrentCode();
                     });
@@ -721,6 +969,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                         // Make sure buttons are enabled on error
                         thumbsUpButton.setEnabled(true);
                         runButton.setEnabled(true);
+                        generateButton.setEnabled(true); // Re-enable the generate button
                     });
                     return null;
                 });
@@ -742,6 +991,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Increment iteration counter
         iterationCount++;
 
+        // Disable generate button during processing
+        generateButton.setEnabled(false);
+
         Toast.makeText(this, "Generating next iteration...", Toast.LENGTH_SHORT).show();
 
         // Create result from current state
@@ -759,6 +1011,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                             + (cleanCode != null ? "length=" + cleanCode.length() : "null"));
 
                     runOnUiThread(() -> {
+                        // Re-enable generate button
+                        generateButton.setEnabled(true);
+
                         if (cleanCode != null && !cleanCode.isEmpty()) {
                             // Update UI with new code
                             currentCode = cleanCode;
@@ -792,6 +1047,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 .exceptionally(e -> {
                     Log.e(TAG, "Error generating next iteration", e);
                     runOnUiThread(() -> {
+                        // Re-enable generate button on error
+                        generateButton.setEnabled(true);
+
                         Toast.makeText(ClojureAppDesignActivity.this,
                                 "Error generating next iteration: " + e.getMessage(), Toast.LENGTH_LONG).show();
                     });
@@ -808,6 +1066,19 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         if (currentCode.isEmpty()) {
             Toast.makeText(this, "No code to accept", Toast.LENGTH_SHORT).show();
             return;
+        }
+
+        // Save any description updates before accepting the app
+        String currentDescriptionText = appDescriptionInput.getText().toString().trim();
+        if (!currentDescriptionText.isEmpty() && !currentDescriptionText.equals(currentDescription)) {
+            Log.d(TAG, "Description updated before accepting app: '" + currentDescriptionText + "'");
+            currentDescription = currentDescriptionText;
+
+            // Update the session if it exists
+            if (currentSession != null) {
+                currentSession.setDescription(currentDescription);
+                sessionManager.updateSession(currentSession);
+            }
         }
 
         // Base64 encode the code
@@ -864,6 +1135,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         Log.d(TAG, "onNewIntent called with intent: " + intent);
+
+        // Ensure generate button is enabled when returning from RenderActivity
+        generateButton.setEnabled(true);
 
         // Make sure view containers are visible
         screenshotView.setVisibility(View.VISIBLE);
@@ -1373,6 +1647,19 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             return;
         }
 
+        // Save any description updates before running the code
+        String currentDescriptionText = appDescriptionInput.getText().toString().trim();
+        if (!currentDescriptionText.isEmpty() && !currentDescriptionText.equals(currentDescription)) {
+            Log.d(TAG, "Description updated before running code: '" + currentDescriptionText + "'");
+            currentDescription = currentDescriptionText;
+
+            // Update the session if it exists
+            if (currentSession != null) {
+                currentSession.setDescription(currentDescription);
+                sessionManager.updateSession(currentSession);
+            }
+        }
+
         // Create intent for RenderActivity
         Intent intent = new Intent(this, RenderActivity.class);
         intent.putExtra(RenderActivity.EXTRA_CODE, currentCode);
@@ -1662,5 +1949,39 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 })
                 .setNegativeButton("No", null)
                 .show();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+
+        // Save the current description in case it was edited
+        if (currentSession != null && appDescriptionInput != null) {
+            String updatedDescription = appDescriptionInput.getText().toString().trim();
+            if (!updatedDescription.isEmpty() &&
+                    (currentSession.getDescription() == null ||
+                            !updatedDescription.equals(currentSession.getDescription()))) {
+
+                Log.d(TAG, "Saving updated description before exiting: " + updatedDescription);
+                currentSession.setDescription(updatedDescription);
+                currentDescription = updatedDescription;
+                sessionManager.updateSession(currentSession);
+            }
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+
+        // Ensure the description field matches the session if it exists
+        if (currentSession != null && appDescriptionInput != null && currentSession.getDescription() != null) {
+            // Only update if they're different to avoid resetting cursor position
+            String currentText = appDescriptionInput.getText().toString().trim();
+            if (!currentText.equals(currentSession.getDescription())) {
+                Log.d(TAG, "Updating description field to match session on resume");
+                appDescriptionInput.setText(currentSession.getDescription());
+            }
+        }
     }
 }

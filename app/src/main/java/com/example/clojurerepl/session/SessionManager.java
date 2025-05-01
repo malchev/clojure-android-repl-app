@@ -63,10 +63,60 @@ public class SessionManager {
     }
 
     /**
-     * Adds a new session and saves it to storage
+     * Validates a session is ready to be serialized
+     */
+    private boolean isValidSession(DesignSession session) {
+        if (session == null) {
+            Log.w(TAG, "Attempted to save null session");
+            return false;
+        }
+
+        if (session.getId() == null) {
+            Log.w(TAG, "Session has null ID");
+            return false;
+        }
+
+        if (session.getDescription() == null || session.getDescription().isEmpty()) {
+            Log.w(TAG, "Session has null or empty description");
+            return false;
+        }
+
+        if (session.getCurrentCode() == null || session.getCurrentCode().isEmpty()) {
+            Log.w(TAG, "Session has null or empty code");
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Adds a new session and saves it to storage.
+     * If a session with the same ID already exists, it will be updated instead.
      */
     public void addSession(DesignSession session) {
-        sessions.add(session);
+        if (!isValidSession(session)) {
+            Log.w(TAG, "Not adding invalid session");
+            return;
+        }
+
+        // Check if session with same ID already exists
+        boolean sessionExists = false;
+        for (int i = 0; i < sessions.size(); i++) {
+            if (sessions.get(i).getId().equals(session.getId())) {
+                // Update existing session instead of adding a duplicate
+                Log.d(TAG, "Session with ID " + session.getId() + " already exists, updating instead of adding");
+                sessions.set(i, session);
+                sessionExists = true;
+                break;
+            }
+        }
+
+        // Only add if it's a new session
+        if (!sessionExists) {
+            Log.d(TAG, "Adding new session with ID: " + session.getId());
+            sessions.add(session);
+        }
+
         saveSessions();
     }
 
@@ -74,12 +124,26 @@ public class SessionManager {
      * Updates an existing session and saves it to storage
      */
     public void updateSession(DesignSession updatedSession) {
+        if (!isValidSession(updatedSession)) {
+            Log.w(TAG, "Not updating invalid session");
+            return;
+        }
+
+        boolean sessionFound = false;
         for (int i = 0; i < sessions.size(); i++) {
             if (sessions.get(i).getId().equals(updatedSession.getId())) {
                 sessions.set(i, updatedSession);
+                sessionFound = true;
+                Log.d(TAG, "Updated session with ID: " + updatedSession.getId());
                 break;
             }
         }
+
+        if (!sessionFound) {
+            Log.w(TAG, "Session with ID " + updatedSession.getId() + " not found, adding as new session");
+            sessions.add(updatedSession);
+        }
+
         saveSessions();
     }
 
@@ -87,7 +151,15 @@ public class SessionManager {
      * Deletes a session
      */
     public void deleteSession(String sessionId) {
+        int initialSize = sessions.size();
         sessions.removeIf(session -> session.getId().equals(sessionId));
+
+        if (sessions.size() < initialSize) {
+            Log.d(TAG, "Deleted session with ID: " + sessionId);
+        } else {
+            Log.w(TAG, "Session with ID " + sessionId + " not found for deletion");
+        }
+
         saveSessions();
     }
 
@@ -98,7 +170,7 @@ public class SessionManager {
         File sessionsFile = getSessionsFile();
 
         if (!sessionsFile.exists()) {
-            Log.d(TAG, "Sessions file does not exist yet");
+            Log.d(TAG, "Sessions file does not exist yet: " + sessionsFile.getAbsolutePath());
             return;
         }
 
@@ -112,15 +184,26 @@ public class SessionManager {
             JSONArray jsonArray = new JSONArray(jsonString.toString());
             sessions.clear();
 
+            Log.d(TAG, "Loading " + jsonArray.length() + " sessions from file");
+
+            int successCount = 0;
             for (int i = 0; i < jsonArray.length(); i++) {
-                JSONObject sessionJson = jsonArray.getJSONObject(i);
-                DesignSession session = DesignSession.fromJson(sessionJson);
-                sessions.add(session);
+                try {
+                    JSONObject sessionJson = jsonArray.getJSONObject(i);
+                    DesignSession session = DesignSession.fromJson(sessionJson);
+                    sessions.add(session);
+                    successCount++;
+                    Log.v(TAG, "Loaded session ID: " + session.getId() + ", Description: " +
+                            (session.getDescription() != null ? session.getDescription().substring(0,
+                                    Math.min(30, session.getDescription().length())) + "..." : "null"));
+                } catch (Exception e) {
+                    Log.e(TAG, "Error loading individual session at index " + i, e);
+                }
             }
 
-            Log.d(TAG, "Loaded " + sessions.size() + " sessions");
+            Log.d(TAG, "Successfully loaded " + successCount + " out of " + jsonArray.length() + " sessions");
         } catch (IOException | JSONException e) {
-            Log.e(TAG, "Error loading sessions", e);
+            Log.e(TAG, "Error loading sessions from " + sessionsFile.getAbsolutePath(), e);
         }
     }
 
@@ -135,23 +218,29 @@ public class SessionManager {
             File parent = sessionsFile.getParentFile();
             if (!parent.exists()) {
                 if (!parent.mkdirs()) {
-                    Log.e(TAG, "Could not create sessions directory");
+                    Log.e(TAG, "Could not create sessions directory: " + parent.getAbsolutePath());
                     return;
                 }
             }
 
             JSONArray jsonArray = new JSONArray();
+            int sessionCount = 0;
             for (DesignSession session : sessions) {
-                jsonArray.put(session.toJson());
+                try {
+                    jsonArray.put(session.toJson());
+                    sessionCount++;
+                } catch (JSONException e) {
+                    Log.e(TAG, "Error converting session to JSON: " + session.getId(), e);
+                }
             }
 
             try (BufferedWriter writer = new BufferedWriter(new FileWriter(sessionsFile))) {
                 writer.write(jsonArray.toString());
             }
 
-            Log.d(TAG, "Saved " + sessions.size() + " sessions");
-        } catch (IOException | JSONException e) {
-            Log.e(TAG, "Error saving sessions", e);
+            Log.d(TAG, "Saved " + sessionCount + " sessions to " + sessionsFile.getAbsolutePath());
+        } catch (IOException e) {
+            Log.e(TAG, "Error saving sessions to " + sessionsFile.getAbsolutePath(), e);
         }
     }
 

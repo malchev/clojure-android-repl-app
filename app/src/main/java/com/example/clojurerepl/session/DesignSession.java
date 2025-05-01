@@ -202,8 +202,15 @@ public class DesignSession {
         json.put("updatedAt", updatedAt.getTime());
         json.put("currentCode", currentCode);
         json.put("iterationCount", iterationCount);
-        json.put("llmType", llmType.name());
-        json.put("llmModel", llmModel);
+
+        // Only include LLM type and model if they're not null
+        if (llmType != null) {
+            json.put("llmType", llmType.name());
+        }
+
+        if (llmModel != null) {
+            json.put("llmModel", llmModel);
+        }
 
         JSONArray messagesJson = new JSONArray();
         for (LLMClient.Message message : chatHistory) {
@@ -247,8 +254,19 @@ public class DesignSession {
         session.updatedAt = new Date(json.getLong("updatedAt"));
         session.currentCode = json.getString("currentCode");
         session.iterationCount = json.getInt("iterationCount");
-        session.llmType = LLMClientFactory.LLMType.valueOf(json.getString("llmType"));
-        session.llmModel = json.getString("llmModel");
+
+        // Handle potentially missing LLM type and model
+        if (json.has("llmType")) {
+            try {
+                session.llmType = LLMClientFactory.LLMType.valueOf(json.getString("llmType"));
+            } catch (IllegalArgumentException e) {
+                Log.w(TAG, "Invalid LLM type in session: " + json.getString("llmType"));
+            }
+        }
+
+        if (json.has("llmModel")) {
+            session.llmModel = json.getString("llmModel");
+        }
 
         session.chatHistory = new ArrayList<>();
         if (json.has("chatHistory")) {

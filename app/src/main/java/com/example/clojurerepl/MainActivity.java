@@ -795,6 +795,11 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        // Add a new button to send code to the ClojureAppDesignActivity
+        Button improveCodeButton = new Button(this);
+        improveCodeButton.setText(R.string.improve_with_ai);
+        improveCodeButton.setOnClickListener(v -> sendCodeToDesignActivity());
+
         // Create layout params with FIXED height instead of WRAP_CONTENT
         LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
                 0, 150, 1); // Fixed height of 120px and weight of 1
@@ -825,6 +830,24 @@ public class MainActivity extends AppCompatActivity {
         deleteProgramButton.setBackgroundColor(Color.parseColor("#1976D2")); // Material Blue
         deleteProgramButton.setTextColor(Color.WHITE);
 
+        // Style the new button
+        improveCodeButton.setLayoutParams(buttonParams);
+        improveCodeButton.setAllCaps(true);
+        improveCodeButton.setTextSize(12);
+        improveCodeButton.setBackgroundColor(Color.parseColor("#4CAF50")); // Material Green
+        improveCodeButton.setTextColor(Color.WHITE);
+
+        // Create a second row for the Improve with AI button
+        LinearLayout secondButtonRow = new LinearLayout(this);
+        secondButtonRow.setOrientation(LinearLayout.HORIZONTAL);
+        secondButtonRow.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        secondButtonRow.setPadding(16, 8, 16, 8);
+
+        // Add the new button to its own row to make it more prominent
+        secondButtonRow.addView(improveCodeButton);
+
         buttonRow.addView(clearTimingsButton);
         buttonRow.addView(clearClassCacheButton);
         buttonRow.addView(clearDataButton);
@@ -836,6 +859,7 @@ public class MainActivity extends AppCompatActivity {
         spinnerContainer.addView(header);
         spinnerContainer.addView(programSpinner);
         spinnerContainer.addView(buttonRow);
+        spinnerContainer.addView(secondButtonRow); // Add the second button row
 
         // Add spinner container at the top of the layout
         LinearLayout root = findViewById(R.id.root_layout);
@@ -976,5 +1000,45 @@ public class MainActivity extends AppCompatActivity {
             Log.e(TAG, "Error saving code to file", e);
             Toast.makeText(this, "Error saving code: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
+    }
+
+    /**
+     * Sends the current code to the ClojureAppDesignActivity for improvements
+     */
+    private void sendCodeToDesignActivity() {
+        if (currentProgram == null) {
+            Toast.makeText(this, "No program selected to improve", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String code = currentProgram.getCode();
+        if (code == null || code.isEmpty()) {
+            Toast.makeText(this, "No code to improve", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Create description from program name or generate a generic one
+        String description = currentProgram.getName();
+        if (description == null || description.isEmpty() || description.equals("Clojure Program")) {
+            description = "Improve this Clojure app";
+        }
+
+        // Create intent for ClojureAppDesignActivity
+        Intent intent = new Intent("com.example.clojurerepl.IMPROVE_CODE");
+        intent.setClass(this, ClojureAppDesignActivity.class);
+
+        // Add code as extra
+        intent.putExtra("initial_code", code);
+        intent.putExtra("description", description);
+        intent.putExtra("from_main_activity", true);
+
+        // Add flags to ensure proper navigation
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+        // Show toast to inform user
+        Toast.makeText(this, "Sending code to AI for improvement", Toast.LENGTH_SHORT).show();
+
+        // Start the activity
+        startActivity(intent);
     }
 }
