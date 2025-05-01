@@ -33,7 +33,6 @@ public class SessionManager {
     private SessionManager(Context context) {
         this.context = context.getApplicationContext();
         this.sessions = new ArrayList<>();
-        loadSessions();
     }
 
     public static synchronized SessionManager getInstance(Context context) {
@@ -77,12 +76,8 @@ public class SessionManager {
         }
 
         if (session.getDescription() == null || session.getDescription().isEmpty()) {
-            Log.w(TAG, "Session has null or empty description");
-            return false;
-        }
-
-        if (session.getCurrentCode() == null || session.getCurrentCode().isEmpty()) {
-            Log.w(TAG, "Session has null or empty code");
+            // Log.w(TAG, "Session has null or empty description");
+            Log.w(TAG, "Session has null or empty description", new Exception().fillInStackTrace());
             return false;
         }
 

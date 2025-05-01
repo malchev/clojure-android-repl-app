@@ -252,8 +252,15 @@ public class DesignSession {
         session.description = json.getString("description");
         session.createdAt = new Date(json.getLong("createdAt"));
         session.updatedAt = new Date(json.getLong("updatedAt"));
-        session.currentCode = json.getString("currentCode");
         session.iterationCount = json.getInt("iterationCount");
+
+        if (json.has("currentCode")) {
+            try {
+                session.currentCode = json.getString("currentCode");
+            } catch (JSONException e) {
+                Log.w(TAG, "Invalid currentCode in session: " + json.getString("currentCode"));
+            }
+        }
 
         // Handle potentially missing LLM type and model
         if (json.has("llmType")) {
