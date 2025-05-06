@@ -106,10 +106,6 @@ public class DesignSession {
         return iterationCount;
     }
 
-    public void setIterationCount(int iterationCount) {
-        this.iterationCount = iterationCount;
-    }
-
     public void incrementIterationCount() {
         this.iterationCount++;
         this.updatedAt = new Date();

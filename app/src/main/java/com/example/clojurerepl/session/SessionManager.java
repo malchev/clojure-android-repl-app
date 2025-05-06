@@ -76,8 +76,7 @@ public class SessionManager {
         }
 
         if (session.getDescription() == null || session.getDescription().isEmpty()) {
-            // Log.w(TAG, "Session has null or empty description");
-            Log.w(TAG, "Session has null or empty description", new Exception().fillInStackTrace());
+            Log.w(TAG, "Session has null or empty description");
             return false;
         }
 
