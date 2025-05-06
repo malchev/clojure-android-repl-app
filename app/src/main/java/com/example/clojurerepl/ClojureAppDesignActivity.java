@@ -1029,17 +1029,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         intent.putExtra(RenderActivity.EXTRA_DESCRIPTION, currentDescription);
         startActivity(intent);
 
-        // TODO: Do we need this?
-        // Or broadcast for background use
-        Intent broadcastIntent = new Intent(ClojureCodeReceiver.ACTION_EVAL_CODE);
-        broadcastIntent.setComponent(new ComponentName(
-                "com.example.clojurerepl",
-                "com.example.clojurerepl.ClojureCodeReceiver"));
-        broadcastIntent.putExtra(RenderActivity.EXTRA_CODE, encodedCode);
-        broadcastIntent.putExtra(RenderActivity.EXTRA_ENCODING, "base64");
-        broadcastIntent.putExtra(RenderActivity.EXTRA_DESCRIPTION, currentDescription);
-        sendBroadcast(broadcastIntent);
-
         // Save this final version
         saveCodeToFile();
 
