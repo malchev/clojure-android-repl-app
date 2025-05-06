@@ -55,6 +55,9 @@ public class RenderActivity extends AppCompatActivity {
     public static final String EXTRA_SCREENSHOT_PATHS = "screenshot_paths";
     public static final String EXTRA_PROCESS_LOGCAT = "process_logcat";
     public static final String EXTRA_TIMINGS = "timings";
+    public static final String EXTRA_SESSION_ID = "session_id";
+    public static final String EXTRA_ITERATION = "iteration";
+    public static final String EXTRA_ENABLE_SCREENSHOTS = "enable_screenshots";
 
     private LinearLayout contentLayout;
     private Var contextVar;
@@ -70,6 +73,13 @@ public class RenderActivity extends AppCompatActivity {
     private String code;
     private String codeHash;
     private boolean shouldKillOnDestroy = false;
+
+    // Add fields for session ID and iteration count
+    private String sessionId;
+    private int iteration;
+
+    // Add flag for controlling screenshots
+    private boolean screenshotsEnabled = false;
 
     // Add a field to track screenshots
     private List<File> capturedScreenshots = new ArrayList<>();
@@ -231,6 +241,15 @@ public class RenderActivity extends AppCompatActivity {
                         launchingActivity = ClojureAppDesignActivity.class.getName();
                     }
                     Log.d(TAG, "RenderActivity launched by: " + launchingActivity);
+
+                    // Extract session ID and iteration count from intent
+                    sessionId = intent.getStringExtra(EXTRA_SESSION_ID);
+                    iteration = intent.getIntExtra(EXTRA_ITERATION, 0);
+                    Log.d(TAG, "Session ID: " + sessionId + ", Iteration: " + iteration);
+
+                    // Extract screenshot flag from intent
+                    screenshotsEnabled = intent.getBooleanExtra(EXTRA_ENABLE_SCREENSHOTS, false);
+                    Log.d(TAG, "Screenshots enabled: " + screenshotsEnabled);
                 }
 
                 // Get the code from the intent
@@ -399,6 +418,12 @@ public class RenderActivity extends AppCompatActivity {
     }
 
     private File takeScreenshot() {
+        // Skip screenshot if screenshots are disabled
+        if (!screenshotsEnabled) {
+            Log.d(TAG, "Screenshots are disabled, skipping capture");
+            return null;
+        }
+
         // Check if we need to throttle screenshot capture
         long currentTime = System.currentTimeMillis();
         if (currentTime - lastScreenshotTime < MIN_SCREENSHOT_INTERVAL_MS) {
@@ -428,7 +453,14 @@ public class RenderActivity extends AppCompatActivity {
 
             // Use ScreenshotManager to save the bitmap
             ScreenshotManager screenshotManager = new ScreenshotManager(this);
-            String fileName = "render_" + System.currentTimeMillis() + ".png";
+            // New filename format: session_[id]_iter_[num]_[timestamp].png
+            String fileName = "session_" +
+                    (sessionId != null ? sessionId : "unknown") +
+                    "_iter_" +
+                    iteration +
+                    "_" +
+                    System.currentTimeMillis() +
+                    ".png";
             File screenshot = screenshotManager.saveScreenshot(bitmap, fileName);
 
             // Verify the file was created
