@@ -1570,6 +1570,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         Intent intent = new Intent(this, RenderActivity.class);
         intent.putExtra(RenderActivity.EXTRA_CODE, currentCode);
         intent.putExtra(RenderActivity.EXTRA_LAUNCHING_ACTIVITY, ClojureAppDesignActivity.class.getName());
+        // Enable screenshotting in RenderActivity. Add session ID and iteration count
+        // to the intent.
+        intent.putExtra(RenderActivity.EXTRA_ENABLE_SCREENSHOTS, true);
+        intent.putExtra(RenderActivity.EXTRA_SESSION_ID, currentSession.getId());
+        intent.putExtra(RenderActivity.EXTRA_ITERATION, currentSession.getIterationCount());
 
         // Add flags to ensure new process
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
