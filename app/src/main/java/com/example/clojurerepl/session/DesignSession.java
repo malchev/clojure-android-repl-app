@@ -38,9 +38,9 @@ public class DesignSession {
     private String llmModel;
     private List<LLMClient.Message> chatHistory;
     private String lastLogcat;
-    private List<String> screenshotPaths;
     private String lastErrorFeedback;
     private boolean hasError;
+    private List<List<String>> screenshotSets;
 
     public DesignSession() {
         this.id = UUID.randomUUID().toString();
@@ -48,7 +48,7 @@ public class DesignSession {
         this.updatedAt = new Date();
         this.iterationCount = 0;
         this.chatHistory = new ArrayList<>();
-        this.screenshotPaths = new ArrayList<>();
+        this.screenshotSets = new ArrayList<>();
         this.hasError = false;
     }
 
@@ -152,21 +152,35 @@ public class DesignSession {
         this.updatedAt = new Date();
     }
 
-    public List<String> getScreenshotPaths() {
-        return screenshotPaths;
+    /**
+     * Gets all screenshot sets associated with this session.
+     * @return The list of screenshot sets.
+     */
+    public List<List<String>> getScreenshotSets() {
+        return screenshotSets;
     }
 
-    public void setScreenshotPaths(List<String> screenshotPaths) {
-        this.screenshotPaths = screenshotPaths;
-        this.updatedAt = new Date();
-    }
-
-    public void addScreenshotPath(String path) {
-        if (this.screenshotPaths == null) {
-            this.screenshotPaths = new ArrayList<>();
+    /**
+     * Adds a set of screenshots to the session.
+     * @param screenshotSet A list of paths to screenshot files.
+     */
+    public void addScreenshotSet(List<String> screenshotSet) {
+        if (this.screenshotSets == null) {
+            this.screenshotSets = new ArrayList<>();
         }
-        this.screenshotPaths.add(path);
+        this.screenshotSets.add(new ArrayList<>(screenshotSet));
         this.updatedAt = new Date();
+    }
+
+    /**
+     * Gets the latest screenshot set, or empty list if no sets exist.
+     * @return The most recently added screenshot set.
+     */
+    public List<String> getLatestScreenshotSet() {
+        if (this.screenshotSets == null || this.screenshotSets.isEmpty()) {
+            return new ArrayList<>();
+        }
+        return this.screenshotSets.get(this.screenshotSets.size() - 1);
     }
 
     public String getLastErrorFeedback() {
@@ -222,12 +236,17 @@ public class DesignSession {
             json.put("lastLogcat", lastLogcat);
         }
 
-        if (screenshotPaths != null && !screenshotPaths.isEmpty()) {
-            JSONArray screenshotsJson = new JSONArray();
-            for (String path : screenshotPaths) {
-                screenshotsJson.put(path);
+        // Add screenshot sets to JSON
+        if (screenshotSets != null && !screenshotSets.isEmpty()) {
+            JSONArray setsJson = new JSONArray();
+            for (List<String> set : screenshotSets) {
+                JSONArray setJson = new JSONArray();
+                for (String path : set) {
+                    setJson.put(path);
+                }
+                setsJson.put(setJson);
             }
-            json.put("screenshotPaths", screenshotsJson);
+            json.put("screenshotSets", setsJson);
         }
 
         if (lastErrorFeedback != null) {
@@ -297,11 +316,17 @@ public class DesignSession {
             session.lastLogcat = json.getString("lastLogcat");
         }
 
-        session.screenshotPaths = new ArrayList<>();
-        if (json.has("screenshotPaths")) {
-            JSONArray screenshotsJson = json.getJSONArray("screenshotPaths");
-            for (int i = 0; i < screenshotsJson.length(); i++) {
-                session.screenshotPaths.add(screenshotsJson.getString(i));
+        // Load screenshot sets
+        session.screenshotSets = new ArrayList<>();
+        if (json.has("screenshotSets")) {
+            JSONArray setsJson = json.getJSONArray("screenshotSets");
+            for (int i = 0; i < setsJson.length(); i++) {
+                JSONArray setJson = setsJson.getJSONArray(i);
+                List<String> set = new ArrayList<>();
+                for (int j = 0; j < setJson.length(); j++) {
+                    set.add(setJson.getString(j));
+                }
+                session.screenshotSets.add(set);
             }
         }
 

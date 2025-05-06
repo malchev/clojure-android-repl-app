@@ -247,7 +247,6 @@ public class ClojureIterationManager {
 
         // Proceed with other cleanup
         logcatMonitor.shutdown();
-        screenshotManager.clearScreenshots();
     }
 
     public LLMClient getLLMClient() {

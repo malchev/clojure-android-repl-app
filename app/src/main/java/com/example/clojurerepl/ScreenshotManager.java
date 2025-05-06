@@ -42,16 +42,4 @@ public class ScreenshotManager {
             return null;
         }
     }
-
-    public void clearScreenshots() {
-        File screenshotDir = new File(context.getCacheDir(), SCREENSHOT_DIR);
-        if (screenshotDir.exists()) {
-            File[] files = screenshotDir.listFiles();
-            if (files != null) {
-                for (File file : files) {
-                    file.delete();
-                }
-            }
-        }
-    }
 }
