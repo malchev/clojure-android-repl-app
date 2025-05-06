@@ -22,7 +22,7 @@ import java.util.concurrent.CompletableFuture;
  * sessions.
  */
 public class SessionManager {
-    private static final String TAG = "SessionManager";
+    private static final String TAG = "ClojureSessionManager";
     private static final String SESSIONS_DIR = "sessions";
     private static final String SESSIONS_FILE = "design_sessions.json";
 
