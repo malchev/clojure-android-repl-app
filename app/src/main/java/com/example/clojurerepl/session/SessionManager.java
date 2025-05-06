@@ -145,11 +145,45 @@ public class SessionManager {
      * Deletes a session
      */
     public void deleteSession(String sessionId) {
-        int initialSize = sessions.size();
-        sessions.removeIf(session -> session.getId().equals(sessionId));
+        // First, find the session to delete
+        DesignSession sessionToDelete = null;
+        for (DesignSession session : sessions) {
+            if (session.getId().equals(sessionId)) {
+                sessionToDelete = session;
+                break;
+            }
+        }
 
-        if (sessions.size() < initialSize) {
-            Log.d(TAG, "Deleted session with ID: " + sessionId);
+        // If we found the session, delete all associated screenshot files
+        if (sessionToDelete != null) {
+            // Delete screenshot files from all sets
+            List<List<String>> screenshotSets = sessionToDelete.getScreenshotSets();
+            if (screenshotSets != null) {
+                int filesDeleted = 0;
+                for (List<String> set : screenshotSets) {
+                    for (String path : set) {
+                        File screenshotFile = new File(path);
+                        if (screenshotFile.exists()) {
+                            boolean deleted = screenshotFile.delete();
+                            if (deleted) {
+                                filesDeleted++;
+                                Log.d(TAG, "Deleted screenshot file: " + path);
+                            } else {
+                                Log.w(TAG, "Failed to delete screenshot file: " + path);
+                            }
+                        }
+                    }
+                }
+                Log.d(TAG, "Deleted " + filesDeleted + " screenshot files for session: " + sessionId);
+            }
+
+            // Remove the session directly since we already have the reference
+            boolean removed = sessions.remove(sessionToDelete);
+            if (removed) {
+                Log.d(TAG, "Deleted session with ID: " + sessionId);
+            } else {
+                Log.w(TAG, "Failed to remove session with ID: " + sessionId);
+            }
         } else {
             Log.w(TAG, "Session with ID " + sessionId + " not found for deletion");
         }

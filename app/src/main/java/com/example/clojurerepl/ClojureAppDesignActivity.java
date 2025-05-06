@@ -449,8 +449,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 Log.d(TAG, "Restored logcat output from session");
             }
 
-            // Restore screenshots if available
-            List<String> paths = currentSession.getScreenshotPaths();
+            // Restore latest screenshot set if available
+            List<String> paths = currentSession.getLatestScreenshotSet();
             if (paths != null && !paths.isEmpty()) {
                 Log.d(TAG, "Restoring " + paths.size() + " screenshots from session");
 
@@ -1086,9 +1086,15 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             // Save screenshots to session
             if (currentSession != null && screenshotPaths.length > 0) {
                 List<String> paths = new ArrayList<>(Arrays.asList(screenshotPaths));
-                currentSession.setScreenshotPaths(paths);
+
+                // Use the new API to add the screenshot set
+                currentSession.addScreenshotSet(paths);
+
+                // Log the addition of the new screenshot set
+                Log.d(TAG, "Added a new set of " + paths.size() + " screenshots to session");
+
+                // Update session in manager
                 sessionManager.updateSession(currentSession);
-                Log.d(TAG, "Saved " + paths.size() + " screenshot paths to session");
             }
         }
 
