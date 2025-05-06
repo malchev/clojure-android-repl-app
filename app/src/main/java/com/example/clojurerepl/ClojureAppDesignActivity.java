@@ -1484,8 +1484,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         menu.add(0, R.id.action_clear_api_key, 0, "Clear API Key")
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
-        menu.add(0, R.id.action_new_session, 0, "New Session")
-                .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         return super.onCreateOptionsMenu(menu);
     }
 
@@ -1504,9 +1502,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             return true;
         } else if (id == R.id.action_clear_history) {
             clearChatHistory();
-            return true;
-        } else if (id == R.id.action_new_session) {
-            startNewSession();
             return true;
         } else if (id == android.R.id.home) {
             onBackPressed();
@@ -1875,42 +1870,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         llmSpinner.setEnabled(true);
 
         Log.d(TAG, "Generation state cleared - model selection unlocked");
-    }
-
-    /**
-     * Starts a completely new session, resetting all state
-     */
-    private void startNewSession() {
-        new AlertDialog.Builder(this)
-                .setTitle("Start New Session")
-                .setMessage("This will clear the current design and reset model selection. Are you sure?")
-                .setPositiveButton("Yes", (dialog, which) -> {
-                    // Clear generation state (which now also re-enables spinners)
-                    clearGeneration();
-
-                    // Clear the code and description
-                    currentCodeView.setText("");
-                    appDescriptionInput.setText("");
-
-                    // Clear screenshots and logcat
-                    currentScreenshots.clear();
-                    processLogcat = "";
-                    logcatOutput.setText("");
-
-                    // Hide feedback buttons
-                    feedbackButtonsContainer.setVisibility(View.GONE);
-
-                    // Reset generate button text back to initial state
-                    generateButton.setText(R.string.generate_app);
-
-                    // Clear any existing session
-                    currentSession = new DesignSession();
-                    sessionManager.addSession(currentSession);
-
-                    Toast.makeText(this, "New session started", Toast.LENGTH_SHORT).show();
-                })
-                .setNegativeButton("No", null)
-                .show();
     }
 
     @Override
