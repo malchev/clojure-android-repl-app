@@ -182,10 +182,19 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Show that we're processing in the code view
         currentCodeView.setText("Improving code with AI...\nThis may take a minute...\n\n" + initialCode);
 
+        // Show a progress dialog
+        ProgressDialog progressDialog = new ProgressDialog(this);
+        progressDialog.setMessage("Generating code...");
+        progressDialog.setCancelable(false);
+        progressDialog.show();
+
         // Get the LLM to generate improved code using the initial code
         iterationManager.generateInitialCode(description, initialCode)
                 .thenAccept(code -> {
                     runOnUiThread(() -> {
+                        // Dismiss progress dialog
+                        progressDialog.dismiss();
+
                         currentCodeView.setText(code);
 
                         // Update session with code
@@ -220,6 +229,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 .exceptionally(throwable -> {
                     Log.e(TAG, "Error generating code", throwable);
                     runOnUiThread(() -> {
+                        // Dismiss progress dialog
+                        progressDialog.dismiss();
+
                         Toast.makeText(this, "Error generating code: " + throwable.getMessage(),
                                 Toast.LENGTH_LONG).show();
                         generateButton.setEnabled(true); // Make sure button is re-enabled
@@ -681,10 +693,19 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             Toast.makeText(this, "Using existing code as a starting point", Toast.LENGTH_SHORT).show();
         }
 
+        // Show a progress dialog
+        ProgressDialog progressDialog = new ProgressDialog(this);
+        progressDialog.setMessage("Generating initial code...");
+        progressDialog.setCancelable(false);
+        progressDialog.show();
+
         // Get the LLM to generate the code first - using IterationManager now
         iterationManager.generateInitialCode(description, currentCode)
                 .thenAccept(code -> {
                     runOnUiThread(() -> {
+                        // Dismiss progress dialog
+                        progressDialog.dismiss();
+
                         currentCodeView.setText(code);
 
                         // Update session with code
@@ -717,6 +738,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 .exceptionally(throwable -> {
                     Log.e(TAG, "Error generating code", throwable);
                     runOnUiThread(() -> {
+                        // Dismiss progress dialog
+                        progressDialog.dismiss();
+
                         Toast.makeText(this, "Error generating code: " + throwable.getMessage(),
                                 Toast.LENGTH_LONG).show();
                         generateButton.setEnabled(true);
