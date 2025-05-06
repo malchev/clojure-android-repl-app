@@ -85,8 +85,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
     // Add a flag to track when the models are loaded
     private boolean modelsLoaded = false;
-    // Add a field to store the initial model for session restore
-    private String sessionRestoreModel = null;
 
     private void createNewSession() {
         // Create a new session
@@ -422,7 +420,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     llmTypeSpinner.setSelection(position);
                 }
 
-                sessionRestoreModel = currentSession.getLlmModel();
+                String sessionRestoreModel = currentSession.getLlmModel();
                 // Set the model if available
                 if (sessionRestoreModel != null) {
                     // Create the client directly with the saved model
@@ -1361,6 +1359,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 // Only recreate the iteration manager if models are loaded (avoids initial
                 // selection issues)
                 // AND if this is not the session model we already created a client for
+                String sessionRestoreModel = currentSession.getLlmModel();
                 if (modelsLoaded && (sessionRestoreModel == null || !selectedModel.equals(sessionRestoreModel))) {
                     Log.d(TAG, "Creating new LLM client for user-selected model: " + selectedModel);
 
