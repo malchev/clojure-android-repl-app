@@ -104,12 +104,12 @@ public class ClojureIterationManager {
                 }
 
                 // When the LLM response is ready, complete our future
-                llmFuture.thenAccept(code -> {
-                    Log.d(TAG, "Received initial code from LLM, length: " +
-                            (code != null ? code.length() : "null"));
+                llmFuture.thenAccept(response -> {
+                    Log.d(TAG, "Received initial response from LLM, length: " +
+                            (response != null ? response.length() : "null"));
 
                     // Extract clean code from markdown blocks if present
-                    String cleanCode = extractClojureCode(code);
+                    String cleanCode = extractClojureCode(response);
                     Log.d(TAG, "Extracted clean initial code. Length: " +
                             (cleanCode != null ? cleanCode.length() : "null"));
 
@@ -198,14 +198,14 @@ public class ClojureIterationManager {
                         feedback);
 
                 // When the LLM response is ready, complete our future
-                llmFuture.thenAccept(code -> {
-                    Log.d(TAG, "Received code response from LLM, length: " +
-                            (code != null ? code.length() : "null"));
+                llmFuture.thenAccept(response -> {
+                    Log.d(TAG, "Received response from LLM, length: " +
+                            (response != null ? response.length() : "null"));
                     Log.d(TAG, "LLM response first 100 chars: " +
-                            (code != null && code.length() > 100 ? code.substring(0, 100) : code));
+                            (response != null && response.length() > 100 ? response.substring(0, 100) : response));
 
                     // Extract clean code from markdown blocks if present
-                    String cleanCode = extractClojureCode(code);
+                    String cleanCode = extractClojureCode(response);
                     Log.d(TAG, "Extracted clean code. Length: " +
                             (cleanCode != null ? cleanCode.length() : "null"));
 

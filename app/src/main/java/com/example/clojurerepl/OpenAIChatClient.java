@@ -179,11 +179,7 @@ public class OpenAIChatClient extends LLMClient {
                     // Add assistant message to history
                     queueAssistantResponse(response);
 
-                    // Extract the Clojure code from the response
-                    String extractedCode = extractClojureCode(response);
-                    Log.d(TAG, "=== EXTRACTED CLOJURE CODE ===\n" + extractedCode);
-
-                    return extractedCode;
+                    return response;
                 } catch (Exception e) {
                     Log.e(TAG, "Error in chat session", e);
                     throw new RuntimeException("Failed to get response from OpenAI", e);

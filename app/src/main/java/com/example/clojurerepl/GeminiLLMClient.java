@@ -74,14 +74,11 @@ public class GeminiLLMClient extends LLMClient {
                     // Call the API with the full context
                     String response = callGeminiAPI(messageHistory);
 
-                    // Extract Clojure code from the response
-                    String code = extractClojureCode(response);
-
                     // Save the original response to history
                     queueAssistantResponse(response);
 
                     // Return the extracted code
-                    return code;
+                    return response;
                 } catch (Exception e) {
                     Log.e(TAG, "Error in chat session", e);
                     throw new RuntimeException("Failed to get response from Gemini", e);
@@ -137,9 +134,8 @@ public class GeminiLLMClient extends LLMClient {
         // Send all messages and get the response
         return chatSession.sendMessages()
                 .thenApply(response -> {
-                    String extractedCode = extractClojureCode(response);
-                    Log.d(TAG, "Extracted Clojure code from response, length: " + extractedCode.length());
-                    return extractedCode;
+                    Log.d(TAG, "Got response, length: " + response.length());
+                    return response;
                 });
     }
 
@@ -160,9 +156,8 @@ public class GeminiLLMClient extends LLMClient {
         // Send all messages and get the response
         return chatSession.sendMessages()
                 .thenApply(response -> {
-                    String extractedCode = extractClojureCode(response);
-                    Log.d(TAG, "Extracted Clojure code from response, length: " + extractedCode.length());
-                    return extractedCode;
+                    Log.d(TAG, "Got response, length: " + response.length());
+                    return response;
                 });
     }
 
@@ -198,9 +193,8 @@ public class GeminiLLMClient extends LLMClient {
         // Send all messages and get the response
         return session.sendMessages()
                 .thenApply(response -> {
-                    String extractedCode = extractClojureCode(response);
-                    Log.d(TAG, "Extracted Clojure code from response, length: " + extractedCode.length());
-                    return extractedCode;
+                    Log.d(TAG, "Got response response, length: " + response.length());
+                    return response;
                 });
     }
 
