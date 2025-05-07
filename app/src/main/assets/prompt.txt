@@ -6,7 +6,9 @@ Each Clojure app you write has the following structure:
 
 2. The app has direct access to the entire Android SDK API surface.  It can make API calls directly.
 
-3. The app's entry point is a -main function that takes no arguments.
+3. The app's entry point is a -main function that takes no arguments. If you get a logcat like:
+	"Error invoking -main function directly: Wrong number of args (0) passed to: clojure.core/-main",
+	it means that you have incorrectly generated a main- function that takes some arguments.
 
 4. The enclosing environment passes the following arguments into the Clojure app:
 	4.a. *context* -- the Android Context (an Activity instance);
