@@ -136,25 +136,23 @@ public class ClojureIterationManager {
         }
 
         // Check if the input contains markdown code block markers
-        if (input.contains("```")) {
+        int startMarkerPos = input.indexOf("```clojure");
+        if (startMarkerPos != -1) {
             try {
                 // Look for a code block
-                int startMarkerPos = input.indexOf("```");
-                if (startMarkerPos != -1) {
-                    // Find the end of the start marker line
-                    int lineEnd = input.indexOf('\n', startMarkerPos);
-                    if (lineEnd != -1) {
-                        // Skip past the entire marker line
-                        int codeStart = lineEnd + 1;
+                // Find the end of the start marker line
+                int lineEnd = input.indexOf('\n', startMarkerPos);
+                if (lineEnd != -1) {
+                    // Skip past the entire marker line
+                    int codeStart = lineEnd + 1;
 
-                        // Find the closing code block marker
-                        int endMarkerPos = input.indexOf("```", codeStart);
-                        if (endMarkerPos != -1) {
-                            // Extract just the code between the markers
-                            String extractedCode = input.substring(codeStart, endMarkerPos).trim();
-                            Log.d(TAG, "Successfully extracted code. Length: " + extractedCode.length());
-                            return extractedCode;
-                        }
+                    // Find the closing code block marker
+                    int endMarkerPos = input.indexOf("```", codeStart);
+                    if (endMarkerPos != -1) {
+                        // Extract just the code between the markers
+                        String extractedCode = input.substring(codeStart, endMarkerPos).trim();
+                        Log.d(TAG, "Successfully extracted code. Length: " + extractedCode.length());
+                        return extractedCode;
                     }
                 }
             } catch (Exception e) {
