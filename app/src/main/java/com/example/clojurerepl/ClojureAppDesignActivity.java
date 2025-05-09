@@ -949,17 +949,17 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                             feedbackInput.setText("");
 
                             // Update session with new code
-                            if (currentSession != null) {
-                                currentSession.setCurrentCode(cleanCode);
-                                currentSession.incrementIterationCount();
+                            assert currentSession != null;
 
-                                // Save chat history to session
-                                LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
-                                        .getOrCreateSession(currentDescription);
-                                currentSession.setChatHistory(chatSession.getMessages());
+                            currentSession.setCurrentCode(cleanCode);
+                            currentSession.incrementIterationCount();
 
-                                sessionManager.updateSession(currentSession);
-                            }
+                            // Save chat history to session
+                            LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
+                                    .getOrCreateSession(currentDescription);
+                            currentSession.setChatHistory(chatSession.getMessages());
+
+                            sessionManager.updateSession(currentSession);
 
                             // Auto-save the new iteration
                             saveCodeToFile();
@@ -1903,5 +1903,35 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 appDescriptionInput.setText(currentSession.getDescription());
             }
         }
+    }
+
+    /**
+     * Formats Clojure code with line numbers.
+     * Line numbers are right-aligned in a column and followed by a colon.
+     *
+     * @param code The Clojure code to format with line numbers
+     * @return The code with line numbers added
+     */
+    private String addLineNumbersToCode(String code) {
+        if (code == null || code.isEmpty()) {
+            return "";
+        }
+
+        // Split the code into lines
+        String[] lines = code.split("\n");
+
+        // Calculate column width based on the number of lines
+        int columnWidth = String.valueOf(lines.length).length() + 1;
+
+        // Format for right-aligned numbers with a colon
+        String formatString = "%" + columnWidth + "d: %s";
+
+        // Build the result
+        StringBuilder result = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            result.append(String.format(formatString, i + 1, lines[i])).append("\n");
+        }
+
+        return result.toString();
     }
 }
