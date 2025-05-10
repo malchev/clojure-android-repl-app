@@ -9,4 +9,8 @@
         android:id="@+id/action_save_code"
         android:title="Save Code to File"
         app:showAsAction="never" />
+    <item
+        android:id="@+id/action_toggle_line_numbers"
+        android:title="Toggle Line Numbers"
+        app:showAsAction="never" />
 </menu>

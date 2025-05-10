@@ -41,6 +41,7 @@ public class DesignSession {
     private String lastErrorFeedback;
     private boolean hasError;
     private List<List<String>> screenshotSets;
+    private String codeWithLineNumbers;
 
     public DesignSession() {
         this.id = UUID.randomUUID().toString();
@@ -154,6 +155,7 @@ public class DesignSession {
 
     /**
      * Gets all screenshot sets associated with this session.
+     *
      * @return The list of screenshot sets.
      */
     public List<List<String>> getScreenshotSets() {
@@ -162,6 +164,7 @@ public class DesignSession {
 
     /**
      * Adds a set of screenshots to the session.
+     *
      * @param screenshotSet A list of paths to screenshot files.
      */
     public void addScreenshotSet(List<String> screenshotSet) {
@@ -174,6 +177,7 @@ public class DesignSession {
 
     /**
      * Gets the latest screenshot set, or empty list if no sets exist.
+     *
      * @return The most recently added screenshot set.
      */
     public List<String> getLatestScreenshotSet() {
@@ -202,6 +206,33 @@ public class DesignSession {
     }
 
     /**
+     * Gets the code with line numbers formatted
+     *
+     * @return The code with line numbers
+     */
+    public String getCodeWithLineNumbers() {
+        return codeWithLineNumbers;
+    }
+
+    /**
+     * Updates the code with line numbers based on the current code
+     *
+     * @param formatter Function to format code with line numbers
+     */
+    public void updateCodeWithLineNumbers(CodeLineNumberFormatter formatter) {
+        if (currentCode != null && !currentCode.isEmpty()) {
+            this.codeWithLineNumbers = formatter.format(currentCode);
+        }
+    }
+
+    /**
+     * Interface for code line number formatting
+     */
+    public interface CodeLineNumberFormatter {
+        String format(String code);
+    }
+
+    /**
      * Converts this session to a JSONObject
      */
     public JSONObject toJson() throws JSONException {
@@ -211,6 +242,12 @@ public class DesignSession {
         json.put("createdAt", createdAt.getTime());
         json.put("updatedAt", updatedAt.getTime());
         json.put("currentCode", currentCode);
+
+        // Add code with line numbers to JSON
+        if (codeWithLineNumbers != null) {
+            json.put("codeWithLineNumbers", codeWithLineNumbers);
+        }
+
         json.put("iterationCount", iterationCount);
 
         // Only include LLM type and model if they're not null
@@ -274,6 +311,15 @@ public class DesignSession {
                 session.currentCode = json.getString("currentCode");
             } catch (JSONException e) {
                 Log.w(TAG, "Invalid currentCode in session: " + json.getString("currentCode"));
+            }
+        }
+
+        // Load code with line numbers
+        if (json.has("codeWithLineNumbers")) {
+            try {
+                session.codeWithLineNumbers = json.getString("codeWithLineNumbers");
+            } catch (JSONException e) {
+                Log.w(TAG, "Invalid codeWithLineNumbers in session");
             }
         }
 

@@ -86,6 +86,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     // Add a flag to track when the models are loaded
     private boolean modelsLoaded = false;
 
+    // Add field to track whether line numbers are showing
+    private boolean showingLineNumbers = true;
+
     private void createNewSession() {
         // Create a new session
         currentSession = new DesignSession();
@@ -199,6 +202,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                         currentSession.setCurrentCode(code);
                         currentSession.incrementIterationCount();
 
+                        // Generate and store code with line numbers
+                        updateCodeWithLineNumbers();
+
                         // Save chat history to session
                         LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
                                 .getOrCreateSession(description);
@@ -213,7 +219,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
                         // Change generate button text to "Improve App" for subsequent clicks
                         generateButton.setText(R.string.improve_app);
-                        generateButton.setEnabled(true); // Make sure button is re-enabled
 
                         // Only launch RenderActivity after we have the code
                         if (code != null && !code.isEmpty()) {
@@ -374,7 +379,19 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
             if (currentSession.getCurrentCode() != null) {
                 String currentCode = currentSession.getCurrentCode();
-                currentCodeView.setText(currentCode);
+
+                // If the session doesn't have code with line numbers yet, generate it
+                if (currentSession.getCodeWithLineNumbers() == null && currentCode != null && !currentCode.isEmpty()) {
+                    Log.d(TAG, "Generating line-numbered code for session");
+                    updateCodeWithLineNumbers();
+                }
+
+                // Display either normal code or code with line numbers based on current setting
+                if (showingLineNumbers && currentSession.getCodeWithLineNumbers() != null) {
+                    currentCodeView.setText(currentSession.getCodeWithLineNumbers());
+                } else {
+                    currentCodeView.setText(currentCode);
+                }
 
                 // Show feedback buttons
                 feedbackButtonsContainer.setVisibility(View.VISIBLE);
@@ -710,6 +727,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                         currentSession.setCurrentCode(code);
                         currentSession.incrementIterationCount();
 
+                        // Generate and store code with line numbers
+                        updateCodeWithLineNumbers();
+
                         // Save chat history to session
                         LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
                                 .getOrCreateSession(description);
@@ -872,6 +892,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                             currentSession.setCurrentCode(code);
                             currentSession.incrementIterationCount();
 
+                            // Generate and store code with line numbers
+                            updateCodeWithLineNumbers();
+
                             // Save chat history to session
                             LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
                                     .getOrCreateSession(currentSession.getDescription());
@@ -953,6 +976,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
                             currentSession.setCurrentCode(cleanCode);
                             currentSession.incrementIterationCount();
+
+                            // Generate and store code with line numbers
+                            updateCodeWithLineNumbers();
 
                             // Save chat history to session
                             LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
@@ -1479,6 +1505,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         menu.add(0, R.id.action_clear_api_key, 0, "Clear API Key")
                 .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
+        menu.add(0, R.id.action_toggle_line_numbers, 0, "Toggle Line Numbers")
+                .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         return super.onCreateOptionsMenu(menu);
     }
 
@@ -1497,6 +1525,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             return true;
         } else if (id == R.id.action_clear_history) {
             clearChatHistory();
+            return true;
+        } else if (id == R.id.action_toggle_line_numbers) {
+            toggleLineNumbersDisplay();
             return true;
         } else if (id == android.R.id.home) {
             onBackPressed();
@@ -1537,6 +1568,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             // Update session with current code
             if (currentSession != null) {
                 currentSession.setCurrentCode(currentCode);
+
+                // Ensure code with line numbers is updated too
+                updateCodeWithLineNumbers();
+
                 sessionManager.updateSession(currentSession);
             }
 
@@ -1905,6 +1940,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         }
     }
 
+    private void updateCodeWithLineNumbers() {
+        if (currentSession != null && currentSession.getCurrentCode() != null) {
+            // Use the line number formatter to update the session
+            currentSession.updateCodeWithLineNumbers(this::addLineNumbersToCode);
+            sessionManager.updateSession(currentSession);
+        }
+    }
+
     /**
      * Formats Clojure code with line numbers.
      * Line numbers are right-aligned in a column and followed by a colon.
@@ -1933,5 +1976,32 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         }
 
         return result.toString();
+    }
+
+    /**
+     * Toggles between showing code with or without line numbers
+     */
+    private void toggleLineNumbersDisplay() {
+        if (currentSession == null || currentSession.getCurrentCode() == null) {
+            Toast.makeText(this, "No code available", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        showingLineNumbers = !showingLineNumbers;
+
+        if (showingLineNumbers) {
+            // If code with line numbers doesn't exist yet, generate it
+            if (currentSession.getCodeWithLineNumbers() == null) {
+                updateCodeWithLineNumbers();
+            }
+
+            // Display code with line numbers
+            currentCodeView.setText(currentSession.getCodeWithLineNumbers());
+            Toast.makeText(this, "Showing code with line numbers", Toast.LENGTH_SHORT).show();
+        } else {
+            // Display regular code
+            currentCodeView.setText(currentSession.getCurrentCode());
+            Toast.makeText(this, "Showing code without line numbers", Toast.LENGTH_SHORT).show();
+        }
     }
 }
