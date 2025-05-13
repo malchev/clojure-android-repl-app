@@ -138,6 +138,7 @@ public class ClojureIterationManager {
         // Check if the input contains markdown code block markers
         int startMarkerPos = input.indexOf("```clojure");
         if (startMarkerPos != -1) {
+            Log.d(TAG, "Found starting marker.");
             try {
                 // Look for a code block
                 // Find the end of the start marker line
@@ -154,16 +155,21 @@ public class ClojureIterationManager {
                         Log.d(TAG, "Successfully extracted code. Length: " + extractedCode.length());
                         return extractedCode;
                     }
+                    Log.d(TAG, "Could not find closing marker.");
+                    throw new IllegalArgumentException("No closing code block marker found in response");
+                } else {
+                    Log.e(TAG, "Starting marker line does not end with newline.");
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Error extracting code", e);
+                throw new IllegalArgumentException("Failed to extract code from response", e);
             }
         }
 
-        // If we couldn't extract a code block or there are no markers, return the
-        // original input
-        Log.d(TAG, "No code block markers found, using original input");
-        return input;
+        // If we couldn't extract a code block or there are no markers, throw an
+        // exception
+        Log.d(TAG, "No code block markers found in response");
+        throw new IllegalArgumentException("Response did not contain properly formatted Clojure code block");
     }
 
     public CompletableFuture<String> generateNextIteration(String description, String feedback,
