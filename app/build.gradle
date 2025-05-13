@@ -54,12 +54,6 @@ android {
             resources.srcDirs += ['src/main/resources']
         }
     }
-
-    // Enable dx flags for runtime class generation
-    dexOptions {
-        additionalParameters = ['--minimal-main-dex']
-        javaMaxHeapSize "4g"
-    }
 }
 
 dependencies {
