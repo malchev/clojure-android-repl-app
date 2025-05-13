@@ -402,7 +402,7 @@ public class ClaudeLLMClient extends LLMClient {
             // Create Claude API compatible request
             JSONObject requestBody = new JSONObject();
             requestBody.put("model", currentModel);
-            requestBody.put("max_tokens", 2*8192);
+            requestBody.put("max_tokens", 64000); 
             requestBody.put("temperature", 0.7);
 
             // Convert message history to Claude message format
