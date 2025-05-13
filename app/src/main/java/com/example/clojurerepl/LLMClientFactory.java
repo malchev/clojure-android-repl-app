@@ -19,6 +19,7 @@ public class LLMClientFactory {
     public enum LLMType {
         GEMINI,
         OPENAI,
+        CLAUDE,
         STUB
     }
 
@@ -37,6 +38,12 @@ public class LLMClientFactory {
                     openaiClient.setModel(modelName);
                 }
                 return openaiClient;
+            case CLAUDE:
+                ClaudeLLMClient claudeClient = new ClaudeLLMClient(context);
+                if (modelName != null) {
+                    claudeClient.setModel(modelName);
+                }
+                return claudeClient;
             case STUB:
                 return new StubLLMClient(context);
             default:
@@ -55,6 +62,8 @@ public class LLMClientFactory {
                 return GeminiLLMClient.fetchAvailableModels(context);
             case OPENAI:
                 return OpenAIChatClient.fetchAvailableModels(context);
+            case CLAUDE:
+                return ClaudeLLMClient.fetchAvailableModels(context);
             case STUB:
                 return Arrays.asList("stub-model");
             default:

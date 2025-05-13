@@ -10,6 +10,7 @@ public class ApiKeyManager {
     private static final String PREFS_NAME = "ApiKeyPrefs";
     private static final String GEMINI_API_KEY = "gemini_api_key";
     private static final String OPENAI_API_KEY = "openai_api_key";
+    private static final String CLAUDE_API_KEY = "claude_api_key";
     private static ApiKeyManager instance;
     private final SharedPreferences prefs;
 
@@ -38,6 +39,9 @@ public class ApiKeyManager {
             case OPENAI:
                 editor.putString(OPENAI_API_KEY, apiKey);
                 break;
+            case CLAUDE:
+                editor.putString(CLAUDE_API_KEY, apiKey);
+                break;
             default:
                 Log.w(TAG, "Unknown API key type: " + type);
                 return;
@@ -56,6 +60,8 @@ public class ApiKeyManager {
                 return prefs.getString(GEMINI_API_KEY, null);
             case OPENAI:
                 return prefs.getString(OPENAI_API_KEY, null);
+            case CLAUDE:
+                return prefs.getString(CLAUDE_API_KEY, null);
             default:
                 Log.w(TAG, "Unknown API key type: " + type);
                 return null;
@@ -86,11 +92,17 @@ public class ApiKeyManager {
      */
     public void clearApiKey(LLMClientFactory.LLMType type) {
         Log.d(TAG, "Clearing API key for: " + type);
-        if (type == LLMClientFactory.LLMType.OPENAI) {
-            prefs.edit().remove(OPENAI_API_KEY).apply();
-        } else {
-            // Default to Gemini
-            prefs.edit().remove(GEMINI_API_KEY).apply();
+        switch (type) {
+            case OPENAI:
+                prefs.edit().remove(OPENAI_API_KEY).apply();
+                break;
+            case CLAUDE:
+                prefs.edit().remove(CLAUDE_API_KEY).apply();
+                break;
+            case GEMINI:
+            default:
+                prefs.edit().remove(GEMINI_API_KEY).apply();
+                break;
         }
     }
 }

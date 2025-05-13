@@ -298,6 +298,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     } else {
                         updateLlmSpinner(LLMClientFactory.LLMType.OPENAI);
                     }
+                } else if (selectedType == LLMClientFactory.LLMType.CLAUDE) {
+                    if (!apiKeyManager.hasApiKey(LLMClientFactory.LLMType.CLAUDE)) {
+                        showApiKeyDialog(LLMClientFactory.LLMType.CLAUDE);
+                    } else {
+                        updateLlmSpinner(LLMClientFactory.LLMType.CLAUDE);
+                    }
                 } else {
                     llmSpinner.setVisibility(View.GONE);
                     iterationManager = new ClojureIterationManager(ClojureAppDesignActivity.this,
@@ -1416,9 +1422,17 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
     private void showApiKeyDialog(LLMClientFactory.LLMType type) {
         Log.d(TAG, "Showing API key dialog for type: " + type);
-        String serviceUrl = type == LLMClientFactory.LLMType.GEMINI
-                ? "https://makersuite.google.com/app/apikey"
-                : "https://platform.openai.com/api-keys";
+        String serviceUrl;
+
+        if (type == LLMClientFactory.LLMType.GEMINI) {
+            serviceUrl = "https://makersuite.google.com/app/apikey";
+        } else if (type == LLMClientFactory.LLMType.OPENAI) {
+            serviceUrl = "https://platform.openai.com/api-keys";
+        } else if (type == LLMClientFactory.LLMType.CLAUDE) {
+            serviceUrl = "https://console.anthropic.com/keys";
+        } else {
+            serviceUrl = "";
+        }
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Enter " + type.name() + " API Key");
