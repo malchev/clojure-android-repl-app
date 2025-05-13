@@ -68,5 +68,6 @@ Each Clojure app you write has the following structure:
 ```clojure
 	... code ...
 ```
+	NEVER EVER INCLUDE OTHER CODE enclused like this, ONLY the final solution.
 
-19. Show your reasoning steps.
+19. Show your reasoning steps AND final result in a single response.
