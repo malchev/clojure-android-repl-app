@@ -25,8 +25,10 @@ public class DesignSessionsActivity extends AppCompatActivity implements DesignS
 
     private RecyclerView recyclerView;
     private Button newSessionButton;
+    private ProgressBar progressBar;
     private DesignSessionAdapter adapter;
     private SessionManager sessionManager;
+    private boolean isLoading = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -36,6 +38,7 @@ public class DesignSessionsActivity extends AppCompatActivity implements DesignS
         // Initialize views
         recyclerView = findViewById(R.id.sessions_recycler_view);
         newSessionButton = findViewById(R.id.new_session_button);
+        progressBar = findViewById(R.id.progress_bar);
 
         // Set up RecyclerView
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
@@ -43,8 +46,8 @@ public class DesignSessionsActivity extends AppCompatActivity implements DesignS
         // Get session manager
         sessionManager = SessionManager.getInstance(this);
 
-        // Initialize adapter with empty list (will be populated in onResume)
-        adapter = new DesignSessionAdapter(this, new ArrayList<>(), this);
+        // Initialize adapter
+        adapter = new DesignSessionAdapter(this, this);
         recyclerView.setAdapter(adapter);
 
         // Set up new session button
@@ -54,26 +57,40 @@ public class DesignSessionsActivity extends AppCompatActivity implements DesignS
     @Override
     protected void onResume() {
         super.onResume();
-        loadSessions();
+        if (!isLoading) {
+            loadSessions();
+        }
     }
 
     private void loadSessions() {
-        // Show progress indicator if needed
+        if (isLoading) {
+            return;
+        }
+
+        isLoading = true;
+        progressBar.setVisibility(View.VISIBLE);
+        recyclerView.setVisibility(View.GONE);
 
         // Load sessions asynchronously
         sessionManager.loadSessionsAsync()
                 .thenAccept(sessions -> {
                     runOnUiThread(() -> {
-                        adapter.updateSessions(sessions);
+                        adapter.submitList(sessions);
                         if (sessions.isEmpty()) {
                             Toast.makeText(this, "No saved sessions found", Toast.LENGTH_SHORT).show();
                         }
+                        progressBar.setVisibility(View.GONE);
+                        recyclerView.setVisibility(View.VISIBLE);
+                        isLoading = false;
                     });
                 })
                 .exceptionally(e -> {
                     Log.e(TAG, "Error loading sessions", e);
                     runOnUiThread(() -> {
                         Toast.makeText(this, "Error loading sessions", Toast.LENGTH_SHORT).show();
+                        progressBar.setVisibility(View.GONE);
+                        recyclerView.setVisibility(View.VISIBLE);
+                        isLoading = false;
                     });
                     return null;
                 });

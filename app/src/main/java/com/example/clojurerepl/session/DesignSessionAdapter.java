@@ -8,6 +8,8 @@ import android.widget.Button;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.recyclerview.widget.DiffUtil;
+import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.clojurerepl.R;
@@ -16,9 +18,8 @@ import java.text.SimpleDateFormat;
 import java.util.List;
 import java.util.Locale;
 
-public class DesignSessionAdapter extends RecyclerView.Adapter<DesignSessionAdapter.SessionViewHolder> {
+public class DesignSessionAdapter extends ListAdapter<DesignSession, DesignSessionAdapter.SessionViewHolder> {
 
-    private List<DesignSession> sessions;
     private Context context;
     private SessionClickListener listener;
     private SimpleDateFormat dateFormat = new SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault());
@@ -29,9 +30,23 @@ public class DesignSessionAdapter extends RecyclerView.Adapter<DesignSessionAdap
         void onDeleteSessionClicked(DesignSession session);
     }
 
-    public DesignSessionAdapter(Context context, List<DesignSession> sessions, SessionClickListener listener) {
+    public DesignSessionAdapter(Context context, SessionClickListener listener) {
+        super(new DiffUtil.ItemCallback<DesignSession>() {
+            @Override
+            public boolean areItemsTheSame(@NonNull DesignSession oldItem, @NonNull DesignSession newItem) {
+                return oldItem.getId().equals(newItem.getId());
+            }
+
+            @Override
+            public boolean areContentsTheSame(@NonNull DesignSession oldItem, @NonNull DesignSession newItem) {
+                return oldItem.getDescription().equals(newItem.getDescription()) &&
+                        oldItem.getCreatedAt().equals(newItem.getCreatedAt()) &&
+                        oldItem.getLlmType() == newItem.getLlmType() &&
+                        oldItem.getLlmModel().equals(newItem.getLlmModel()) &&
+                        oldItem.getIterationCount() == newItem.getIterationCount();
+            }
+        });
         this.context = context;
-        this.sessions = sessions;
         this.listener = listener;
     }
 
@@ -44,7 +59,7 @@ public class DesignSessionAdapter extends RecyclerView.Adapter<DesignSessionAdap
 
     @Override
     public void onBindViewHolder(@NonNull SessionViewHolder holder, int position) {
-        DesignSession session = sessions.get(position);
+        DesignSession session = getItem(position);
 
         holder.descriptionTextView.setText(session.getDescription());
         holder.dateTextView.setText("Created: " + dateFormat.format(session.getCreatedAt()));
@@ -62,16 +77,6 @@ public class DesignSessionAdapter extends RecyclerView.Adapter<DesignSessionAdap
                 listener.onDeleteSessionClicked(session);
             }
         });
-    }
-
-    @Override
-    public int getItemCount() {
-        return sessions != null ? sessions.size() : 0;
-    }
-
-    public void updateSessions(List<DesignSession> newSessions) {
-        this.sessions = newSessions;
-        notifyDataSetChanged();
     }
 
     static class SessionViewHolder extends RecyclerView.ViewHolder {
