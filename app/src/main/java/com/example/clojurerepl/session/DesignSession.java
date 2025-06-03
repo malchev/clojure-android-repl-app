@@ -101,6 +101,7 @@ public class DesignSession {
     public void setCurrentCode(String currentCode) {
         this.currentCode = currentCode;
         this.updatedAt = new Date();
+		updateCodeWithLineNumbers(this::addLineNumbersToCode);
     }
 
     public int getIterationCount() {
@@ -215,11 +216,41 @@ public class DesignSession {
     }
 
     /**
+     * Formats Clojure code with line numbers.
+     * Line numbers are right-aligned in a column and followed by a colon.
+     *
+     * @param code The Clojure code to format with line numbers
+     * @return The code with line numbers added
+     */
+    private String addLineNumbersToCode(String code) {
+        if (code == null || code.isEmpty()) {
+            return "";
+        }
+
+        // Split the code into lines
+        String[] lines = code.split("\n");
+
+        // Calculate column width based on the number of lines
+        int columnWidth = String.valueOf(lines.length).length() + 1;
+
+        // Format for right-aligned numbers with a colon
+        String formatString = "%" + columnWidth + "d: %s";
+
+        // Build the result
+        StringBuilder result = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            result.append(String.format(formatString, i + 1, lines[i])).append("\n");
+        }
+
+        return result.toString();
+    }
+
+    /**
      * Updates the code with line numbers based on the current code
      *
      * @param formatter Function to format code with line numbers
      */
-    public void updateCodeWithLineNumbers(CodeLineNumberFormatter formatter) {
+    private void updateCodeWithLineNumbers(CodeLineNumberFormatter formatter) {
         if (currentCode != null && !currentCode.isEmpty()) {
             this.codeWithLineNumbers = formatter.format(currentCode);
         }
