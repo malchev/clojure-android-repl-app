@@ -172,72 +172,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     }
 
     /**
-     * Starts the design process with an initial code as the starting point
-     */
-    private void startDesignWithInitialCode(String description, String initialCode) {
-        Log.d(TAG, "\n" +
-                "╔═══════════════════════════════════════════╗\n" +
-                "║       IMPROVING EXISTING CODE WITH AI     ║\n" +
-                "╚═══════════════════════════════════════════╝");
-
-        // Show a progress dialog
-        ProgressDialog progressDialog = new ProgressDialog(this);
-        progressDialog.setMessage("Generating code...");
-        progressDialog.setCancelable(false);
-        progressDialog.show();
-
-        // Get the LLM to generate improved code using the initial code
-        iterationManager.generateInitialCode(description, initialCode)
-                .thenAccept(code -> {
-                    runOnUiThread(() -> {
-                        // Dismiss progress dialog
-                        progressDialog.dismiss();
-
-                        // Update session with code
-                        currentSession.setCurrentCode(code);
-                        currentSession.incrementIterationCount();
-
-                        displayCurrentCode();
-
-                        // Save chat history to session
-                        LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
-                                .getOrCreateSession(description);
-                        currentSession.setChatHistory(chatSession.getMessages());
-
-                        sessionManager.updateSession(currentSession);
-
-                        // Show the feedback buttons
-                        feedbackButtonsContainer.setVisibility(View.VISIBLE);
-                        thumbsUpButton.setVisibility(View.VISIBLE);
-                        runButton.setVisibility(View.VISIBLE);
-
-                        // Change generate button text to "Improve App" for subsequent clicks
-                        generateButton.setText(R.string.improve_app);
-
-                        // Only launch RenderActivity after we have the code
-                        if (code != null && !code.isEmpty()) {
-                            runCurrentCode();
-                        }
-
-                        // Show completion message
-                        Toast.makeText(this, "Code improved successfully! Running...", Toast.LENGTH_SHORT).show();
-                    });
-                })
-                .exceptionally(throwable -> {
-                    Log.e(TAG, "Error generating code", throwable);
-                    runOnUiThread(() -> {
-                        // Dismiss progress dialog
-                        progressDialog.dismiss();
-
-                        Toast.makeText(this, "Error generating code: " + throwable.getMessage(),
-                                Toast.LENGTH_LONG).show();
-                        generateButton.setEnabled(true); // Make sure button is re-enabled
-                    });
-                    return null;
-                });
-    }
-
-    /**
      * Initialize all UI views
      */
     private void initializeViews() {
@@ -339,7 +273,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         runButton.setOnClickListener(v -> runCurrentCode());
 
         // Legacy button listeners
-        submitFeedbackButton.setOnClickListener(v -> submitFeedback());
+        submitFeedbackButton.setOnClickListener(v -> {
+            String feedback = feedbackInput.getText().toString();
+            if (feedback.isEmpty()) {
+                feedbackInput.setError("Please enter feedback");
+                return;
+            }
+            submitFeedbackWithText(feedback);
+        });
         confirmSuccessButton.setOnClickListener(v -> acceptApp());
 
         // Hide feedback buttons initially - they should only be visible after
@@ -574,57 +515,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
             // Update session with the possibly edited description
             currentSession.setDescription(description);
-
-            // Get the current LLM type and model
-            LLMClientFactory.LLMType currentType = (LLMClientFactory.LLMType) llmTypeSpinner.getSelectedItem();
-            String selectedModel = (String) llmSpinner.getSelectedItem();
-
-            // Check if a model has been selected
-            if (selectedModel == null) {
-                Toast.makeText(this, "Please select a model before generating code", Toast.LENGTH_SHORT).show();
-                return;
-            }
-
-            // Check if the selected model is the prompt item
-            if (selectedModel.equals("-- Select a model --")) {
-                Toast.makeText(this, "Please select a specific model from the dropdown", Toast.LENGTH_SHORT).show();
-                return;
-            }
-
-            // Now that user has selected a valid model, set it in the session
-            currentSession.setLlmType(currentType);
-            currentSession.setLlmModel(selectedModel);
-
-            // Create LLM client and iteration manager
-            LLMClient llmClient = LLMClientFactory.createClient(this, currentType, selectedModel);
-            if (iterationManager != null) {
-                iterationManager.shutdown();
-                iterationManager = null;
-            }
-            iterationManager = new ClojureIterationManager(this, llmClient, currentSession.getId());
-
-            // Now that we have valid LLM info, save the session
+            // Save the session
             sessionManager.addSession(currentSession);
-
-            // Disable button during generation
-            generateButton.setEnabled(false);
-
-            // Mark that generation has started - disable model selection
-            Log.d(TAG, "handleGenerateButtonClick: Generation started - disabling model selection");
-            llmTypeSpinner.setEnabled(false);
-            llmSpinner.setEnabled(false);
-
-            // Show toast message to inform the user
-            Toast.makeText(this,
-                    "Model selection is locked. Start a new session to change models.",
-                    Toast.LENGTH_LONG).show();
-
-            // Start design with the initial code
-            startDesignWithInitialCode(description, currentCode);
-            return;
         }
 
-        // Otherwise, start a new design (first generation with no initial code)
+        // Start a new design (potentially with initial code).
         startNewDesign();
     }
 
@@ -677,18 +572,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 "Model selection is locked. Start a new session to change models.",
                 Toast.LENGTH_LONG).show();
 
-        // Update or create session
-        if (currentSession == null) {
-            currentSession = new DesignSession();
-        }
-
-        // Update session data
-        currentSession.setDescription(description);
-        currentSession.setLlmType(currentType);
-        currentSession.setLlmModel(selectedModel);
-
-        // Save session
-        sessionManager.addSession(currentSession);
+        assert currentSession != null;
 
         // Check if we have existing code to use as a starting point
         String currentCode = currentSession.getCurrentCode();
@@ -878,87 +762,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 });
     }
 
-    // Legacy method, now calls the new implementation
-    private void submitFeedback() {
-        String currentCode = currentSession.getCurrentCode();
-        String currentDescription = currentSession.getDescription();
-        if (iterationManager == null || currentDescription == null || currentCode == null) {
-            Toast.makeText(this, "No active design session", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        String feedback = feedbackInput.getText().toString();
-        if (feedback.isEmpty()) {
-            feedbackInput.setError("Please enter feedback");
-            return;
-        }
-
-        // Disable generate button during processing
-        generateButton.setEnabled(false);
-
-        Toast.makeText(this, "Generating next iteration...", Toast.LENGTH_SHORT).show();
-
-        // Create result from current state
-        ClojureIterationManager.IterationResult result = new ClojureIterationManager.IterationResult(
-                currentCode,
-                processLogcat,
-                currentScreenshots.isEmpty() ? null : currentScreenshots.get(0),
-                true,
-                feedback);
-
-        // Generate next iteration using the iteration manager's method
-        iterationManager.generateNextIteration(currentDescription, feedback, result)
-                .thenAccept(cleanCode -> {
-                    Log.d(TAG, "Generated next iteration code: "
-                            + (cleanCode != null ? "length=" + cleanCode.length() : "null"));
-
-                    runOnUiThread(() -> {
-                        // Re-enable generate button
-                        generateButton.setEnabled(true);
-
-                        if (cleanCode != null && !cleanCode.isEmpty()) {
-                            // Update UI with new code
-                            feedbackInput.setText("");
-
-                            // Update session with new code
-                            assert currentSession != null;
-
-                            currentSession.setCurrentCode(cleanCode);
-                            currentSession.incrementIterationCount();
-
-                            displayCurrentCode();
-
-                            // Save chat history to session
-                            LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
-                                    .getOrCreateSession(currentDescription);
-                            currentSession.setChatHistory(chatSession.getMessages());
-
-                            sessionManager.updateSession(currentSession);
-
-                            // Auto-save the new iteration
-                            saveCodeToFile();
-
-                            // Run the new code
-                            runCurrentCode();
-                        } else {
-                            Toast.makeText(ClojureAppDesignActivity.this,
-                                    "Failed to generate next iteration", Toast.LENGTH_SHORT).show();
-                        }
-                    });
-                })
-                .exceptionally(e -> {
-                    Log.e(TAG, "Error generating next iteration", e);
-                    runOnUiThread(() -> {
-                        // Re-enable generate button on error
-                        generateButton.setEnabled(true);
-
-                        Toast.makeText(ClojureAppDesignActivity.this,
-                                "Error generating next iteration: " + e.getMessage(), Toast.LENGTH_LONG).show();
-                    });
-                    return null;
-                });
-    }
-
     private void acceptApp() {
         // Re-enable buttons after accepting
         thumbsUpButton.setEnabled(true);
@@ -1008,8 +811,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         Toast.makeText(this, "Code accepted and sent to REPL", Toast.LENGTH_LONG).show();
 
-        // Optional: Clear state or continue
-        // finish(); // Close this activity
+        finish(); // Close this activity
     }
 
     @Override
@@ -1893,8 +1695,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     }
 
     /**
-	 * Displays the code in the current DesignSession with line numbers
-	 * depending on the toggle.
+     * Displays the code in the current DesignSession with line numbers
+     * depending on the toggle.
      */
     private void displayCurrentCode() {
         if (currentSession == null || currentSession.getCurrentCode() == null) {
@@ -1918,6 +1720,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
      */
     private void toggleLineNumbersDisplay() {
         showingLineNumbers = !showingLineNumbers;
-		displayCurrentCode();
+        displayCurrentCode();
     }
 }
