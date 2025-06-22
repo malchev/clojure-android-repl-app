@@ -45,6 +45,29 @@ public class ClojureIterationManager {
 
     private final List<IterationResult> iterationHistory = new ArrayList<>();
 
+    /**
+     * Result class for code extraction operations
+     */
+    public static class CodeExtractionResult {
+        public final String code;
+        public final boolean success;
+        public final String errorMessage;
+
+        private CodeExtractionResult(String code, boolean success, String errorMessage) {
+            this.code = code;
+            this.success = success;
+            this.errorMessage = errorMessage;
+        }
+
+        public static CodeExtractionResult success(String code) {
+            return new CodeExtractionResult(code, true, null);
+        }
+
+        public static CodeExtractionResult failure(String errorMessage) {
+            return new CodeExtractionResult(null, false, errorMessage);
+        }
+    }
+
     public ClojureIterationManager(Context context, LLMClient llmClient, String sessionId) {
         this.context = context.getApplicationContext();
         this.llmClient = llmClient;
@@ -106,7 +129,13 @@ public class ClojureIterationManager {
                             (response != null ? response.length() : "null"));
 
                     // Extract clean code from markdown blocks if present
-                    String cleanCode = extractClojureCode(response);
+                    CodeExtractionResult extractionResult = extractClojureCode(response);
+                    if (!extractionResult.success) {
+                        generationFuture
+                                .completeExceptionally(new IllegalArgumentException(extractionResult.errorMessage));
+                        return;
+                    }
+                    String cleanCode = extractionResult.code;
                     Log.d(TAG, "Extracted clean initial code. Length: " +
                             (cleanCode != null ? cleanCode.length() : "null"));
 
@@ -128,11 +157,15 @@ public class ClojureIterationManager {
      * Extracts clean Clojure code from text that may contain markdown code block
      * markers
      * Helper method to ensure consistent code extraction across the app
+     * 
+     * @param input The input text that may contain markdown code blocks
+     * @return A CodeExtractionResult containing the extracted code or error
+     *         information
      */
-    public String extractClojureCode(String input) {
+    public CodeExtractionResult extractClojureCode(String input) {
         if (input == null || input.isEmpty()) {
             Log.d(TAG, "Input is null or empty, returning empty string");
-            return "";
+            return CodeExtractionResult.success("");
         }
 
         // Check if the input contains markdown code block markers
@@ -153,23 +186,23 @@ public class ClojureIterationManager {
                         // Extract just the code between the markers
                         String extractedCode = input.substring(codeStart, endMarkerPos).trim();
                         Log.d(TAG, "Successfully extracted code. Length: " + extractedCode.length());
-                        return extractedCode;
+                        return CodeExtractionResult.success(extractedCode);
                     }
                     Log.d(TAG, "Could not find closing marker.");
-                    throw new IllegalArgumentException("No closing code block marker found in response");
+                    return CodeExtractionResult.failure("No closing code block marker found in response");
                 } else {
                     Log.e(TAG, "Starting marker line does not end with newline.");
+                    return CodeExtractionResult.failure("Starting marker line does not end with newline");
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Error extracting code", e);
-                throw new IllegalArgumentException("Failed to extract code from response", e);
+                return CodeExtractionResult.failure("Failed to extract code from response: " + e.getMessage());
             }
         }
 
-        // If we couldn't extract a code block or there are no markers, throw an
-        // exception
+        // If we couldn't extract a code block or there are no markers, return error
         Log.d(TAG, "No code block markers found in response");
-        throw new IllegalArgumentException("Response did not contain properly formatted Clojure code block");
+        return CodeExtractionResult.failure("Response did not contain properly formatted Clojure code block");
     }
 
     public CompletableFuture<String> generateNextIteration(String description, String feedback,
@@ -206,7 +239,13 @@ public class ClojureIterationManager {
                             (response != null && response.length() > 100 ? response.substring(0, 100) : response));
 
                     // Extract clean code from markdown blocks if present
-                    String cleanCode = extractClojureCode(response);
+                    CodeExtractionResult extractionResult = extractClojureCode(response);
+                    if (!extractionResult.success) {
+                        generationFuture
+                                .completeExceptionally(new IllegalArgumentException(extractionResult.errorMessage));
+                        return;
+                    }
+                    String cleanCode = extractionResult.code;
                     Log.d(TAG, "Extracted clean code. Length: " +
                             (cleanCode != null ? cleanCode.length() : "null"));
 
