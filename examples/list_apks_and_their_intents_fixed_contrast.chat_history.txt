@@ -1,0 +1,1593 @@
+===============================================================
+CHAT HISTORY FOR SESSION: 7ee03e74-f540-47ed-b08e-1a54abc49d87
+Created: 2025-06-23 00:11:02
+Model: CLAUDE (claude-sonnet-4-20250514)
+===============================================================
+
+🤖 SYSTEM:
+    You are an expert Clojure programmer with extensive experience in Android development.
+    
+    Each Clojure app you write has the following structure:
+    
+    1. The app is in a single file.
+    
+    2. The app has direct access to the entire Android SDK API surface.  It can make API calls directly.
+    
+    3. The app's entry point is a -main function that takes no arguments. If you get a logcat like:
+    	"Error invoking -main function directly: Wrong number of args (0) passed to: clojure.core/-main",
+    	it means that you have incorrectly generated a main- function that takes some arguments.
+    
+    4. The enclosing environment passes the following arguments into the Clojure app:
+    	4.a. *context* -- the Android Context (an Activity instance);
+    	4.b. *content-layout* -- the Layout;
+    	4.c. *cache-dir* -- a directory for persistent cache.
+    
+    5. The app uses Logcat with a tag of "ClojureApp".  The tag is defined at the top of the file and uses in any logcat statements.
+    
+    7. Be especially careful to balance the parentheses and brackets in Clojure.
+    	An error on logcat containing "clojure.lang.LispReader$ReaderException:
+    	java.lang.RuntimeException: EOF while reading, starting at line" usually
+    	indicates mismatched parentheses.
+    
+    8. Always fully qualify LinearLayout.LayoutParams, like so: android.widget.LinearLayout$LayoutParams.
+    
+    9. Make sure to import everything you use.
+    
+    10. In let statements, make sure to not use a label before its definition.
+    
+    11. The first line should be a brief one-line Clojure comment describing the purpose of the app
+    
+    12. DO NOT try to create or switch to any namespace at all.
+    	Just use the "user" namespace that's been established
+    	Import what we need directly without namespace manipulation
+    
+    13. Follow Java-to-Clojure naming conventions:
+    	13.a. Inner classes are accessed with $ instead of . (e.g., Lifecycle$Event not Lifecycle.Event)
+    	13.b. Static fields are accessed with / (e.g., View/VISIBLE)
+    	13.c. For interfaces without concrete implementations, use proxy instead of reify
+    	13.d. For event listeners and callbacks, consider using separate handler functions
+    
+    14. The code will run within a single Android Activity. Implement the Android application lifecycle callbacks using the AndroidX LifecycleObserver:
+    	- Import androidx.lifecycle.LifecycleEventObserver
+    	- Use (proxy [LifecycleEventObserver] [] (onStateChanged [source event] ...))
+    	- Get lifecycle with (.. *context* (getLifecycle))
+    	- Register with (.addObserver lifecycle observer)
+    	- Handle events by examining event.name ("ON_CREATE", "ON_START", etc.)
+    	- Prefer using LifecycleEventObserver interface over annotation-based approaches
+    	- Use proxy for implementing interfaces with concrete methods (like LifecycleEventObserver)
+    	- Be aware that Java annotations (@OnLifecycleEvent) don't translate directly to Clojure
+    	- Remember to include all necessary inner classes in imports (e.g., Lifecycle$Event, Lifecycle$State)
+    
+    15. Lifecycle debugging tips:
+        18.a. Add specific debugging for lifecycle registration issues
+        18.b. Log the current lifecycle state before attempting to observe changes
+        18.c. Check logcat for specific exception messages related to interface implementation
+        18.d. Wrap lifecycle registration in try/catch to prevent app crashes
+    
+    16. Pay attention to contrast.  Use black text on bright backgrond.
+    
+    17. Add debug logging to help troubleshoot issues:
+    	16.a. Create named handler functions instead of anonymous functions for callbacks.
+    	16.b. Log the entry to each lifecycle callback with the parameters received.
+    	16.c. Include a utility function for debug logging.
+    
+    18. VERY IMPORTANT: When providing the final code, enclose it with as follows:
+    ```clojure
+    	... code ...
+    ```
+    	EXTREMELY IMPORTANT: NEVER INCLUDE OTHER CODE snippets enclosed with ```clojure and ```, ONLY the final answer.
+    
+    19. Show your reasoning steps AND final result in a single response.
+    
+    
+    Always respond with Clojure code in a markdown code block.
+
+---------------------------------------------------------------
+
+👤 USER:
+    Implement the following app:
+    Make all the text black on white, and otherwise do not modify the code.
+    
+    Use the following code as a starting point. Improve and expand upon it to meet all requirements:
+    ```clojure
+    ;; App to enumerate installed applications and show their intents with launch capability
+    
+    (def TAG "ClojureApp")
+    
+    (import '(android.widget ListView ArrayAdapter LinearLayout TextView Button ScrollView)
+            '(android.widget LinearLayout$LayoutParams)
+            '(android.content.pm PackageManager ApplicationInfo ResolveInfo)
+            '(android.content Intent)
+            '(android.util Log)
+            '(android.graphics Color)
+            '(android.view View$OnClickListener)
+            '(androidx.lifecycle LifecycleEventObserver Lifecycle$Event)
+            '(java.util ArrayList Collections Comparator))
+    
+    (def current-view (atom :list))
+    (def selected-app (atom nil))
+    
+    ; Forward declarations for functions with circular dependencies
+    (declare setup-ui)
+    
+    (defn debug-log [msg]
+      (Log/d TAG (str msg)))
+    
+    (defn get-installed-apps []
+      (try
+        (debug-log "Getting installed applications...")
+        (let [pm (.getPackageManager *context*)
+              apps (.getInstalledApplications pm PackageManager/GET_META_DATA)
+              app-info (ArrayList.)]
+          (doseq [app apps]
+            (try
+              (let [label (.getApplicationLabel pm app)]
+                (.add app-info {:label (str label) :package-name (.-packageName app)}))
+              (catch Exception e
+                (debug-log (str "Error getting label for app: " (.getMessage e))))))
+          
+          (Collections/sort app-info (proxy [Comparator] []
+                                       (compare [a b]
+                                         (.compareToIgnoreCase (:label a) (:label b)))))
+          
+          (debug-log (str "Found " (.size app-info) " applications"))
+          app-info)
+        (catch Exception e
+          (debug-log (str "Error getting installed apps: " (.getMessage e)))
+          (ArrayList.))))
+    
+    (defn get-app-intents [package-name]
+      (try
+        (debug-log (str "Getting intents for package: " package-name))
+        (let [pm (.getPackageManager *context*)
+              intents (ArrayList.)]
+          
+          ; Add main launcher intent
+          (.add intents "ACTION_MAIN (Launcher)")
+          
+          ; Try to get other common intents
+          (try
+            (let [package-info (.getPackageInfo pm package-name PackageManager/GET_ACTIVITIES)]
+              (when (.-activities package-info)
+                (doseq [activity (.-activities package-info)]
+                  (when (.-name activity)
+                    (.add intents (str "Activity: " (.-name activity)))))))
+            (catch Exception e
+              (debug-log (str "Error getting activities: " (.getMessage e)))))
+          
+          ; Get intent filters by querying common actions
+          (let [common-actions [Intent/ACTION_VIEW Intent/ACTION_SEND Intent/ACTION_EDIT
+                               Intent/ACTION_PICK Intent/ACTION_GET_CONTENT]]
+            (doseq [action common-actions]
+              (try
+                (let [intent (Intent. action)
+                      resolved (.queryIntentActivities pm intent 0)]
+                  (doseq [resolve-info resolved]
+                    (when (= package-name (.. resolve-info -activityInfo -packageName))
+                      (.add intents (str "Handles: " action)))))
+                (catch Exception e
+                  (debug-log (str "Error checking action " action ": " (.getMessage e)))))))
+          
+          (debug-log (str "Found " (.size intents) " intents for " package-name))
+          intents)
+        (catch Exception e
+          (debug-log (str "Error getting intents: " (.getMessage e)))
+          (let [error-list (ArrayList.)]
+            (.add error-list "Error loading intents")
+            error-list))))
+    
+    (defn launch-app [package-name]
+      (try
+        (debug-log (str "Launching app: " package-name))
+        (let [pm (.getPackageManager *context*)
+              launch-intent (.getLaunchIntentForPackage pm package-name)]
+          (if launch-intent
+            (do
+              (.startActivity *context* launch-intent)
+              (debug-log (str "Successfully launched " package-name)))
+            (debug-log (str "No launch intent found for " package-name))))
+        (catch Exception e
+          (debug-log (str "Error launching app: " (.getMessage e))))))
+    
+    (defn back-button-handler []
+      (debug-log "Back button pressed")
+      (reset! current-view :list)
+      (setup-ui))
+    
+    (defn launch-button-handler []
+      (debug-log "Launch button pressed")
+      (when @selected-app
+        (launch-app (:package-name @selected-app))))
+    
+    (defn create-app-list []
+      (try
+        (debug-log "Creating app list view...")
+        (let [apps (get-installed-apps)
+              list-view (ListView. *context*)
+              app-labels (ArrayList.)]
+          
+          (doseq [app apps]
+            (.add app-labels (:label app)))
+          
+          (let [adapter (ArrayAdapter. *context* 
+                                      android.R$layout/simple_list_item_1 
+                                      app-labels)]
+            (.setAdapter list-view adapter)
+            
+            (.setOnItemClickListener list-view
+              (proxy [android.widget.AdapterView$OnItemClickListener] []
+                (onItemClick [parent view position id]
+                  (try
+                    (debug-log (str "App selected at position: " position))
+                    (let [selected (.get apps position)]
+                      (reset! selected-app selected)
+                      (reset! current-view :detail)
+                      (setup-ui))
+                    (catch Exception e
+                      (debug-log (str "Error handling item click: " (.getMessage e))))))))
+            
+            list-view))
+        (catch Exception e
+          (debug-log (str "Error creating app list: " (.getMessage e)))
+          (let [error-text (TextView. *context*)]
+            (.setText error-text "Error loading apps")
+            error-text))))
+    
+    (defn create-app-detail []
+      (try
+        (debug-log "Creating app detail view...")
+        (let [app @selected-app
+              main-layout (LinearLayout. *context*)
+              scroll-view (ScrollView. *context*)
+              content-layout (LinearLayout. *context*)
+              title (TextView. *context*)
+              intents-title (TextView. *context*)
+              intents-list (get-app-intents (:package-name app))
+              back-button (Button. *context*)
+              launch-button (Button. *context*)]
+          
+          (.setOrientation main-layout LinearLayout/VERTICAL)
+          (.setOrientation content-layout LinearLayout/VERTICAL)
+          (.setPadding main-layout 16 16 16 16)
+          (.setPadding content-layout 16 16 16 16)
+          
+          ; App title
+          (.setText title (:label app))
+          (.setTextSize title 24.0)
+          (.setTextColor title Color/BLACK)
+          (.setPadding title 0 0 0 16)
+          
+          ; Intents section title
+          (.setText intents-title "Supported Intents:")
+          (.setTextSize intents-title 18.0)
+          (.setTextColor intents-title Color/BLACK)
+          (.setPadding intents-title 0 16 0 8)
+          
+          (.addView content-layout title)
+          (.addView content-layout intents-title)
+          
+          ; Add intent items
+          (doseq [intent intents-list]
+            (let [intent-text (TextView. *context*)]
+              (.setText intent-text (str "• " intent))
+              (.setTextColor intent-text Color/DKGRAY)
+              (.setPadding intent-text 16 4 0 4)
+              (.addView content-layout intent-text)))
+          
+          ; Back button
+          (.setText back-button "← Back to List")
+          (.setTextColor back-button Color/WHITE)
+          (.setBackgroundColor back-button Color/GRAY)
+          (.setPadding back-button 16 12 16 12)
+          (let [back-params (LinearLayout$LayoutParams. 
+                            LinearLayout$LayoutParams/MATCH_PARENT
+                            LinearLayout$LayoutParams/WRAP_CONTENT)]
+            (.setMargins back-params 0 16 0 8)
+            (.setLayoutParams back-button back-params))
+          
+          (.setOnClickListener back-button
+            (proxy [View$OnClickListener] []
+              (onClick [v] (back-button-handler))))
+          
+          ; Launch button
+          (.setText launch-button (str "Launch " (:label app)))
+          (.setTextColor launch-button Color/WHITE)
+          (.setBackgroundColor launch-button Color/BLUE)
+          (.setPadding launch-button 16 12 16 12)
+          (let [launch-params (LinearLayout$LayoutParams. 
+                              LinearLayout$LayoutParams/MATCH_PARENT
+                              LinearLayout$LayoutParams/WRAP_CONTENT)]
+            (.setMargins launch-params 0 8 0 0)
+            (.setLayoutParams launch-button launch-params))
+          
+          (.setOnClickListener launch-button
+            (proxy [View$OnClickListener] []
+              (onClick [v] (launch-button-handler))))
+          
+          (.addView content-layout back-button)
+          (.addView content-layout launch-button)
+          
+          (.addView scroll-view content-layout)
+          (.addView main-layout scroll-view)
+          
+          main-layout)
+        (catch Exception e
+          (debug-log (str "Error creating app detail: " (.getMessage e)))
+          (let [error-text (TextView. *context*)]
+            (.setText error-text "Error loading app details")
+            error-text))))
+    
+    (defn create-list-view []
+      (try
+        (debug-log "Creating list view...")
+        (let [main-layout (LinearLayout. *context*)
+              title (TextView. *context*)
+              app-list (create-app-list)]
+          
+          (.setOrientation main-layout LinearLayout/VERTICAL)
+          (.setPadding main-layout 16 16 16 16)
+          
+          (.setText title "Installed Applications")
+          (.setTextSize title 20.0)
+          (.setTextColor title Color/BLACK)
+          (.setPadding title 0 0 0 16)
+          
+          (.addView main-layout title)
+          (.addView main-layout app-list)
+          
+          main-layout)
+        (catch Exception e
+          (debug-log (str "Error creating list view: " (.getMessage e)))
+          (let [error-text (TextView. *context*)]
+            (.setText error-text "Error creating list view")
+            error-text))))
+    
+    (defn setup-ui []
+      (try
+        (debug-log (str "Setting up UI for view: " @current-view))
+        (let [view (case @current-view
+                     :list (create-list-view)
+                     :detail (create-app-detail)
+                     (create-list-view))]
+          (.setContentView *context* view)
+          (debug-log "UI setup complete"))
+        (catch Exception e
+          (debug-log (str "Error setting up UI: " (.getMessage e))))))
+    
+    (defn lifecycle-handler [source event]
+      (try
+        (debug-log (str "Lifecycle event: " (.name event)))
+        (case (.name event)
+          "ON_CREATE" (do
+                        (debug-log "Activity created")
+                        (setup-ui))
+          "ON_START"  (debug-log "Activity started")
+          "ON_RESUME" (debug-log "Activity resumed")
+          "ON_PAUSE"  (debug-log "Activity paused")
+          "ON_STOP"   (debug-log "Activity stopped")
+          "ON_DESTROY" (debug-log "Activity destroyed")
+          (debug-log (str "Unhandled lifecycle event: " (.name event))))
+        (catch Exception e
+          (debug-log (str "Error in lifecycle handler: " (.getMessage e))))))
+    
+    (defn setup-lifecycle []
+      (try
+        (debug-log "Setting up lifecycle observer...")
+        (let [lifecycle (.. *context* (getLifecycle))
+              observer (proxy [LifecycleEventObserver] []
+                         (onStateChanged [source event]
+                           (lifecycle-handler source event)))]
+          (.addObserver lifecycle observer)
+          (debug-log "Lifecycle observer registered successfully"))
+        (catch Exception e
+          (debug-log (str "Error setting up lifecycle: " (.getMessage e))))))
+    
+    (defn -main []
+      (try
+        (debug-log "Starting Enhanced Installed Apps Browser")
+        (debug-log (str "Context: " *context*))
+        (debug-log (str "Content layout: " *content-layout*))
+        (debug-log (str "Cache dir: " *cache-dir*))
+        
+        (setup-lifecycle)
+        (debug-log "App initialization complete")
+        (catch Exception e
+          (debug-log (str "Error in -main: " (.getMessage e))))))
+    ```
+
+---------------------------------------------------------------
+
+🧠 ASSISTANT:
+    Looking at the provided code, I can see it's a comprehensive app browser that shows installed applications and their intents. The main issue is that the text colors need to be adjusted to ensure black text on white backgrounds for better contrast. Let me analyze and improve the code:
+    
+    **Analysis:**
+    1. The code structure is good with proper lifecycle management
+    2. Most text is already set to black, but some elements use DKGRAY
+    3. The background colors need to be explicitly set to white
+    4. Button colors should be adjusted for better contrast
+    
+    **Improvements needed:**
+    1. Set explicit white backgrounds on all containers
+    2. Ensure all text is pure black
+    3. Improve button contrast
+    4. Add white background to the main content areas
+    
+    ```clojure
+    ;; App to enumerate installed applications and show their intents with launch capability
+    
+    (def TAG "ClojureApp")
+    
+    (import '(android.widget ListView ArrayAdapter LinearLayout TextView Button ScrollView)
+            '(android.widget LinearLayout$LayoutParams)
+            '(android.content.pm PackageManager ApplicationInfo ResolveInfo)
+            '(android.content Intent)
+            '(android.util Log)
+            '(android.graphics Color)
+            '(android.view View$OnClickListener)
+            '(androidx.lifecycle LifecycleEventObserver Lifecycle$Event)
+            '(java.util ArrayList Collections Comparator))
+    
+    (def current-view (atom :list))
+    (def selected-app (atom nil))
+    
+    ; Forward declarations for functions with circular dependencies
+    (declare setup-ui)
+    
+    (defn debug-log [msg]
+      (Log/d TAG (str msg)))
+    
+    (defn get-installed-apps []
+      (try
+        (debug-log "Getting installed applications...")
+        (let [pm (.getPackageManager *context*)
+              apps (.getInstalledApplications pm PackageManager/GET_META_DATA)
+              app-info (ArrayList.)]
+          (doseq [app apps]
+            (try
+              (let [label (.getApplicationLabel pm app)]
+                (.add app-info {:label (str label) :package-name (.-packageName app)}))
+              (catch Exception e
+                (debug-log (str "Error getting label for app: " (.getMessage e))))))
+          
+          (Collections/sort app-info (proxy [Comparator] []
+                                       (compare [a b]
+                                         (.compareToIgnoreCase (:label a) (:label b)))))
+          
+          (debug-log (str "Found " (.size app-info) " applications"))
+          app-info)
+        (catch Exception e
+          (debug-log (str "Error getting installed apps: " (.getMessage e)))
+          (ArrayList.))))
+    
+    (defn get-app-intents [package-name]
+      (try
+        (debug-log (str "Getting intents for package: " package-name))
+        (let [pm (.getPackageManager *context*)
+              intents (ArrayList.)]
+          
+          ; Add main launcher intent
+          (.add intents "ACTION_MAIN (Launcher)")
+          
+          ; Try to get other common intents
+          (try
+            (let [package-info (.getPackageInfo pm package-name PackageManager/GET_ACTIVITIES)]
+              (when (.-activities package-info)
+                (doseq [activity (.-activities package-info)]
+                  (when (.-name activity)
+                    (.add intents (str "Activity: " (.-name activity)))))))
+            (catch Exception e
+              (debug-log (str "Error getting activities: " (.getMessage e)))))
+          
+          ; Get intent filters by querying common actions
+          (let [common-actions [Intent/ACTION_VIEW Intent/ACTION_SEND Intent/ACTION_EDIT
+                               Intent/ACTION_PICK Intent/ACTION_GET_CONTENT]]
+            (doseq [action common-actions]
+              (try
+                (let [intent (Intent. action)
+                      resolved (.queryIntentActivities pm intent 0)]
+                  (doseq [resolve-info resolved]
+                    (when (= package-name (.. resolve-info -activityInfo -packageName))
+                      (.add intents (str "Handles: " action)))))
+                (catch Exception e
+                  (debug-log (str "Error checking action " action ": " (.getMessage e)))))))
+          
+          (debug-log (str "Found " (.size intents) " intents for " package-name))
+          intents)
+        (catch Exception e
+          (debug-log (str "Error getting intents: " (.getMessage e)))
+          (let [error-list (ArrayList.)]
+            (.add error-list "Error loading intents")
+            error-list))))
+    
+    (defn launch-app [package-name]
+      (try
+        (debug-log (str "Launching app: " package-name))
+        (let [pm (.getPackageManager *context*)
+              launch-intent (.getLaunchIntentForPackage pm package-name)]
+          (if launch-intent
+            (do
+              (.startActivity *context* launch-intent)
+              (debug-log (str "Successfully launched " package-name)))
+            (debug-log (str "No launch intent found for " package-name))))
+        (catch Exception e
+          (debug-log (str "Error launching app: " (.getMessage e))))))
+    
+    (defn back-button-handler []
+      (debug-log "Back button pressed")
+      (reset! current-view :list)
+      (setup-ui))
+    
+    (defn launch-button-handler []
+      (debug-log "Launch button pressed")
+      (when @selected-app
+        (launch-app (:package-name @selected-app))))
+    
+    (defn create-app-list []
+      (try
+        (debug-log "Creating app list view...")
+        (let [apps (get-installed-apps)
+              list-view (ListView. *context*)
+              app-labels (ArrayList.)]
+          
+          ; Set white background for list view
+          (.setBackgroundColor list-view Color/WHITE)
+          
+          (doseq [app apps]
+            (.add app-labels (:label app)))
+          
+          (let [adapter (ArrayAdapter. *context* 
+                                      android.R$layout/simple_list_item_1 
+                                      app-labels)]
+            (.setAdapter list-view adapter)
+            
+            (.setOnItemClickListener list-view
+              (proxy [android.widget.AdapterView$OnItemClickListener] []
+                (onItemClick [parent view position id]
+                  (try
+                    (debug-log (str "App selected at position: " position))
+                    (let [selected (.get apps position)]
+                      (reset! selected-app selected)
+                      (reset! current-view :detail)
+                      (setup-ui))
+                    (catch Exception e
+                      (debug-log (str "Error handling item click: " (.getMessage e))))))))
+            
+            list-view))
+        (catch Exception e
+          (debug-log (str "Error creating app list: " (.getMessage e)))
+          (let [error-text (TextView. *context*)]
+            (.setText error-text "Error loading apps")
+            (.setTextColor error-text Color/BLACK)
+            (.setBackgroundColor error-text Color/WHITE)
+            error-text))))
+    
+    (defn create-app-detail []
+      (try
+        (debug-log "Creating app detail view...")
+        (let [app @selected-app
+              main-layout (LinearLayout. *context*)
+              scroll-view (ScrollView. *context*)
+              content-layout (LinearLayout. *context*)
+              title (TextView. *context*)
+              intents-title (TextView. *context*)
+              intents-list (get-app-intents (:package-name app))
+              back-button (Button. *context*)
+              launch-button (Button. *context*)]
+          
+          (.setOrientation main-layout LinearLayout/VERTICAL)
+          (.setOrientation content-layout LinearLayout/VERTICAL)
+          (.setPadding main-layout 16 16 16 16)
+          (.setPadding content-layout 16 16 16 16)
+          
+          ; Set white backgrounds
+          (.setBackgroundColor main-layout Color/WHITE)
+          (.setBackgroundColor scroll-view Color/WHITE)
+          (.setBackgroundColor content-layout Color/WHITE)
+          
+          ; App title
+          (.setText title (:label app))
+          (.setTextSize title 24.0)
+          (.setTextColor title Color/BLACK)
+          (.setPadding title 0 0 0 16)
+          
+          ; Intents section title
+          (.setText intents-title "Supported Intents:")
+          (.setTextSize intents-title 18.0)
+          (.setTextColor intents-title Color/BLACK)
+          (.setPadding intents-title 0 16 0 8)
+          
+          (.addView content-layout title)
+          (.addView content-layout intents-title)
+          
+          ; Add intent items
+          (doseq [intent intents-list]
+            (let [intent-text (TextView. *context*)]
+              (.setText intent-text (str "• " intent))
+              (.setTextColor intent-text Color/BLACK)
+              (.setPadding intent-text 16 4 0 4)
+              (.addView content-layout intent-text)))
+          
+          ; Back button
+          (.setText back-button "← Back to List")
+          (.setTextColor back-button Color/BLACK)
+          (.setBackgroundColor back-button Color/LTGRAY)
+          (.setPadding back-button 16 12 16 12)
+          (let [back-params (LinearLayout$LayoutParams. 
+                            LinearLayout$LayoutParams/MATCH_PARENT
+                            LinearLayout$LayoutParams/WRAP_CONTENT)]
+            (.setMargins back-params 0 16 0 8)
+            (.setLayoutParams back-button back-params))
+          
+          (.setOnClickListener back-button
+            (proxy [View$OnClickListener] []
+              (onClick [v] (back-button-handler))))
+          
+          ; Launch button
+          (.setText launch-button (str "Launch " (:label app)))
+          (.setTextColor launch-button Color/BLACK)
+          (.setBackgroundColor launch-button Color/LTGRAY)
+          (.setPadding launch-button 16 12 16 12)
+          (let [launch-params (LinearLayout$LayoutParams. 
+                              LinearLayout$LayoutParams/MATCH_PARENT
+                              LinearLayout$LayoutParams/WRAP_CONTENT)]
+            (.setMargins launch-params 0 8 0 0)
+            (.setLayoutParams launch-button launch-params))
+          
+          (.setOnClickListener launch-button
+            (proxy [View$OnClickListener] []
+              (onClick [v] (launch-button-handler))))
+          
+          (.addView content-layout back-button)
+          (.addView content-layout launch-button)
+          
+          (.addView scroll-view content-layout)
+          (.addView main-layout scroll-view)
+          
+          main-layout)
+        (catch Exception e
+          (debug-log (str "Error creating app detail: " (.getMessage e)))
+          (let [error-text (TextView. *context*)]
+            (.setText error-text "Error loading app details")
+            (.setTextColor error-text Color/BLACK)
+            (.setBackgroundColor error-text Color/WHITE)
+            error-text))))
+    
+    (defn create-list-view []
+      (try
+        (debug-log "Creating list view...")
+        (let [main-layout (LinearLayout. *context*)
+              title (TextView. *context*)
+              app-list (create-app-list)]
+          
+          (.setOrientation main-layout LinearLayout/VERTICAL)
+          (.setPadding main-layout 16 16 16 16)
+          (.setBackgroundColor main-layout Color/WHITE)
+          
+          (.setText title "Installed Applications")
+          (.setTextSize title 20.0)
+          (.setTextColor title Color/BLACK)
+          (.setPadding title 0 0 0 16)
+          
+          (.addView main-layout title)
+          (.addView main-layout app-list)
+          
+          main-layout)
+        (catch Exception e
+          (debug-log (str "Error creating list view: " (.getMessage e)))
+          (let [error-text (TextView. *context*)]
+            (.setText error-text "Error creating list view")
+            (.setTextColor error-text Color/BLACK)
+            (.setBackgroundColor error-text Color/WHITE)
+            error-text))))
+    
+    (defn setup-ui []
+      (try
+        (debug-log (str "Setting up UI for view: " @current-view))
+        (let [view (case @current-view
+                     :list (create-list-view)
+                     :detail (create-app-detail)
+                     (create-list-view))]
+          (.setContentView *context* view)
+          (debug-log "UI setup complete"))
+        (catch Exception e
+          (debug-log (str "Error setting up UI: " (.getMessage e))))))
+    
+    (defn lifecycle-handler [source event]
+      (try
+        (debug-log (str "Lifecycle event: " (.name event)))
+        (case (.name event)
+          "ON_CREATE" (do
+                        (debug-log "Activity created")
+                        (setup-ui))
+          "ON_START"  (debug-log "Activity started")
+          "ON_RESUME" (debug-log "Activity resumed")
+          "ON_PAUSE"  (debug-log "Activity paused")
+          "ON_STOP"   (debug-log "Activity stopped")
+          "ON_DESTROY" (debug-log "Activity destroyed")
+          (debug-log (str "Unhandled lifecycle event: " (.name event))))
+        (catch Exception e
+          (debug-log (str "Error in lifecycle handler: " (.getMessage e))))))
+    
+    (defn setup-lifecycle []
+      (try
+        (debug-log "Setting up lifecycle observer...")
+        (let [lifecycle (.. *context* (getLifecycle))
+              observer (proxy [LifecycleEventObserver] []
+                         (onStateChanged [source event]
+                           (lifecycle-handler source event)))]
+          (.addObserver lifecycle observer)
+          (debug-log "Lifecycle observer registered successfully"))
+        (catch Exception e
+          (debug-log (str "Error setting up lifecycle: " (.getMessage e))))))
+    
+    (defn -main []
+      (try
+        (debug-log "Starting Enhanced Installed Apps Browser")
+        (debug-log (str "Context: " *context*))
+        (debug-log (str "Content layout: " *content-layout*))
+        (debug-log (str "Cache dir: " *cache-dir*))
+        
+        (setup-lifecycle)
+        (debug-log "App initialization complete")
+        (catch Exception e
+          (debug-log (str "Error in -main: " (.getMessage e))))))
+    ```
+
+---------------------------------------------------------------
+
+👤 USER:
+    The app does not work. Provide an improved version addressing the user feedback and logcat output.
+    User feedback: The text is white on white.  Make it black on white.
+    Logcat output:
+    ```
+    --------- beginning of main
+    06-23 10:13:02.293  9993  9993 E jurerepl:render: Unknown bits set in runtime_flags: 0x40000000
+    06-23 10:13:02.302  9993  9993 W ziparchive: Unable to open '/system_ext/framework/mediatek-framework.dm': No such file or directory
+    06-23 10:13:02.302  9993  9993 W ziparchive: Unable to open '/system_ext/framework/mediatek-framework.dm': No such file or directory
+    06-23 10:13:02.320  9993  9993 W libc    : Access denied finding property "ro.odm.prev.product.name"
+    06-23 10:13:02.320  9993  9993 W libc    : Access denied finding property "ro.vendor.oplus.gundam"
+    06-23 10:13:02.335  9993 10012 E SchedAssist: ofbOpen failed with error=No such file or directory
+    06-23 10:13:02.335  9993 10012 E SchedAssist: sysOpen failed with error=No such file or directory
+    06-23 10:13:02.335  9993 10012 E SchedAssist: open sharedFd failed with error=Permission denied
+    06-23 10:13:02.335  9993 10012 E SchedAssist: open sharedFd failed with error=Permission denied
+    06-23 10:13:02.335  9993 10012 E SchedAssist: open sharedFd failed with error=Permission denied
+    06-23 10:13:02.335  9993 10012 E SchedAssist: open sharedFd failed with error=No such file or directory
+    06-23 10:13:02.367  9993  9993 W jurerepl:render: Accessing hidden method Landroid/view/View;->computeFitSystemWindows(Landroid/graphics/Rect;Landroid/graphics/Rect;)Z (unsupported, reflection, allowed)
+    06-23 10:13:02.367  9993  9993 W jurerepl:render: Accessing hidden method Landroid/view/ViewGroup;->makeOptionalFitsSystemWindows()V (unsupported, reflection, allowed)
+    --------- beginning of system
+    06-23 10:13:02.367  9993  9993 E OplusCustomizeRestrictionManager: sInstance is null, start a new sInstance
+    06-23 10:13:04.431  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /my_stock/del-app/BackupAndRestore/BackupAndRestore.apk' with 1 weak references
+    06-23 10:13:04.432  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~o1iAadvkLiOdNqb6Rus3Mw==/com.clippercard.mobile.clipper-O-gFRZkJ7rKwYXUkR66qiw==/base.apk' with 1 weak references
+    06-23 10:13:04.432  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~o1iAadvkLiOdNqb6Rus3Mw==/com.clippercard.mobile.clipper-O-gFRZkJ7rKwYXUkR66qiw==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.433  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~o1iAadvkLiOdNqb6Rus3Mw==/com.clippercard.mobile.clipper-O-gFRZkJ7rKwYXUkR66qiw==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.433  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~o1iAadvkLiOdNqb6Rus3Mw==/com.clippercard.mobile.clipper-O-gFRZkJ7rKwYXUkR66qiw==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.433  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~o1iAadvkLiOdNqb6Rus3Mw==/com.clippercard.mobile.clipper-O-gFRZkJ7rKwYXUkR66qiw==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.433  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~o1iAadvkLiOdNqb6Rus3Mw==/com.clippercard.mobile.clipper-O-gFRZkJ7rKwYXUkR66qiw==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.433  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~o1iAadvkLiOdNqb6Rus3Mw==/com.clippercard.mobile.clipper-O-gFRZkJ7rKwYXUkR66qiw==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.433  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~8es85hMgPj76sUNkZ-k9_g==/com.amazon.mShop.android.shopping-cNC7mNxKQtx8BPqnxEZtgw==/base.apk' with 1 weak references
+    06-23 10:13:04.434  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~8es85hMgPj76sUNkZ-k9_g==/com.amazon.mShop.android.shopping-cNC7mNxKQtx8BPqnxEZtgw==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.435  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~8es85hMgPj76sUNkZ-k9_g==/com.amazon.mShop.android.shopping-cNC7mNxKQtx8BPqnxEZtgw==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.435  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/app/HealthService/HealthService.apk' with 1 weak references
+    06-23 10:13:04.436  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~wHr8zLV1WPyFMXADoTCFrg==/com.tmsoft.whitenoise.lite-TYn7QMGf58B56SCzckfFHg==/base.apk' with 1 weak references
+    06-23 10:13:04.437  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~wHr8zLV1WPyFMXADoTCFrg==/com.tmsoft.whitenoise.lite-TYn7QMGf58B56SCzckfFHg==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.437  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~wHr8zLV1WPyFMXADoTCFrg==/com.tmsoft.whitenoise.lite-TYn7QMGf58B56SCzckfFHg==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.437  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~wHr8zLV1WPyFMXADoTCFrg==/com.tmsoft.whitenoise.lite-TYn7QMGf58B56SCzckfFHg==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.437  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~wHr8zLV1WPyFMXADoTCFrg==/com.tmsoft.whitenoise.lite-TYn7QMGf58B56SCzckfFHg==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.438  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~wHr8zLV1WPyFMXADoTCFrg==/com.tmsoft.whitenoise.lite-TYn7QMGf58B56SCzckfFHg==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.438  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~wHr8zLV1WPyFMXADoTCFrg==/com.tmsoft.whitenoise.lite-TYn7QMGf58B56SCzckfFHg==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.438  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~m11dLWyYKqAkap_f426KnQ==/com.google.android.apps.subscriptions.red-kyq6suXYzryHhESMPb1pDQ==/base.apk' with 1 weak references
+    06-23 10:13:04.439  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~m11dLWyYKqAkap_f426KnQ==/com.google.android.apps.subscriptions.red-kyq6suXYzryHhESMPb1pDQ==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.440  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~m11dLWyYKqAkap_f426KnQ==/com.google.android.apps.subscriptions.red-kyq6suXYzryHhESMPb1pDQ==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.440  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~m11dLWyYKqAkap_f426KnQ==/com.google.android.apps.subscriptions.red-kyq6suXYzryHhESMPb1pDQ==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.440  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~m11dLWyYKqAkap_f426KnQ==/com.google.android.apps.subscriptions.red-kyq6suXYzryHhESMPb1pDQ==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.440  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~m11dLWyYKqAkap_f426KnQ==/com.google.android.apps.subscriptions.red-kyq6suXYzryHhESMPb1pDQ==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.440  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~m11dLWyYKqAkap_f426KnQ==/com.google.android.apps.subscriptions.red-kyq6suXYzryHhESMPb1pDQ==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.440  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~1CbcbX-FXwFMAXkRGrABEg==/com.skype.raider-90ZlrAldLjSTX7AB9vwKdg==/base.apk' with 1 weak references
+    06-23 10:13:04.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~t1-SpzlAcU_JGzMOpPjHlA==/com.google.android.youtube-cZxy_Nu9NLAiD1TYY_nPgg==/base.apk' with 1 weak references
+    06-23 10:13:04.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~t1-SpzlAcU_JGzMOpPjHlA==/com.google.android.youtube-cZxy_Nu9NLAiD1TYY_nPgg==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~t1-SpzlAcU_JGzMOpPjHlA==/com.google.android.youtube-cZxy_Nu9NLAiD1TYY_nPgg==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~t1-SpzlAcU_JGzMOpPjHlA==/com.google.android.youtube-cZxy_Nu9NLAiD1TYY_nPgg==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~t1-SpzlAcU_JGzMOpPjHlA==/com.google.android.youtube-cZxy_Nu9NLAiD1TYY_nPgg==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~t1-SpzlAcU_JGzMOpPjHlA==/com.google.android.youtube-cZxy_Nu9NLAiD1TYY_nPgg==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~t1-SpzlAcU_JGzMOpPjHlA==/com.google.android.youtube-cZxy_Nu9NLAiD1TYY_nPgg==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.442  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~uXlRkfMlsAQTJp_FdK7rkQ==/com.mattermost.rn-CQma2DbcZjTWBdTFwbHPUg==/base.apk' with 1 weak references
+    06-23 10:13:04.442  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~iFBD3QTn87_0JUUbkVqJdg==/zapsolutions.strike-0HPuQqhCCdz9iunhpZMxRQ==/base.apk' with 1 weak references
+    06-23 10:13:04.442  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~FzHfXg2BisqP2yB3zjlhsQ==/com.ticketmaster.mobile.android.na-4zfqvM1vRJFjBgvq5tJ_ww==/base.apk' with 1 weak references
+    06-23 10:13:04.442  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~FzHfXg2BisqP2yB3zjlhsQ==/com.ticketmaster.mobile.android.na-4zfqvM1vRJFjBgvq5tJ_ww==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.442  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~FzHfXg2BisqP2yB3zjlhsQ==/com.ticketmaster.mobile.android.na-4zfqvM1vRJFjBgvq5tJ_ww==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.443  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /apex/com.android.uwb/priv-app/ServiceUwbResources@AP3A.240617.008/ServiceUwbResources.apk' with 1 weak references
+    06-23 10:13:04.443  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/overlay/DisplayCutoutEmulationCorner/DisplayCutoutEmulationCornerOverlay.apk' with 1 weak references
+    06-23 10:13:04.443  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/SmartEngine/SmartEngine.apk' with 1 weak references
+    06-23 10:13:04.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~O8JYTgGxVgYLxa09iW31cw==/com.nytimes.crossword-KY_G4EyZfg49bsP8tZ87rQ==/base.apk' with 1 weak references
+    06-23 10:13:04.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~O8JYTgGxVgYLxa09iW31cw==/com.nytimes.crossword-KY_G4EyZfg49bsP8tZ87rQ==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~O8JYTgGxVgYLxa09iW31cw==/com.nytimes.crossword-KY_G4EyZfg49bsP8tZ87rQ==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~O8JYTgGxVgYLxa09iW31cw==/com.nytimes.crossword-KY_G4EyZfg49bsP8tZ87rQ==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~O8JYTgGxVgYLxa09iW31cw==/com.nytimes.crossword-KY_G4EyZfg49bsP8tZ87rQ==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~O8JYTgGxVgYLxa09iW31cw==/com.nytimes.crossword-KY_G4EyZfg49bsP8tZ87rQ==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~O8JYTgGxVgYLxa09iW31cw==/com.nytimes.crossword-KY_G4EyZfg49bsP8tZ87rQ==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /apex/com.android.extservices/priv-app/GoogleExtServices@351538080/GoogleExtServices.apk' with 1 weak references
+    06-23 10:13:04.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /my_stock/del-app/OneKeyLockScreen/OneKeyLockScreen.apk' with 1 weak references
+    06-23 10:13:04.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~xT9W2WY2f9er_bYqMEwfEw==/io.metamask-nTevKpNVH_4NraIe0bhhWg==/base.apk' with 1 weak references
+    06-23 10:13:04.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~xT9W2WY2f9er_bYqMEwfEw==/io.metamask-nTevKpNVH_4NraIe0bhhWg==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~xT9W2WY2f9er_bYqMEwfEw==/io.metamask-nTevKpNVH_4NraIe0bhhWg==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~xT9W2WY2f9er_bYqMEwfEw==/io.metamask-nTevKpNVH_4NraIe0bhhWg==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~xT9W2WY2f9er_bYqMEwfEw==/io.metamask-nTevKpNVH_4NraIe0bhhWg==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~xT9W2WY2f9er_bYqMEwfEw==/io.metamask-nTevKpNVH_4NraIe0bhhWg==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~xT9W2WY2f9er_bYqMEwfEw==/io.metamask-nTevKpNVH_4NraIe0bhhWg==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.446  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/overlay/DisplayCutoutEmulationDouble/DisplayCutoutEmulationDoubleOverlay.apk' with 1 weak references
+    06-23 10:13:04.446  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~7HG3fEpZOCMUtS5jFsAXVQ==/com.microsoft.appmanager-4ueQBc2C6Vm2Xo6tO63KFA==/base.apk' with 1 weak references
+    06-23 10:13:04.447  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/priv-app/TelephonyProvider/TelephonyProvider.apk' with 1 weak references
+    06-23 10:13:04.447  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/OplusSecurityKeyboard/OplusSecurityKeyboard.apk' with 1 weak references
+    06-23 10:13:04.447  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system/priv-app/DynamicSystemInstallationService/DynamicSystemInstallationService.apk' with 1 weak references
+    06-23 10:13:04.448  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~iSI5i6HJzIsS-5ekZrfncA==/com.theonepiano.oversea.smartpiano-zPycg3AJNZCeAfQfl0n0CA==/base.apk' with 1 weak references
+    06-23 10:13:04.448  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~iSI5i6HJzIsS-5ekZrfncA==/com.theonepiano.oversea.smartpiano-zPycg3AJNZCeAfQfl0n0CA==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.448  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~iSI5i6HJzIsS-5ekZrfncA==/com.theonepiano.oversea.smartpiano-zPycg3AJNZCeAfQfl0n0CA==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.448  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~iSI5i6HJzIsS-5ekZrfncA==/com.theonepiano.oversea.smartpiano-zPycg3AJNZCeAfQfl0n0CA==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.448  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~iSI5i6HJzIsS-5ekZrfncA==/com.theonepiano.oversea.smartpiano-zPycg3AJNZCeAfQfl0n0CA==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.448  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~iSI5i6HJzIsS-5ekZrfncA==/com.theonepiano.oversea.smartpiano-zPycg3AJNZCeAfQfl0n0CA==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.448  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~iSI5i6HJzIsS-5ekZrfncA==/com.theonepiano.oversea.smartpiano-zPycg3AJNZCeAfQfl0n0CA==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.448  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/app/CrashBox/CrashBox.apk' with 1 weak references
+    06-23 10:13:04.449  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6Pf-4jKwxfUrg6rfxOuwvg==/com.google.android.googlequicksearchbox-W-6cZQTbjepFEgzLzgHO9g==/base.apk' with 1 weak references
+    06-23 10:13:04.451  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6Pf-4jKwxfUrg6rfxOuwvg==/com.google.android.googlequicksearchbox-W-6cZQTbjepFEgzLzgHO9g==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.451  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6Pf-4jKwxfUrg6rfxOuwvg==/com.google.android.googlequicksearchbox-W-6cZQTbjepFEgzLzgHO9g==/split_lens_ondevice_engine_feature_module.apk' with 1 weak references
+    06-23 10:13:04.452  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6Pf-4jKwxfUrg6rfxOuwvg==/com.google.android.googlequicksearchbox-W-6cZQTbjepFEgzLzgHO9g==/split_lens_ondevice_engine_play_ml_module.apk' with 1 weak references
+    06-23 10:13:04.452  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6Pf-4jKwxfUrg6rfxOuwvg==/com.google.android.googlequicksearchbox-W-6cZQTbjepFEgzLzgHO9g==/split_tclib_native_feature_module.apk' with 1 weak references
+    06-23 10:13:04.452  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~KTtqTkXDPI7C4PryAV_QOg==/com.heytap.pictorial-PumaXIoDqEXmwJFoHSzeMw==/base.apk' with 1 weak references
+    06-23 10:13:04.452  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~KTtqTkXDPI7C4PryAV_QOg==/com.heytap.pictorial-PumaXIoDqEXmwJFoHSzeMw==/split_feature_log.apk' with 1 weak references
+    06-23 10:13:04.452  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/SmartSideBar/SmartSideBar.apk' with 1 weak references
+    06-23 10:13:04.453  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~UQOF1Le-QJTYaxNu4xHO_w==/com.h43.dentalmonitoring-bO9R_whP-AO0AkrpF8j--g==/base.apk' with 1 weak references
+    06-23 10:13:04.453  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~UQOF1Le-QJTYaxNu4xHO_w==/com.h43.dentalmonitoring-bO9R_whP-AO0AkrpF8j--g==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.453  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~UQOF1Le-QJTYaxNu4xHO_w==/com.h43.dentalmonitoring-bO9R_whP-AO0AkrpF8j--g==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.453  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~UQOF1Le-QJTYaxNu4xHO_w==/com.h43.dentalmonitoring-bO9R_whP-AO0AkrpF8j--g==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.453  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~UQOF1Le-QJTYaxNu4xHO_w==/com.h43.dentalmonitoring-bO9R_whP-AO0AkrpF8j--g==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.453  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~UQOF1Le-QJTYaxNu4xHO_w==/com.h43.dentalmonitoring-bO9R_whP-AO0AkrpF8j--g==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.453  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/priv-app/CalendarProvider/CalendarProvider.apk' with 1 weak references
+    06-23 10:13:04.453  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~_uwlXx92QEL_jg4EeRvEgw==/com.google.android.apps.googleassistant-0eBb7BwdHews93N9bbvI3Q==/base.apk' with 1 weak references
+    06-23 10:13:04.453  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/priv-app/MtkTelephonyAssist/MtkTelephonyAssist.apk' with 1 weak references
+    06-23 10:13:04.454  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/overlay/SystemUIFingerprintRes_15_0_FY.apk' with 1 weak references
+    06-23 10:13:04.454  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/overlay/SystemUIFingerprintRes_15_0_QY.apk' with 1 weak references
+    06-23 10:13:04.454  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/overlay/SystemUIFingerprintRes_15_0_SW.apk' with 1 weak references
+    06-23 10:13:04.454  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/overlay/SystemUIFingerprintRes_15_0_XW.apk' with 1 weak references
+    06-23 10:13:04.454  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~vPilM7ZcdzUgp4PodgzFfQ==/org.telegram.messenger-jYF8Jj2BGWpIhexfme0oLA==/base.apk' with 1 weak references
+    06-23 10:13:04.454  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~vPilM7ZcdzUgp4PodgzFfQ==/org.telegram.messenger-jYF8Jj2BGWpIhexfme0oLA==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.454  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~vPilM7ZcdzUgp4PodgzFfQ==/org.telegram.messenger-jYF8Jj2BGWpIhexfme0oLA==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.454  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~vPilM7ZcdzUgp4PodgzFfQ==/org.telegram.messenger-jYF8Jj2BGWpIhexfme0oLA==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.454  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~vPilM7ZcdzUgp4PodgzFfQ==/org.telegram.messenger-jYF8Jj2BGWpIhexfme0oLA==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.455  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~vPilM7ZcdzUgp4PodgzFfQ==/org.telegram.messenger-jYF8Jj2BGWpIhexfme0oLA==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.455  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~vPilM7ZcdzUgp4PodgzFfQ==/org.telegram.messenger-jYF8Jj2BGWpIhexfme0oLA==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.455  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~pJXJmLclqAkbcgK-Fu7I4g==/com.garmin.android.apps.connectmobile-H4c8ZoFaa6VF92FapptkNQ==/base.apk' with 1 weak references
+    06-23 10:13:04.455  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~pJXJmLclqAkbcgK-Fu7I4g==/com.garmin.android.apps.connectmobile-H4c8ZoFaa6VF92FapptkNQ==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.455  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~pJXJmLclqAkbcgK-Fu7I4g==/com.garmin.android.apps.connectmobile-H4c8ZoFaa6VF92FapptkNQ==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.456  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~pJXJmLclqAkbcgK-Fu7I4g==/com.garmin.android.apps.connectmobile-H4c8ZoFaa6VF92FapptkNQ==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.456  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~pJXJmLclqAkbcgK-Fu7I4g==/com.garmin.android.apps.connectmobile-H4c8ZoFaa6VF92FapptkNQ==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.456  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~pJXJmLclqAkbcgK-Fu7I4g==/com.garmin.android.apps.connectmobile-H4c8ZoFaa6VF92FapptkNQ==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.456  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/Karaoke/Karaoke.apk' with 1 weak references
+    06-23 10:13:04.456  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~mI2VeTvH8Mh3Ffj3mWG4Mg==/com.redfin.android-REde8Q5M8QEqtbGO8lKJ_w==/base.apk' with 1 weak references
+    06-23 10:13:04.457  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~mI2VeTvH8Mh3Ffj3mWG4Mg==/com.redfin.android-REde8Q5M8QEqtbGO8lKJ_w==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.457  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~mI2VeTvH8Mh3Ffj3mWG4Mg==/com.redfin.android-REde8Q5M8QEqtbGO8lKJ_w==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.457  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~dMQ6Aq51mG-0oFebT6UAaQ==/com.google.android.apps.docs.editors.docs-qMDpzCYnK2RrxrMIh3O2ew==/base.apk' with 1 weak references
+    06-23 10:13:04.457  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~dMQ6Aq51mG-0oFebT6UAaQ==/com.google.android.apps.docs.editors.docs-qMDpzCYnK2RrxrMIh3O2ew==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.457  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~dMQ6Aq51mG-0oFebT6UAaQ==/com.google.android.apps.docs.editors.docs-qMDpzCYnK2RrxrMIh3O2ew==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.457  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~dMQ6Aq51mG-0oFebT6UAaQ==/com.google.android.apps.docs.editors.docs-qMDpzCYnK2RrxrMIh3O2ew==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.457  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~dMQ6Aq51mG-0oFebT6UAaQ==/com.google.android.apps.docs.editors.docs-qMDpzCYnK2RrxrMIh3O2ew==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.457  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~dMQ6Aq51mG-0oFebT6UAaQ==/com.google.android.apps.docs.editors.docs-qMDpzCYnK2RrxrMIh3O2ew==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.457  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~dMQ6Aq51mG-0oFebT6UAaQ==/com.google.android.apps.docs.editors.docs-qMDpzCYnK2RrxrMIh3O2ew==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.457  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~mCkQRbVUgVsDborKvepHBQ==/com.shopify.arrive-mQx_J3sIxmn3y8a5pTQQYA==/base.apk' with 1 weak references
+    06-23 10:13:04.458  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~mCkQRbVUgVsDborKvepHBQ==/com.shopify.arrive-mQx_J3sIxmn3y8a5pTQQYA==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.458  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~mCkQRbVUgVsDborKvepHBQ==/com.shopify.arrive-mQx_J3sIxmn3y8a5pTQQYA==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.458  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~mCkQRbVUgVsDborKvepHBQ==/com.shopify.arrive-mQx_J3sIxmn3y8a5pTQQYA==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.458  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~mCkQRbVUgVsDborKvepHBQ==/com.shopify.arrive-mQx_J3sIxmn3y8a5pTQQYA==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.458  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/GoogleOneTimeInitializer/GoogleOneTimeInitializer.apk' with 1 weak references
+    06-23 10:13:04.458  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /my_product/non_overlay/app/GoogleExtShared/GoogleExtShared.apk' with 1 weak references
+    06-23 10:13:04.458  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6dLazYA_7FOsPKOCaD3Hhw==/com.united.mobile.android-VzUZTbme7vTewxW21bBPTA==/base.apk' with 1 weak references
+    06-23 10:13:04.458  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6dLazYA_7FOsPKOCaD3Hhw==/com.united.mobile.android-VzUZTbme7vTewxW21bBPTA==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.458  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6dLazYA_7FOsPKOCaD3Hhw==/com.united.mobile.android-VzUZTbme7vTewxW21bBPTA==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.458  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6dLazYA_7FOsPKOCaD3Hhw==/com.united.mobile.android-VzUZTbme7vTewxW21bBPTA==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.459  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6dLazYA_7FOsPKOCaD3Hhw==/com.united.mobile.android-VzUZTbme7vTewxW21bBPTA==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.459  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6dLazYA_7FOsPKOCaD3Hhw==/com.united.mobile.android-VzUZTbme7vTewxW21bBPTA==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.459  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6dLazYA_7FOsPKOCaD3Hhw==/com.united.mobile.android-VzUZTbme7vTewxW21bBPTA==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.459  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/priv-app/LPPeService/LPPeService.apk' with 1 weak references
+    06-23 10:13:04.459  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~g7X9o21JGy4HlRiUF-VgfQ==/com.heytap.music-qivzV35tBCV--_6cquja4w==/base.apk' with 1 weak references
+    06-23 10:13:04.460  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~g7X9o21JGy4HlRiUF-VgfQ==/com.heytap.music-qivzV35tBCV--_6cquja4w==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.460  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~g7X9o21JGy4HlRiUF-VgfQ==/com.heytap.music-qivzV35tBCV--_6cquja4w==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.460  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~DMhrsI3_c0zFAt1QaVjGNQ==/com.saily.android-JLZ-VgWOS-vBUfEUV3T60g==/base.apk' with 1 weak references
+    06-23 10:13:04.460  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~DMhrsI3_c0zFAt1QaVjGNQ==/com.saily.android-JLZ-VgWOS-vBUfEUV3T60g==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.460  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~DMhrsI3_c0zFAt1QaVjGNQ==/com.saily.android-JLZ-VgWOS-vBUfEUV3T60g==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.460  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~DMhrsI3_c0zFAt1QaVjGNQ==/com.saily.android-JLZ-VgWOS-vBUfEUV3T60g==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.460  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~DMhrsI3_c0zFAt1QaVjGNQ==/com.saily.android-JLZ-VgWOS-vBUfEUV3T60g==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.460  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~DMhrsI3_c0zFAt1QaVjGNQ==/com.saily.android-JLZ-VgWOS-vBUfEUV3T60g==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.460  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~DMhrsI3_c0zFAt1QaVjGNQ==/com.saily.android-JLZ-VgWOS-vBUfEUV3T60g==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.460  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/app/OplusLocationService/OplusLocationService.apk' with 1 weak references
+    06-23 10:13:04.461  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~7jHwRg5CN-n_c-aKe-D3WA==/com.turkishairlines.mobile-SI92_Ko7twC4VpG2k9N12Q==/base.apk' with 1 weak references
+    06-23 10:13:04.461  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~7jHwRg5CN-n_c-aKe-D3WA==/com.turkishairlines.mobile-SI92_Ko7twC4VpG2k9N12Q==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.461  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~7jHwRg5CN-n_c-aKe-D3WA==/com.turkishairlines.mobile-SI92_Ko7twC4VpG2k9N12Q==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.461  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~7jHwRg5CN-n_c-aKe-D3WA==/com.turkishairlines.mobile-SI92_Ko7twC4VpG2k9N12Q==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.461  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~GvJRyF-9b_Xk7dju2JJSVw==/com.bodyfast-1cpnPehL3POrbrvbsHmlJg==/base.apk' with 1 weak references
+    06-23 10:13:04.461  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QFgXhgBMVpeUIays-eA1PA==/com.devhd.feedly-iCxXBUdzNGAqc4EUc46rNg==/base.apk' with 1 weak references
+    06-23 10:13:04.461  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QFgXhgBMVpeUIays-eA1PA==/com.devhd.feedly-iCxXBUdzNGAqc4EUc46rNg==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.461  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QFgXhgBMVpeUIays-eA1PA==/com.devhd.feedly-iCxXBUdzNGAqc4EUc46rNg==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.461  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QFgXhgBMVpeUIays-eA1PA==/com.devhd.feedly-iCxXBUdzNGAqc4EUc46rNg==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.461  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QFgXhgBMVpeUIays-eA1PA==/com.devhd.feedly-iCxXBUdzNGAqc4EUc46rNg==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.461  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QFgXhgBMVpeUIays-eA1PA==/com.devhd.feedly-iCxXBUdzNGAqc4EUc46rNg==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.462  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QutBER2z33UksKPzZGAPFg==/xyz.blackbird-C4vXEauDfazZBg0sLgmhew==/base.apk' with 1 weak references
+    06-23 10:13:04.462  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QutBER2z33UksKPzZGAPFg==/xyz.blackbird-C4vXEauDfazZBg0sLgmhew==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.462  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QutBER2z33UksKPzZGAPFg==/xyz.blackbird-C4vXEauDfazZBg0sLgmhew==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.462  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QutBER2z33UksKPzZGAPFg==/xyz.blackbird-C4vXEauDfazZBg0sLgmhew==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.462  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QutBER2z33UksKPzZGAPFg==/xyz.blackbird-C4vXEauDfazZBg0sLgmhew==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.462  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QutBER2z33UksKPzZGAPFg==/xyz.blackbird-C4vXEauDfazZBg0sLgmhew==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.462  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QutBER2z33UksKPzZGAPFg==/xyz.blackbird-C4vXEauDfazZBg0sLgmhew==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.462  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/priv-app/OplusLauncher/OplusLauncher.apk' with 1 weak references
+    06-23 10:13:04.463  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/app/OTrace/OTrace.apk' with 1 weak references
+    06-23 10:13:04.463  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /my_stock/del-app/OppoTranslation/OppoTranslation.apk' with 1 weak references
+    06-23 10:13:04.463  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~oHaP4Ph8-RWCkyewqqMPUg==/com.viber.voip-AVsXcng2NJr8aVf9ixct9Q==/base.apk' with 1 weak references
+    06-23 10:13:04.464  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~oHaP4Ph8-RWCkyewqqMPUg==/com.viber.voip-AVsXcng2NJr8aVf9ixct9Q==/split_SnapCamera.apk' with 1 weak references
+    06-23 10:13:04.464  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~oHaP4Ph8-RWCkyewqqMPUg==/com.viber.voip-AVsXcng2NJr8aVf9ixct9Q==/split_SnapCamera.config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.464  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~oHaP4Ph8-RWCkyewqqMPUg==/com.viber.voip-AVsXcng2NJr8aVf9ixct9Q==/split_SnapCamera.config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.465  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~oHaP4Ph8-RWCkyewqqMPUg==/com.viber.voip-AVsXcng2NJr8aVf9ixct9Q==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.465  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~oHaP4Ph8-RWCkyewqqMPUg==/com.viber.voip-AVsXcng2NJr8aVf9ixct9Q==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.465  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~gPhBXo85_Z1BRKHfee5_-A==/com.truebill-62ZvxcBHzbRKZUB5krHZFw==/base.apk' with 1 weak references
+    06-23 10:13:04.465  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~gPhBXo85_Z1BRKHfee5_-A==/com.truebill-62ZvxcBHzbRKZUB5krHZFw==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.465  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~gPhBXo85_Z1BRKHfee5_-A==/com.truebill-62ZvxcBHzbRKZUB5krHZFw==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.465  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/OplusScreenRecorder/OplusScreenRecorder.apk' with 1 weak references
+    06-23 10:13:04.465  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~4jjpp9WsB5EnGA_B8Z55ZQ==/com.google.android.apps.podcasts-MTmaHvb4YGeSD7sbS13xEA==/base.apk' with 1 weak references
+    06-23 10:13:04.466  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~HTY-c401NdjH7hFWVhd10A==/com.q2e.firsttradeunionbank3351.mobile.production-dexAyc_Ki7qjXAlbd-xGxA==/base.apk' with 1 weak references
+    06-23 10:13:04.466  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~HTY-c401NdjH7hFWVhd10A==/com.q2e.firsttradeunionbank3351.mobile.production-dexAyc_Ki7qjXAlbd-xGxA==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.466  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~HTY-c401NdjH7hFWVhd10A==/com.q2e.firsttradeunionbank3351.mobile.production-dexAyc_Ki7qjXAlbd-xGxA==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.466  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~HTY-c401NdjH7hFWVhd10A==/com.q2e.firsttradeunionbank3351.mobile.production-dexAyc_Ki7qjXAlbd-xGxA==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.466  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~HTY-c401NdjH7hFWVhd10A==/com.q2e.firsttradeunionbank3351.mobile.production-dexAyc_Ki7qjXAlbd-xGxA==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.466  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~HTY-c401NdjH7hFWVhd10A==/com.q2e.firsttradeunionbank3351.mobile.production-dexAyc_Ki7qjXAlbd-xGxA==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.466  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~HTY-c401NdjH7hFWVhd10A==/com.q2e.firsttradeunionbank3351.mobile.production-dexAyc_Ki7qjXAlbd-xGxA==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.466  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~L1LIdJZT_NplcMvz-r_elA==/com.beeper.ima-zaSNQMEaQPXP4sSkyvmzbQ==/base.apk' with 1 weak references
+    06-23 10:13:04.466  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~L1LIdJZT_NplcMvz-r_elA==/com.beeper.ima-zaSNQMEaQPXP4sSkyvmzbQ==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.466  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~L1LIdJZT_NplcMvz-r_elA==/com.beeper.ima-zaSNQMEaQPXP4sSkyvmzbQ==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.466  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~L1LIdJZT_NplcMvz-r_elA==/com.beeper.ima-zaSNQMEaQPXP4sSkyvmzbQ==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.466  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~L1LIdJZT_NplcMvz-r_elA==/com.beeper.ima-zaSNQMEaQPXP4sSkyvmzbQ==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.466  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~L1LIdJZT_NplcMvz-r_elA==/com.beeper.ima-zaSNQMEaQPXP4sSkyvmzbQ==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.466  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~L1LIdJZT_NplcMvz-r_elA==/com.beeper.ima-zaSNQMEaQPXP4sSkyvmzbQ==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.466  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system/priv-app/ExternalStorageProvider/ExternalStorageProvider.apk' with 1 weak references
+    06-23 10:13:04.466  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/app/HTMLViewer/HTMLViewer.apk' with 1 weak references
+    06-23 10:13:04.467  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~eqh404HO6YTNpgbIWlUwAQ==/com.twentythreeandme.app-3r1F-XVYxgWOrvyqrGaslA==/base.apk' with 1 weak references
+    06-23 10:13:04.467  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~eqh404HO6YTNpgbIWlUwAQ==/com.twentythreeandme.app-3r1F-XVYxgWOrvyqrGaslA==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.468  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~eqh404HO6YTNpgbIWlUwAQ==/com.twentythreeandme.app-3r1F-XVYxgWOrvyqrGaslA==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.468  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~eqh404HO6YTNpgbIWlUwAQ==/com.twentythreeandme.app-3r1F-XVYxgWOrvyqrGaslA==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.468  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~eqh404HO6YTNpgbIWlUwAQ==/com.twentythreeandme.app-3r1F-XVYxgWOrvyqrGaslA==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.468  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~eqh404HO6YTNpgbIWlUwAQ==/com.twentythreeandme.app-3r1F-XVYxgWOrvyqrGaslA==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.468  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~eqh404HO6YTNpgbIWlUwAQ==/com.twentythreeandme.app-3r1F-XVYxgWOrvyqrGaslA==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.468  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~WWgvm5dJQxCNsyaWE6Ap-A==/com.whatsapp-6fWTul7oi3wXB3FmEMTE9g==/base.apk' with 1 weak references
+    06-23 10:13:04.468  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~WWgvm5dJQxCNsyaWE6Ap-A==/com.whatsapp-6fWTul7oi3wXB3FmEMTE9g==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.469  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~LkTtIZsY5PbYWfNK2xNHmA==/com.substack.app-FVEYIot6HnuoJFhCsb6JzA==/base.apk' with 1 weak references
+    06-23 10:13:04.469  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~LkTtIZsY5PbYWfNK2xNHmA==/com.substack.app-FVEYIot6HnuoJFhCsb6JzA==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.469  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~LkTtIZsY5PbYWfNK2xNHmA==/com.substack.app-FVEYIot6HnuoJFhCsb6JzA==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.469  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~LkTtIZsY5PbYWfNK2xNHmA==/com.substack.app-FVEYIot6HnuoJFhCsb6JzA==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.469  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~LkTtIZsY5PbYWfNK2xNHmA==/com.substack.app-FVEYIot6HnuoJFhCsb6JzA==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.469  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~LkTtIZsY5PbYWfNK2xNHmA==/com.substack.app-FVEYIot6HnuoJFhCsb6JzA==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.469  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~LkTtIZsY5PbYWfNK2xNHmA==/com.substack.app-FVEYIot6HnuoJFhCsb6JzA==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.469  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/ImsServiceEntitlement/ImsServiceEntitlement.apk' with 1 weak references
+    06-23 10:13:04.469  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system/app/CompanionDeviceManager/CompanionDeviceManager.apk' with 1 weak references
+    06-23 10:13:04.469  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/OppoWeatherService/OppoWeatherService.apk' with 1 weak references
+    06-23 10:13:04.470  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/priv-app/MmsService/MmsService.apk' with 1 weak references
+    06-23 10:13:04.470  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6rfl1DEBREpAk2OXWHFEBA==/com.google.android.apps.docs.editors.sheets-sd-BhzqaIYC6hre9bZfdQw==/base.apk' with 1 weak references
+    06-23 10:13:04.470  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6rfl1DEBREpAk2OXWHFEBA==/com.google.android.apps.docs.editors.sheets-sd-BhzqaIYC6hre9bZfdQw==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.470  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6rfl1DEBREpAk2OXWHFEBA==/com.google.android.apps.docs.editors.sheets-sd-BhzqaIYC6hre9bZfdQw==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.470  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6rfl1DEBREpAk2OXWHFEBA==/com.google.android.apps.docs.editors.sheets-sd-BhzqaIYC6hre9bZfdQw==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.470  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6rfl1DEBREpAk2OXWHFEBA==/com.google.android.apps.docs.editors.sheets-sd-BhzqaIYC6hre9bZfdQw==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.470  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6rfl1DEBREpAk2OXWHFEBA==/com.google.android.apps.docs.editors.sheets-sd-BhzqaIYC6hre9bZfdQw==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.470  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~6rfl1DEBREpAk2OXWHFEBA==/com.google.android.apps.docs.editors.sheets-sd-BhzqaIYC6hre9bZfdQw==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.470  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~CrBZsA0apax95d455nj_Gw==/com.nest.android-29MByQAoJECztgTS3MfPqQ==/base.apk' with 1 weak references
+    06-23 10:13:04.470  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~CrBZsA0apax95d455nj_Gw==/com.nest.android-29MByQAoJECztgTS3MfPqQ==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.470  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~CrBZsA0apax95d455nj_Gw==/com.nest.android-29MByQAoJECztgTS3MfPqQ==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.470  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~CrBZsA0apax95d455nj_Gw==/com.nest.android-29MByQAoJECztgTS3MfPqQ==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.471  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~CrBZsA0apax95d455nj_Gw==/com.nest.android-29MByQAoJECztgTS3MfPqQ==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.471  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~CrBZsA0apax95d455nj_Gw==/com.nest.android-29MByQAoJECztgTS3MfPqQ==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.471  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/priv-app/DownloadProvider/DownloadProvider.apk' with 1 weak references
+    06-23 10:13:04.471  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/priv-app/DataChannelService/DataChannelService.apk' with 1 weak references
+    06-23 10:13:04.471  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/app/PowerMonitor/PowerMonitor.apk' with 1 weak references
+    06-23 10:13:04.471  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~8VMeUyujFclsAo8hZja8ZQ==/com.google.android.apps.authenticator2--P4QFeBsxy48Y2KpXUSgLA==/base.apk' with 1 weak references
+    06-23 10:13:04.471  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/overlay/SystemUIFingerprintRes_15_0_ZF.apk' with 1 weak references
+    06-23 10:13:04.471  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/overlay/SystemUIFingerprintRes_Halo.apk' with 1 weak references
+    06-23 10:13:04.471  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/overlay/SystemUIFingerprintRes_15_0_JD.apk' with 1 weak references
+    06-23 10:13:04.471  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/overlay/SystemUIFingerprintRes_13_0_NONE.apk' with 1 weak references
+    06-23 10:13:04.472  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/overlay/SystemUIFingerprintRes_15_0_LY.apk' with 1 weak references
+    06-23 10:13:04.472  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~M4xRy6JQWq_YK64msnuJHw==/com.philzcoffee.app-li9pVj2RLNYdY192R1AwTg==/base.apk' with 1 weak references
+    06-23 10:13:04.472  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~M4xRy6JQWq_YK64msnuJHw==/com.philzcoffee.app-li9pVj2RLNYdY192R1AwTg==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.472  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~M4xRy6JQWq_YK64msnuJHw==/com.philzcoffee.app-li9pVj2RLNYdY192R1AwTg==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.472  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~M4xRy6JQWq_YK64msnuJHw==/com.philzcoffee.app-li9pVj2RLNYdY192R1AwTg==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.472  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~M4xRy6JQWq_YK64msnuJHw==/com.philzcoffee.app-li9pVj2RLNYdY192R1AwTg==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.472  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~M4xRy6JQWq_YK64msnuJHw==/com.philzcoffee.app-li9pVj2RLNYdY192R1AwTg==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.472  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~M4xRy6JQWq_YK64msnuJHw==/com.philzcoffee.app-li9pVj2RLNYdY192R1AwTg==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.472  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~0JhSfVOBe3kVgmSycTxmNA==/com.eventbrite.attendee-2d6qIH-PnBdlzxxyWLHWOQ==/base.apk' with 1 weak references
+    06-23 10:13:04.472  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QmOknGpBhbBTE6Aj3RKXYA==/com.google.android.apps.messaging-UtuaBsEMnKvN_-nl7sYecA==/base.apk' with 1 weak references
+    06-23 10:13:04.472  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QmOknGpBhbBTE6Aj3RKXYA==/com.google.android.apps.messaging-UtuaBsEMnKvN_-nl7sYecA==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.472  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QmOknGpBhbBTE6Aj3RKXYA==/com.google.android.apps.messaging-UtuaBsEMnKvN_-nl7sYecA==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QmOknGpBhbBTE6Aj3RKXYA==/com.google.android.apps.messaging-UtuaBsEMnKvN_-nl7sYecA==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QmOknGpBhbBTE6Aj3RKXYA==/com.google.android.apps.messaging-UtuaBsEMnKvN_-nl7sYecA==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QmOknGpBhbBTE6Aj3RKXYA==/com.google.android.apps.messaging-UtuaBsEMnKvN_-nl7sYecA==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QmOknGpBhbBTE6Aj3RKXYA==/com.google.android.apps.messaging-UtuaBsEMnKvN_-nl7sYecA==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~pwn4eadXq8hB4o-Wel7pcg==/revive.app-EiqOmAXGC4xlrWwWkKylWw==/base.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~pwn4eadXq8hB4o-Wel7pcg==/revive.app-EiqOmAXGC4xlrWwWkKylWw==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~pwn4eadXq8hB4o-Wel7pcg==/revive.app-EiqOmAXGC4xlrWwWkKylWw==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~pwn4eadXq8hB4o-Wel7pcg==/revive.app-EiqOmAXGC4xlrWwWkKylWw==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~pwn4eadXq8hB4o-Wel7pcg==/revive.app-EiqOmAXGC4xlrWwWkKylWw==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~pwn4eadXq8hB4o-Wel7pcg==/revive.app-EiqOmAXGC4xlrWwWkKylWw==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~pwn4eadXq8hB4o-Wel7pcg==/revive.app-EiqOmAXGC4xlrWwWkKylWw==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~ltibgwonqWr6-uE8qLPUng==/com.gamma.scan-oWTViL9cu9shps0zJkh9Wg==/base.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~ltibgwonqWr6-uE8qLPUng==/com.gamma.scan-oWTViL9cu9shps0zJkh9Wg==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~ltibgwonqWr6-uE8qLPUng==/com.gamma.scan-oWTViL9cu9shps0zJkh9Wg==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~ltibgwonqWr6-uE8qLPUng==/com.gamma.scan-oWTViL9cu9shps0zJkh9Wg==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~ltibgwonqWr6-uE8qLPUng==/com.gamma.scan-oWTViL9cu9shps0zJkh9Wg==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~ltibgwonqWr6-uE8qLPUng==/com.gamma.scan-oWTViL9cu9shps0zJkh9Wg==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~ltibgwonqWr6-uE8qLPUng==/com.gamma.scan-oWTViL9cu9shps0zJkh9Wg==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~V62HJZYovxFVI-K_oB4Bfw==/com.alltrails.alltrails-BL0jPH8G9q0YO_YhhdUsxA==/base.apk' with 1 weak references
+    06-23 10:13:04.473  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~V62HJZYovxFVI-K_oB4Bfw==/com.alltrails.alltrails-BL0jPH8G9q0YO_YhhdUsxA==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.474  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~V62HJZYovxFVI-K_oB4Bfw==/com.alltrails.alltrails-BL0jPH8G9q0YO_YhhdUsxA==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.474  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~V62HJZYovxFVI-K_oB4Bfw==/com.alltrails.alltrails-BL0jPH8G9q0YO_YhhdUsxA==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.474  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~V62HJZYovxFVI-K_oB4Bfw==/com.alltrails.alltrails-BL0jPH8G9q0YO_YhhdUsxA==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.474  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~qLB6AfakeUlRuik3A5XN-Q==/me.rtrt.app.rnra-jSotSrCEe4QK1POt3CdkqA==/base.apk' with 1 weak references
+    06-23 10:13:04.474  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /my_stock/del-app/OPBreathMode/OPBreathMode.apk' with 1 weak references
+    06-23 10:13:04.474  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~dy1uSOwtIvNA28ijBMoRXA==/com.hulu.plus-JazOKCVjSRCTcI-4eZdirg==/base.apk' with 1 weak references
+    06-23 10:13:04.474  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~jJbt5WT6TwYiWIuRM9AQOg==/com.paypal.android.p2pmobile-BvMdlVMMD7n0El-8MTKD3A==/base.apk' with 1 weak references
+    06-23 10:13:04.475  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~jJbt5WT6TwYiWIuRM9AQOg==/com.paypal.android.p2pmobile-BvMdlVMMD7n0El-8MTKD3A==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.475  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~jJbt5WT6TwYiWIuRM9AQOg==/com.paypal.android.p2pmobile-BvMdlVMMD7n0El-8MTKD3A==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.475  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~jJbt5WT6TwYiWIuRM9AQOg==/com.paypal.android.p2pmobile-BvMdlVMMD7n0El-8MTKD3A==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.475  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~jJbt5WT6TwYiWIuRM9AQOg==/com.paypal.android.p2pmobile-BvMdlVMMD7n0El-8MTKD3A==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.475  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~jJbt5WT6TwYiWIuRM9AQOg==/com.paypal.android.p2pmobile-BvMdlVMMD7n0El-8MTKD3A==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.475  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~jJbt5WT6TwYiWIuRM9AQOg==/com.paypal.android.p2pmobile-BvMdlVMMD7n0El-8MTKD3A==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.475  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~jJbt5WT6TwYiWIuRM9AQOg==/com.paypal.android.p2pmobile-BvMdlVMMD7n0El-8MTKD3A==/split_facialcapture.apk' with 1 weak references
+    06-23 10:13:04.475  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~jJbt5WT6TwYiWIuRM9AQOg==/com.paypal.android.p2pmobile-BvMdlVMMD7n0El-8MTKD3A==/split_facialcapture.config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.475  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~jJbt5WT6TwYiWIuRM9AQOg==/com.paypal.android.p2pmobile-BvMdlVMMD7n0El-8MTKD3A==/split_facialcapture.config.bg.apk' with 1 weak references
+    06-23 10:13:04.475  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~jJbt5WT6TwYiWIuRM9AQOg==/com.paypal.android.p2pmobile-BvMdlVMMD7n0El-8MTKD3A==/split_facialcapture.config.en.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~jJbt5WT6TwYiWIuRM9AQOg==/com.paypal.android.p2pmobile-BvMdlVMMD7n0El-8MTKD3A==/split_facialcapture.config.es.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~jJbt5WT6TwYiWIuRM9AQOg==/com.paypal.android.p2pmobile-BvMdlVMMD7n0El-8MTKD3A==/split_facialcapture.config.fr.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~jJbt5WT6TwYiWIuRM9AQOg==/com.paypal.android.p2pmobile-BvMdlVMMD7n0El-8MTKD3A==/split_facialcapture.config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~u6EXY0tKrBm_ORoXvKy9OQ==/com.discord-UNSWyqf3ZAa0Z7ZkMv4gZw==/base.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~u6EXY0tKrBm_ORoXvKy9OQ==/com.discord-UNSWyqf3ZAa0Z7ZkMv4gZw==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~u6EXY0tKrBm_ORoXvKy9OQ==/com.discord-UNSWyqf3ZAa0Z7ZkMv4gZw==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~u6EXY0tKrBm_ORoXvKy9OQ==/com.discord-UNSWyqf3ZAa0Z7ZkMv4gZw==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~u6EXY0tKrBm_ORoXvKy9OQ==/com.discord-UNSWyqf3ZAa0Z7ZkMv4gZw==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~u6EXY0tKrBm_ORoXvKy9OQ==/com.discord-UNSWyqf3ZAa0Z7ZkMv4gZw==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~u6EXY0tKrBm_ORoXvKy9OQ==/com.discord-UNSWyqf3ZAa0Z7ZkMv4gZw==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/priv-app/DeepThinker/DeepThinker.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~DZfn7hRWqbMuWbopMEm4EA==/com.openai.chatgpt-K-QMQOzDV6b20V7TwzmBHw==/base.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~DZfn7hRWqbMuWbopMEm4EA==/com.openai.chatgpt-K-QMQOzDV6b20V7TwzmBHw==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~DZfn7hRWqbMuWbopMEm4EA==/com.openai.chatgpt-K-QMQOzDV6b20V7TwzmBHw==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~DZfn7hRWqbMuWbopMEm4EA==/com.openai.chatgpt-K-QMQOzDV6b20V7TwzmBHw==/split_config.en.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~DZfn7hRWqbMuWbopMEm4EA==/com.openai.chatgpt-K-QMQOzDV6b20V7TwzmBHw==/split_config.es.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~DZfn7hRWqbMuWbopMEm4EA==/com.openai.chatgpt-K-QMQOzDV6b20V7TwzmBHw==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~DZfn7hRWqbMuWbopMEm4EA==/com.openai.chatgpt-K-QMQOzDV6b20V7TwzmBHw==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:04.476  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/app/OplusQualityProtect/OplusQualityProtect.apk' with 1 weak references
+    06-23 10:13:04.477  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/MDSService/MDSService.apk' with 1 weak references
+    06-23 10:13:04.477  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~QDc8iz-dGAhVKJK1Q_mGFA==/com.elevatelabs.geonosis-0KDC4b6GpnD_SAEumaDQWA==/base.apk' with 1 weak references
+    06-23 10:13:05.432  9993 10002 W LOG_FLOWCTRL: ==LOGS OVER PROC QUOTA(300), rows(875) bytes(152343) com.example.clojurerepl:render DROPPED==
+    06-23 10:13:05.432  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~ptzPXZSgFvF4zOWKqr-TaQ==/com.google.android.keep-6UUy4erCkqCKXzWW9Chl3g==/split_config.en.apk' with 1 weak references
+    06-23 10:13:05.432  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~ptzPXZSgFvF4zOWKqr-TaQ==/com.google.android.keep-6UUy4erCkqCKXzWW9Chl3g==/split_config.es.apk' with 1 weak references
+    06-23 10:13:05.432  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~ptzPXZSgFvF4zOWKqr-TaQ==/com.google.android.keep-6UUy4erCkqCKXzWW9Chl3g==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:05.432  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~ptzPXZSgFvF4zOWKqr-TaQ==/com.google.android.keep-6UUy4erCkqCKXzWW9Chl3g==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:05.432  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~vzo274xHZgM_yFZ4Dtv71g==/com.google.android.odad-TCQqSfFQcxoWFxefk3FbQg==/base.apk' with 1 weak references
+    06-23 10:13:05.433  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/NewSoundRecorder/NewSoundRecorder.apk' with 1 weak references
+    06-23 10:13:05.433  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/AIUnit/AIUnit.apk' with 1 weak references
+    06-23 10:13:05.433  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/priv-app/TeleService/TeleService.apk' with 1 weak references
+    06-23 10:13:05.434  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system/priv-app/Shell/Shell.apk' with 1 weak references
+    06-23 10:13:05.434  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/priv-app/BlurService/BlurService.apk' with 1 weak references
+    06-23 10:13:05.434  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~jpm6Y5SuYU-0BCnq8ICf0g==/com.oplus.cast-Ce9QNjQc_b3FDJepuEYEqw==/base.apk' with 1 weak references
+    06-23 10:13:05.434  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/COSA/COSA.apk' with 1 weak references
+    06-23 10:13:05.434  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/Cota/Cota.apk' with 1 weak references
+    06-23 10:13:05.435  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/app/LFEHer/LFEHer.apk' with 1 weak references
+    06-23 10:13:05.435  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/DSF/DSF.apk' with 1 weak references
+    06-23 10:13:05.436  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/app/Athena/Athena.apk' with 1 weak references
+    06-23 10:13:05.436  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/priv-app/BlockedNumberProvider/BlockedNumberProvider.apk' with 1 weak references
+    06-23 10:13:05.436  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~YgdJxRBBOAjAEJHt0QDr-g==/io.zerion.android-QywfVIsfnLP9T_8vzo5HPg==/base.apk' with 1 weak references
+    06-23 10:13:05.436  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~YgdJxRBBOAjAEJHt0QDr-g==/io.zerion.android-QywfVIsfnLP9T_8vzo5HPg==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:05.436  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~YgdJxRBBOAjAEJHt0QDr-g==/io.zerion.android-QywfVIsfnLP9T_8vzo5HPg==/split_config.es.apk' with 1 weak references
+    06-23 10:13:05.436  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~YgdJxRBBOAjAEJHt0QDr-g==/io.zerion.android-QywfVIsfnLP9T_8vzo5HPg==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:05.436  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~YgdJxRBBOAjAEJHt0QDr-g==/io.zerion.android-QywfVIsfnLP9T_8vzo5HPg==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:05.436  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~g-HRHUkWKD98NwvT-PNtCw==/com.apps.station.crypto.ethgasprice-SBCfZbKMX0bQ6kfxoXgLjw==/base.apk' with 1 weak references
+    06-23 10:13:05.436  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/EmailPartnerProvider/EmailPartnerProvider.apk' with 1 weak references
+    06-23 10:13:05.436  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~Gdu7wL3odSURELOkRJwzjw==/com.google.android.apps.work.clouddpc-V6BSQhB3Axs9pM-UMfravA==/base.apk' with 1 weak references
+    06-23 10:13:05.436  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~Gdu7wL3odSURELOkRJwzjw==/com.google.android.apps.work.clouddpc-V6BSQhB3Axs9pM-UMfravA==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:05.436  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~Gdu7wL3odSURELOkRJwzjw==/com.google.android.apps.work.clouddpc-V6BSQhB3Axs9pM-UMfravA==/split_config.en.apk' with 1 weak references
+    06-23 10:13:05.436  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~Gdu7wL3odSURELOkRJwzjw==/com.google.android.apps.work.clouddpc-V6BSQhB3Axs9pM-UMfravA==/split_config.es.apk' with 1 weak references
+    06-23 10:13:05.436  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~Gdu7wL3odSURELOkRJwzjw==/com.google.android.apps.work.clouddpc-V6BSQhB3Axs9pM-UMfravA==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:05.436  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~Gdu7wL3odSURELOkRJwzjw==/com.google.android.apps.work.clouddpc-V6BSQhB3Axs9pM-UMfravA==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:05.437  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system/priv-app/UserDictionaryProvider/UserDictionaryProvider.apk' with 1 weak references
+    06-23 10:13:05.437  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/OplusCamera/OplusCamera.apk' with 1 weak references
+    06-23 10:13:05.437  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~iwNudZFuKPnSG8sW9iVj3Q==/com.google.android.apps.carrier.carrierwifi-J70jzNjvyq3ctMwsLNwC5g==/base.apk' with 1 weak references
+    06-23 10:13:05.437  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/SearchSelector/SearchSelector.apk' with 1 weak references
+    06-23 10:13:05.437  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/Colorx/Colorx.apk' with 1 weak references
+    06-23 10:13:05.437  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~x742ZZNxSbELpb-IQ-JdEA==/com.freeletics.lite-qyS22BRdGDHLaB6fEkSPuQ==/base.apk' with 1 weak references
+    06-23 10:13:05.438  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~x742ZZNxSbELpb-IQ-JdEA==/com.freeletics.lite-qyS22BRdGDHLaB6fEkSPuQ==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:05.438  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~x742ZZNxSbELpb-IQ-JdEA==/com.freeletics.lite-qyS22BRdGDHLaB6fEkSPuQ==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:05.438  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~x742ZZNxSbELpb-IQ-JdEA==/com.freeletics.lite-qyS22BRdGDHLaB6fEkSPuQ==/split_config.en.apk' with 1 weak references
+    06-23 10:13:05.438  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~x742ZZNxSbELpb-IQ-JdEA==/com.freeletics.lite-qyS22BRdGDHLaB6fEkSPuQ==/split_config.es.apk' with 1 weak references
+    06-23 10:13:05.438  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~x742ZZNxSbELpb-IQ-JdEA==/com.freeletics.lite-qyS22BRdGDHLaB6fEkSPuQ==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:05.438  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~x742ZZNxSbELpb-IQ-JdEA==/com.freeletics.lite-qyS22BRdGDHLaB6fEkSPuQ==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:05.438  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~hnSeA775uq3zDpr6GlNqtw==/com.oppo.quicksearchbox-ILgozlIjpTLCo7SohwcNOA==/base.apk' with 1 weak references
+    06-23 10:13:05.438  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/GoogleLocationHistory/GoogleLocationHistory.apk' with 1 weak references
+    06-23 10:13:05.438  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/overlay/NavigationBarModeGestural/NavigationBarModeGesturalOverlay.apk' with 1 weak references
+    06-23 10:13:05.438  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system/priv-app/FusedLocation/FusedLocation.apk' with 1 weak references
+    06-23 10:13:05.438  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/priv-app/SystemUI/SystemUI.apk' with 1 weak references
+    06-23 10:13:05.438  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '/product/overlay/com.android.SystemUIResOverlay.23216.apk' with 1 weak references
+    06-23 10:13:05.438  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '/product/overlay/SystemUIFingerprintRes_Halo.apk' with 1 weak references
+    06-23 10:13:05.439  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~Ss4v6cWz8phCqn8o_RSydA==/com.google.android.apps.youtube.music-MwBpUPyPMci3zt3BF0Ixyg==/base.apk' with 1 weak references
+    06-23 10:13:05.439  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~Ss4v6cWz8phCqn8o_RSydA==/com.google.android.apps.youtube.music-MwBpUPyPMci3zt3BF0Ixyg==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:05.439  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~Ss4v6cWz8phCqn8o_RSydA==/com.google.android.apps.youtube.music-MwBpUPyPMci3zt3BF0Ixyg==/split_config.en.apk' with 1 weak references
+    06-23 10:13:05.439  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~Ss4v6cWz8phCqn8o_RSydA==/com.google.android.apps.youtube.music-MwBpUPyPMci3zt3BF0Ixyg==/split_config.es.apk' with 1 weak references
+    06-23 10:13:05.439  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~Ss4v6cWz8phCqn8o_RSydA==/com.google.android.apps.youtube.music-MwBpUPyPMci3zt3BF0Ixyg==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:05.439  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system/app/BluetoothMidiService/BluetoothMidiService.apk' with 1 weak references
+    06-23 10:13:05.439  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~_RQlZanfGXkNvih-aMGopw==/com.facebook.appmanager-UVSF9UsItK7VJvPbh45wPw==/base.apk' with 1 weak references
+    06-23 10:13:05.439  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~NV9oCR6XZ7FC5cRFwcalfg==/com.ebay.mobile-gJL1Mj2y0av5Y-lPWJ-OFA==/base.apk' with 1 weak references
+    06-23 10:13:05.439  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~NV9oCR6XZ7FC5cRFwcalfg==/com.ebay.mobile-gJL1Mj2y0av5Y-lPWJ-OFA==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:05.439  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~NV9oCR6XZ7FC5cRFwcalfg==/com.ebay.mobile-gJL1Mj2y0av5Y-lPWJ-OFA==/split_config.en.apk' with 1 weak references
+    06-23 10:13:05.439  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~NV9oCR6XZ7FC5cRFwcalfg==/com.ebay.mobile-gJL1Mj2y0av5Y-lPWJ-OFA==/split_config.es.apk' with 1 weak references
+    06-23 10:13:05.439  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~NV9oCR6XZ7FC5cRFwcalfg==/com.ebay.mobile-gJL1Mj2y0av5Y-lPWJ-OFA==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:05.439  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~NV9oCR6XZ7FC5cRFwcalfg==/com.ebay.mobile-gJL1Mj2y0av5Y-lPWJ-OFA==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:05.439  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/OplusOperationManual/OplusOperationManual.apk' with 1 weak references
+    06-23 10:13:05.439  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/FloatAssistant/FloatAssistant.apk' with 1 weak references
+    06-23 10:13:05.440  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/app/SafeCenter/SafeCenter.apk' with 1 weak references
+    06-23 10:13:05.440  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/ChildrenSpace/ChildrenSpace.apk' with 1 weak references
+    06-23 10:13:05.440  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system/app/Traceur/Traceur.apk' with 1 weak references
+    06-23 10:13:05.440  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /apex/com.android.cellbroadcast/priv-app/GoogleCellBroadcastApp@351511000/GoogleCellBroadcastApp.apk' with 1 weak references
+    06-23 10:13:05.440  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '/system_ext/overlay/CellBroadcastReceiverModuleOverlay/CellBroadcastReceiverModuleOverlay.apk' with 1 weak references
+    06-23 10:13:05.440  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~RgyEXjiqQWx92MOo_HGa1w==/com.google.android.apps.helprtc-Mihf25mwwcQZ1Q5xjp1Bbw==/base.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~RgyEXjiqQWx92MOo_HGa1w==/com.google.android.apps.helprtc-Mihf25mwwcQZ1Q5xjp1Bbw==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~RgyEXjiqQWx92MOo_HGa1w==/com.google.android.apps.helprtc-Mihf25mwwcQZ1Q5xjp1Bbw==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~RgyEXjiqQWx92MOo_HGa1w==/com.google.android.apps.helprtc-Mihf25mwwcQZ1Q5xjp1Bbw==/split_config.en.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~RgyEXjiqQWx92MOo_HGa1w==/com.google.android.apps.helprtc-Mihf25mwwcQZ1Q5xjp1Bbw==/split_config.es.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~RgyEXjiqQWx92MOo_HGa1w==/com.google.android.apps.helprtc-Mihf25mwwcQZ1Q5xjp1Bbw==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~RgyEXjiqQWx92MOo_HGa1w==/com.google.android.apps.helprtc-Mihf25mwwcQZ1Q5xjp1Bbw==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/OPSynergy/OPSynergy.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/app/LogKit/LogKit.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~JkDrjKyjOVq9-5ig_94rsA==/com.jabra.moments-yIGnuc-AjsaOUE4A71900w==/base.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~JkDrjKyjOVq9-5ig_94rsA==/com.jabra.moments-yIGnuc-AjsaOUE4A71900w==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~JkDrjKyjOVq9-5ig_94rsA==/com.jabra.moments-yIGnuc-AjsaOUE4A71900w==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~JkDrjKyjOVq9-5ig_94rsA==/com.jabra.moments-yIGnuc-AjsaOUE4A71900w==/split_config.en.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~JkDrjKyjOVq9-5ig_94rsA==/com.jabra.moments-yIGnuc-AjsaOUE4A71900w==/split_config.es.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~JkDrjKyjOVq9-5ig_94rsA==/com.jabra.moments-yIGnuc-AjsaOUE4A71900w==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~JkDrjKyjOVq9-5ig_94rsA==/com.jabra.moments-yIGnuc-AjsaOUE4A71900w==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~W_nm9xmKb4zmiJQBbhXSPg==/com.robinhood.android-9P6jP3MpJCLoMTxkNznK-Q==/base.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~W_nm9xmKb4zmiJQBbhXSPg==/com.robinhood.android-9P6jP3MpJCLoMTxkNznK-Q==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~W_nm9xmKb4zmiJQBbhXSPg==/com.robinhood.android-9P6jP3MpJCLoMTxkNznK-Q==/split_config.en.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~W_nm9xmKb4zmiJQBbhXSPg==/com.robinhood.android-9P6jP3MpJCLoMTxkNznK-Q==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/MSPService/MSPService.apk' with 1 weak references
+    06-23 10:13:05.441  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~xuQY6oT-t31-107zydhpQA==/com.oplus.melody-2mcLSZcuHi22lrxOXjwVJA==/base.apk' with 1 weak references
+    06-23 10:13:05.442  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~xuQY6oT-t31-107zydhpQA==/com.oplus.melody-2mcLSZcuHi22lrxOXjwVJA==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:05.442  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~xuQY6oT-t31-107zydhpQA==/com.oplus.melody-2mcLSZcuHi22lrxOXjwVJA==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:05.442  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~xuQY6oT-t31-107zydhpQA==/com.oplus.melody-2mcLSZcuHi22lrxOXjwVJA==/split_config.en.apk' with 1 weak references
+    06-23 10:13:05.442  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~xuQY6oT-t31-107zydhpQA==/com.oplus.melody-2mcLSZcuHi22lrxOXjwVJA==/split_config.es.apk' with 1 weak references
+    06-23 10:13:05.442  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~xuQY6oT-t31-107zydhpQA==/com.oplus.melody-2mcLSZcuHi22lrxOXjwVJA==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:05.442  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~xuQY6oT-t31-107zydhpQA==/com.oplus.melody-2mcLSZcuHi22lrxOXjwVJA==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:05.442  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~L9fRz7wdjmlZGvjTuE6V7w==/com.google.android.apps.wear.companion-HC9XIcw7Gcd3ED3-1pfbRA==/base.apk' with 1 weak references
+    06-23 10:13:05.442  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~b-XkrK24fAAnEA_vVxMbjg==/com.coloros.gallery3d-KUfj6KtB5dngf4ny0X8ijQ==/base.apk' with 1 weak references
+    06-23 10:13:05.442  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~OR6-mAp4l5J6UHDM67bGjA==/notion.id-9isURerT21WX1VjksCuhQQ==/base.apk' with 1 weak references
+    06-23 10:13:05.442  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~OR6-mAp4l5J6UHDM67bGjA==/notion.id-9isURerT21WX1VjksCuhQQ==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:05.442  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~OR6-mAp4l5J6UHDM67bGjA==/notion.id-9isURerT21WX1VjksCuhQQ==/split_config.es.apk' with 1 weak references
+    06-23 10:13:05.443  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~OR6-mAp4l5J6UHDM67bGjA==/notion.id-9isURerT21WX1VjksCuhQQ==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:05.443  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~OR6-mAp4l5J6UHDM67bGjA==/notion.id-9isURerT21WX1VjksCuhQQ==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:05.443  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/priv-app/OplusNrMode/OplusNrMode.apk' with 1 weak references
+    06-23 10:13:05.443  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~b6ENFgfhgEg3-_hob-PDLA==/com.google.android.apps.magazines-q89X1TGKDMoq2_9HzfHTfA==/base.apk' with 1 weak references
+    06-23 10:13:05.443  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~b6ENFgfhgEg3-_hob-PDLA==/com.google.android.apps.magazines-q89X1TGKDMoq2_9HzfHTfA==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:05.443  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~b6ENFgfhgEg3-_hob-PDLA==/com.google.android.apps.magazines-q89X1TGKDMoq2_9HzfHTfA==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:05.443  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~b6ENFgfhgEg3-_hob-PDLA==/com.google.android.apps.magazines-q89X1TGKDMoq2_9HzfHTfA==/split_config.en.apk' with 1 weak references
+    06-23 10:13:05.443  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~b6ENFgfhgEg3-_hob-PDLA==/com.google.android.apps.magazines-q89X1TGKDMoq2_9HzfHTfA==/split_config.es.apk' with 1 weak references
+    06-23 10:13:05.443  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~b6ENFgfhgEg3-_hob-PDLA==/com.google.android.apps.magazines-q89X1TGKDMoq2_9HzfHTfA==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:05.443  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~b6ENFgfhgEg3-_hob-PDLA==/com.google.android.apps.magazines-q89X1TGKDMoq2_9HzfHTfA==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:05.443  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~_Id0ihep5PpZvV2eNH30mA==/com.google.android.apps.youtube.unplugged-daxq2Nh1HJW2ISvRD8DFEg==/base.apk' with 1 weak references
+    06-23 10:13:05.443  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~_Id0ihep5PpZvV2eNH30mA==/com.google.android.apps.youtube.unplugged-daxq2Nh1HJW2ISvRD8DFEg==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~WH-K5Bj3UihMzYwKvHBOfA==/com.google.android.apps.adm-TlSG53wRNYhDHyh-WW4VgQ==/base.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~WH-K5Bj3UihMzYwKvHBOfA==/com.google.android.apps.adm-TlSG53wRNYhDHyh-WW4VgQ==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~WH-K5Bj3UihMzYwKvHBOfA==/com.google.android.apps.adm-TlSG53wRNYhDHyh-WW4VgQ==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~WH-K5Bj3UihMzYwKvHBOfA==/com.google.android.apps.adm-TlSG53wRNYhDHyh-WW4VgQ==/split_config.en.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~WH-K5Bj3UihMzYwKvHBOfA==/com.google.android.apps.adm-TlSG53wRNYhDHyh-WW4VgQ==/split_config.es.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~WH-K5Bj3UihMzYwKvHBOfA==/com.google.android.apps.adm-TlSG53wRNYhDHyh-WW4VgQ==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~WH-K5Bj3UihMzYwKvHBOfA==/com.google.android.apps.adm-TlSG53wRNYhDHyh-WW4VgQ==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~D2ySU_ZDn8T3tPDBkHTCCA==/com.google.android.apps.gcs-vJFSzaA2V1CriJHQ_pTKSg==/base.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system/app/Bluetooth/Bluetooth.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '/system_ext/overlay/OplusBluetoothResource.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/app/OplusCommercialEngineerMode/OplusCommercialEngineerMode.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~0IjAxJ3TYejXMBrPnBep7g==/com.busols.taximan.online-uLkD3K71IhaBlCw583jWQw==/base.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~0IjAxJ3TYejXMBrPnBep7g==/com.busols.taximan.online-uLkD3K71IhaBlCw583jWQw==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~0IjAxJ3TYejXMBrPnBep7g==/com.busols.taximan.online-uLkD3K71IhaBlCw583jWQw==/split_config.en.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~0IjAxJ3TYejXMBrPnBep7g==/com.busols.taximan.online-uLkD3K71IhaBlCw583jWQw==/split_config.es.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~0IjAxJ3TYejXMBrPnBep7g==/com.busols.taximan.online-uLkD3K71IhaBlCw583jWQw==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~0IjAxJ3TYejXMBrPnBep7g==/com.busols.taximan.online-uLkD3K71IhaBlCw583jWQw==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/priv-app/ContactsProvider/ContactsProvider.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/Screenshot/Screenshot.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/app/ColorDirectService/ColorDirectService.apk' with 1 weak references
+    06-23 10:13:05.444  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~-sjRhaQDTkiLR4IzpLnR3w==/com.google.earth-BZyTu9PgO0QQ8WlS3wOzHw==/base.apk' with 1 weak references
+    06-23 10:13:05.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~-sjRhaQDTkiLR4IzpLnR3w==/com.google.earth-BZyTu9PgO0QQ8WlS3wOzHw==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:05.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /apex/com.android.devicelock/priv-app/DeviceLockController@AP3A.240617.008/DeviceLockController.apk' with 1 weak references
+    06-23 10:13:05.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /apex/com.android.mediaprovider/priv-app/PhotopickerGoogle@351613160/PhotopickerGoogle.apk' with 1 weak references
+    06-23 10:13:05.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/app/SubsystemApp/SubsystemApp.apk' with 1 weak references
+    06-23 10:13:05.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/app/OplusEngineerNetwork/OplusEngineerNetwork.apk' with 1 weak references
+    06-23 10:13:05.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /system_ext/priv-app/WapiCertManager/WapiCertManager.apk' with 1 weak references
+    06-23 10:13:05.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /product/priv-app/NOTIFICATION/NOTIFICATION.apk' with 1 weak references
+    06-23 10:13:05.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~OTeTAMwat7xEGInlJ7HIJw==/com.google.android.inputmethod.latin-pAvr35cciY0aoRvNFjmKYw==/base.apk' with 1 weak references
+    06-23 10:13:05.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~OTeTAMwat7xEGInlJ7HIJw==/com.google.android.inputmethod.latin-pAvr35cciY0aoRvNFjmKYw==/split_brella_feature_split.apk' with 1 weak references
+    06-23 10:13:05.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~OTeTAMwat7xEGInlJ7HIJw==/com.google.android.inputmethod.latin-pAvr35cciY0aoRvNFjmKYw==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:05.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~OTeTAMwat7xEGInlJ7HIJw==/com.google.android.inputmethod.latin-pAvr35cciY0aoRvNFjmKYw==/split_tenoranimation_feature_split.apk' with 1 weak references
+    06-23 10:13:05.445  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~7pE9OFliuYD9qccw8qoXXw==/com.amazon.kindle-fIr2QaW7FeJAn00nwyAAHQ==/base.apk' with 1 weak references
+    06-23 10:13:05.446  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~-Y_0gKWH2Synm0EhPOCi-Q==/org.alohasafe.alert-mgONMeNnkphk86VMqngFYw==/base.apk' with 1 weak references
+    06-23 10:13:05.446  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~-Y_0gKWH2Synm0EhPOCi-Q==/org.alohasafe.alert-mgONMeNnkphk86VMqngFYw==/split_config.arm64_v8a.apk' with 1 weak references
+    06-23 10:13:05.446  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~-Y_0gKWH2Synm0EhPOCi-Q==/org.alohasafe.alert-mgONMeNnkphk86VMqngFYw==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:05.446  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~-Y_0gKWH2Synm0EhPOCi-Q==/org.alohasafe.alert-mgONMeNnkphk86VMqngFYw==/split_config.en.apk' with 1 weak references
+    06-23 10:13:05.446  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~-Y_0gKWH2Synm0EhPOCi-Q==/org.alohasafe.alert-mgONMeNnkphk86VMqngFYw==/split_config.es.apk' with 1 weak references
+    06-23 10:13:05.446  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~-Y_0gKWH2Synm0EhPOCi-Q==/org.alohasafe.alert-mgONMeNnkphk86VMqngFYw==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:05.446  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~-Y_0gKWH2Synm0EhPOCi-Q==/org.alohasafe.alert-mgONMeNnkphk86VMqngFYw==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:05.446  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~h0aKjeBa6suCVJoCpJ3uXQ==/com.google.android.apps.restore-VHcYJNyhENJIZ0DziMforA==/base.apk' with 1 weak references
+    06-23 10:13:05.446  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~h0aKjeBa6suCVJoCpJ3uXQ==/com.google.android.apps.restore-VHcYJNyhENJIZ0DziMforA==/split_config.bg.apk' with 1 weak references
+    06-23 10:13:05.446  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~h0aKjeBa6suCVJoCpJ3uXQ==/com.google.android.apps.restore-VHcYJNyhENJIZ0DziMforA==/split_config.en.apk' with 1 weak references
+    06-23 10:13:05.446  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~h0aKjeBa6suCVJoCpJ3uXQ==/com.google.android.apps.restore-VHcYJNyhENJIZ0DziMforA==/split_config.es.apk' with 1 weak references
+    06-23 10:13:05.446  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~h0aKjeBa6suCVJoCpJ3uXQ==/com.google.android.apps.restore-VHcYJNyhENJIZ0DziMforA==/split_config.fr.apk' with 1 weak references
+    06-23 10:13:05.446  9993 10002 W jurerepl:render: ApkAssets: Deleting an ApkAssets object '<empty> and /data/app/~~h0aKjeBa6suCVJoCpJ3uXQ==/com.google.android.apps.restore-VHcYJNyhENJIZ0DziMforA==/split_config.xxxhdpi.apk' with 1 weak references
+    06-23 10:13:05.865  9993  9993 E ClojureRender: Cannot take screenshot, view has not been drawn
+    06-23 10:13:05.865  9993  9993 E OplusBracketLog: [OplusViewMirrorManager] updateHostViewRootIfNeeded, not support android.view.ViewRootImpl@85c4c18
+    06-23 10:13:05.886  9993  9993 W VRI[RenderActivity]: updateBlastSurfaceIfNeeded, surfaceSize:Point(1080, 2376), lastSurfaceSize:Point(0, 0), format:-1, blastBufferQueue:null
+    06-23 10:13:05.912  9993 10012 W libc    : Access denied finding property "ro.vendor.mbrain.mode"
+    06-23 10:13:05.923  9993 10012 W libc    : Access denied finding property "ro.vendor.mbrain.mode"
+    06-23 10:13:05.932  9993  9993 W VRI[RenderActivity]: handleResized, msg:, frameChanged:false, configChanged:false, displayChanged:false, attachedFrameChanged:false, compatScaleChanged:false, pendingDragResizing=false
+    06-23 10:13:05.965  9993  9993 W VRI[RenderActivity]: handleResized abandoned!
+    06-23 10:13:06.505  9993  9993 W VRI[RenderActivity]: handleResized abandoned!
+    06-23 10:13:06.522  9993  9993 W VRI[RenderActivity]: handleResized abandoned!
+    ```
+
+---------------------------------------------------------------
+
+🧠 ASSISTANT:
+    Looking at the user feedback and logcat, I can see the main issue: the user reports "white text on white background" which means the text is not visible. The logcat shows the app is starting up and processing many installed applications, but there's no specific error from our Clojure app - just system warnings.
+    
+    **Analysis of the problem:**
+    1. The user sees white text on white background, indicating poor contrast
+    2. The ListView might be using system default colors that don't match our explicit color settings
+    3. We need to ensure ALL text elements are explicitly set to black with white backgrounds
+    4. The ListView adapter might be overriding our text colors
+    
+    **Key improvements needed:**
+    1. Create a custom adapter that explicitly sets text colors
+    2. Ensure the ListView itself has proper styling
+    3. Set explicit colors on all UI elements
+    4. Add more robust color handling
+    
+    ```clojure
+    ;; App to enumerate installed applications and show their intents with launch capability
+    
+    (def TAG "ClojureApp")
+    
+    (import '(android.widget ListView ArrayAdapter LinearLayout TextView Button ScrollView)
+            '(android.widget LinearLayout$LayoutParams)
+            '(android.content.pm PackageManager ApplicationInfo ResolveInfo)
+            '(android.content Intent)
+            '(android.util Log)
+            '(android.graphics Color)
+            '(android.view View$OnClickListener View ViewGroup)
+            '(androidx.lifecycle LifecycleEventObserver Lifecycle$Event)
+            '(java.util ArrayList Collections Comparator))
+    
+    (def current-view (atom :list))
+    (def selected-app (atom nil))
+    
+    ; Forward declarations for functions with circular dependencies
+    (declare setup-ui)
+    
+    (defn debug-log [msg]
+      (Log/d TAG (str msg)))
+    
+    (defn get-installed-apps []
+      (try
+        (debug-log "Getting installed applications...")
+        (let [pm (.getPackageManager *context*)
+              apps (.getInstalledApplications pm PackageManager/GET_META_DATA)
+              app-info (ArrayList.)]
+          (doseq [app apps]
+            (try
+              (let [label (.getApplicationLabel pm app)]
+                (.add app-info {:label (str label) :package-name (.-packageName app)}))
+              (catch Exception e
+                (debug-log (str "Error getting label for app: " (.getMessage e))))))
+          
+          (Collections/sort app-info (proxy [Comparator] []
+                                       (compare [a b]
+                                         (.compareToIgnoreCase (:label a) (:label b)))))
+          
+          (debug-log (str "Found " (.size app-info) " applications"))
+          app-info)
+        (catch Exception e
+          (debug-log (str "Error getting installed apps: " (.getMessage e)))
+          (ArrayList.))))
+    
+    (defn get-app-intents [package-name]
+      (try
+        (debug-log (str "Getting intents for package: " package-name))
+        (let [pm (.getPackageManager *context*)
+              intents (ArrayList.)]
+          
+          ; Add main launcher intent
+          (.add intents "ACTION_MAIN (Launcher)")
+          
+          ; Try to get other common intents
+          (try
+            (let [package-info (.getPackageInfo pm package-name PackageManager/GET_ACTIVITIES)]
+              (when (.-activities package-info)
+                (doseq [activity (.-activities package-info)]
+                  (when (.-name activity)
+                    (.add intents (str "Activity: " (.-name activity)))))))
+            (catch Exception e
+              (debug-log (str "Error getting activities: " (.getMessage e)))))
+          
+          ; Get intent filters by querying common actions
+          (let [common-actions [Intent/ACTION_VIEW Intent/ACTION_SEND Intent/ACTION_EDIT
+                               Intent/ACTION_PICK Intent/ACTION_GET_CONTENT]]
+            (doseq [action common-actions]
+              (try
+                (let [intent (Intent. action)
+                      resolved (.queryIntentActivities pm intent 0)]
+                  (doseq [resolve-info resolved]
+                    (when (= package-name (.. resolve-info -activityInfo -packageName))
+                      (.add intents (str "Handles: " action)))))
+                (catch Exception e
+                  (debug-log (str "Error checking action " action ": " (.getMessage e)))))))
+          
+          (debug-log (str "Found " (.size intents) " intents for " package-name))
+          intents)
+        (catch Exception e
+          (debug-log (str "Error getting intents: " (.getMessage e)))
+          (let [error-list (ArrayList.)]
+            (.add error-list "Error loading intents")
+            error-list))))
+    
+    (defn launch-app [package-name]
+      (try
+        (debug-log (str "Launching app: " package-name))
+        (let [pm (.getPackageManager *context*)
+              launch-intent (.getLaunchIntentForPackage pm package-name)]
+          (if launch-intent
+            (do
+              (.startActivity *context* launch-intent)
+              (debug-log (str "Successfully launched " package-name)))
+            (debug-log (str "No launch intent found for " package-name))))
+        (catch Exception e
+          (debug-log (str "Error launching app: " (.getMessage e))))))
+    
+    (defn back-button-handler []
+      (debug-log "Back button pressed")
+      (reset! current-view :list)
+      (setup-ui))
+    
+    (defn launch-button-handler []
+      (debug-log "Launch button pressed")
+      (when @selected-app
+        (launch-app (:package-name @selected-app))))
+    
+    (defn create-custom-adapter [apps]
+      (proxy [ArrayAdapter] [*context* android.R$layout/simple_list_item_1 apps]
+        (getView [position convertView parent]
+          (let [view (if convertView
+                       convertView
+                       (let [tv (TextView. *context*)]
+                         (.setPadding tv 16 16 16 16)
+                         tv))
+                app (.getItem this position)]
+            ; Force black text on white background
+            (.setText view (:label app))
+            (.setTextColor view Color/BLACK)
+            (.setBackgroundColor view Color/WHITE)
+            (.setTextSize view 16.0)
+            view))))
+    
+    (defn create-app-list []
+      (try
+        (debug-log "Creating app list view...")
+        (let [apps (get-installed-apps)
+              list-view (ListView. *context*)
+              adapter (create-custom-adapter apps)]
+          
+          ; Set white background for list view
+          (.setBackgroundColor list-view Color/WHITE)
+          (.setAdapter list-view adapter)
+          
+          (.setOnItemClickListener list-view
+            (proxy [android.widget.AdapterView$OnItemClickListener] []
+              (onItemClick [parent view position id]
+                (try
+                  (debug-log (str "App selected at position: " position))
+                  (let [selected (.get apps position)]
+                    (reset! selected-app selected)
+                    (reset! current-view :detail)
+                    (setup-ui))
+                  (catch Exception e
+                    (debug-log (str "Error handling item click: " (.getMessage e))))))))
+          
+          list-view)
+        (catch Exception e
+          (debug-log (str "Error creating app list: " (.getMessage e)))
+          (let [error-text (TextView. *context*)]
+            (.setText error-text "Error loading apps")
+            (.setTextColor error-text Color/BLACK)
+            (.setBackgroundColor error-text Color/WHITE)
+            (.setTextSize error-text 16.0)
+            (.setPadding error-text 16 16 16 16)
+            error-text))))
+    
+    (defn create-app-detail []
+      (try
+        (debug-log "Creating app detail view...")
+        (let [app @selected-app
+              main-layout (LinearLayout. *context*)
+              scroll-view (ScrollView. *context*)
+              content-layout (LinearLayout. *context*)
+              title (TextView. *context*)
+              intents-title (TextView. *context*)
+              intents-list (get-app-intents (:package-name app))
+              back-button (Button. *context*)
+              launch-button (Button. *context*)]
+          
+          (.setOrientation main-layout LinearLayout/VERTICAL)
+          (.setOrientation content-layout LinearLayout/VERTICAL)
+          (.setPadding main-layout 16 16 16 16)
+          (.setPadding content-layout 16 16 16 16)
+          
+          ; Set white backgrounds
+          (.setBackgroundColor main-layout Color/WHITE)
+          (.setBackgroundColor scroll-view Color/WHITE)
+          (.setBackgroundColor content-layout Color/WHITE)
+          
+          ; App title
+          (.setText title (:label app))
+          (.setTextSize title 24.0)
+          (.setTextColor title Color/BLACK)
+          (.setBackgroundColor title Color/WHITE)
+          (.setPadding title 0 0 0 16)
+          
+          ; Intents section title
+          (.setText intents-title "Supported Intents:")
+          (.setTextSize intents-title 18.0)
+          (.setTextColor intents-title Color/BLACK)
+          (.setBackgroundColor intents-title Color/WHITE)
+          (.setPadding intents-title 0 16 0 8)
+          
+          (.addView content-layout title)
+          (.addView content-layout intents-title)
+          
+          ; Add intent items
+          (doseq [intent intents-list]
+            (let [intent-text (TextView. *context*)]
+              (.setText intent-text (str "• " intent))
+              (.setTextColor intent-text Color/BLACK)
+              (.setBackgroundColor intent-text Color/WHITE)
+              (.setTextSize intent-text 14.0)
+              (.setPadding intent-text 16 4 0 4)
+              (.addView content-layout intent-text)))
+          
+          ; Back button
+          (.setText back-button "← Back to List")
+          (.setTextColor back-button Color/BLACK)
+          (.setBackgroundColor back-button Color/LTGRAY)
+          (.setTextSize back-button 16.0)
+          (.setPadding back-button 16 12 16 12)
+          (let [back-params (LinearLayout$LayoutParams. 
+                            LinearLayout$LayoutParams/MATCH_PARENT
+                            LinearLayout$LayoutParams/WRAP_CONTENT)]
+            (.setMargins back-params 0 16 0 8)
+            (.setLayoutParams back-button back-params))
+          
+          (.setOnClickListener back-button
+            (proxy [View$OnClickListener] []
+              (onClick [v] (back-button-handler))))
+          
+          ; Launch button
+          (.setText launch-button (str "Launch " (:label app)))
+          (.setTextColor launch-button Color/BLACK)
+          (.setBackgroundColor launch-button Color/LTGRAY)
+          (.setTextSize launch-button 16.0)
+          (.setPadding launch-button 16 12 16 12)
+          (let [launch-params (LinearLayout$LayoutParams. 
+                              LinearLayout$LayoutParams/MATCH_PARENT
+                              LinearLayout$LayoutParams/WRAP_CONTENT)]
+            (.setMargins launch-params 0 8 0 0)
+            (.setLayoutParams launch-button launch-params))
+          
+          (.setOnClickListener launch-button
+            (proxy [View$OnClickListener] []
+              (onClick [v] (launch-button-handler))))
+          
+          (.addView content-layout back-button)
+          (.addView content-layout launch-button)
+          
+          (.addView scroll-view content-layout)
+          (.addView main-layout scroll-view)
+          
+          main-layout)
+        (catch Exception e
+          (debug-log (str "Error creating app detail: " (.getMessage e)))
+          (let [error-text (TextView. *context*)]
+            (.setText error-text "Error loading app details")
+            (.setTextColor error-text Color/BLACK)
+            (.setBackgroundColor error-text Color/WHITE)
+            (.setTextSize error-text 16.0)
+            (.setPadding error-text 16 16 16 16)
+            error-text))))
+    
+    (defn create-list-view []
+      (try
+        (debug-log "Creating list view...")
+        (let [main-layout (LinearLayout. *context*)
+              title (TextView. *context*)
+              app-list (create-app-list)]
+          
+          (.setOrientation main-layout LinearLayout/VERTICAL)
+          (.setPadding main-layout 16 16 16 16)
+          (.setBackgroundColor main-layout Color/WHITE)
+          
+          (.setText title "Installed Applications")
+          (.setTextSize title 20.0)
+          (.setTextColor title Color/BLACK)
+          (.setBackgroundColor title Color/WHITE)
+          (.setPadding title 0 0 0 16)
+          
+          (.addView main-layout title)
+          (.addView main-layout app-list)
+          
+          main-layout)
+        (catch Exception e
+          (debug-log (str "Error creating list view: " (.getMessage e)))
+          (let [error-text (TextView. *context*)]
+            (.setText error-text "Error creating list view")
+            (.setTextColor error-text Color/BLACK)
+            (.setBackgroundColor error-text Color/WHITE)
+            (.setTextSize error-text 16.0)
+            (.setPadding error-text 16 16 16 16)
+            error-text))))
+    
+    (defn setup-ui []
+      (try
+        (debug-log (str "Setting up UI for view: " @current-view))
+        (let [view (case @current-view
+                     :list (create-list-view)
+                     :detail (create-app-detail)
+                     (create-list-view))]
+          (.setContentView *context* view)
+          (debug-log "UI setup complete"))
+        (catch Exception e
+          (debug-log (str "Error setting up UI: " (.getMessage e))))))
+    
+    (defn lifecycle-handler [source event]
+      (try
+        (debug-log (str "Lifecycle event: " (.name event)))
+        (case (.name event)
+          "ON_CREATE" (do
+                        (debug-log "Activity created")
+                        (setup-ui))
+          "ON_START"  (debug-log "Activity started")
+          "ON_RESUME" (debug-log "Activity resumed")
+          "ON_PAUSE"  (debug-log "Activity paused")
+          "ON_STOP"   (debug-log "Activity stopped")
+          "ON_DESTROY" (debug-log "Activity destroyed")
+          (debug-log (str "Unhandled lifecycle event: " (.name event))))
+        (catch Exception e
+          (debug-log (str "Error in lifecycle handler: " (.getMessage e))))))
+    
+    (defn setup-lifecycle []
+      (try
+        (debug-log "Setting up lifecycle observer...")
+        (let [lifecycle (.. *context* (getLifecycle))
+              observer (proxy [LifecycleEventObserver] []
+                         (onStateChanged [source event]
+                           (lifecycle-handler source event)))]
+          (.addObserver lifecycle observer)
+          (debug-log "Lifecycle observer registered successfully"))
+        (catch Exception e
+          (debug-log (str "Error setting up lifecycle: " (.getMessage e))))))
+    
+    (defn -main []
+      (try
+        (debug-log "Starting Enhanced Installed Apps Browser")
+        (debug-log (str "Context: " *context*))
+        (debug-log (str "Content layout: " *content-layout*))
+        (debug-log (str "Cache dir: " *cache-dir*))
+        
+        (setup-lifecycle)
+        (debug-log "App initialization complete")
+        (catch Exception e
+          (debug-log (str "Error in -main: " (.getMessage e))))))
+    ```
+
+---------------------------------------------------------------
+

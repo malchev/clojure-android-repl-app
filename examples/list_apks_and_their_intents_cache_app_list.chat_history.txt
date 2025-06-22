@@ -1,0 +1,830 @@
+===============================================================
+CHAT HISTORY FOR SESSION: 51219c9f-ffa1-4c65-a680-ea0ba3dbff1e
+Created: 2025-06-23 00:15:29
+Model: OPENAI (gpt-4.1)
+===============================================================
+
+🤖 SYSTEM:
+    You are an expert Clojure programmer with extensive experience in Android development.
+    
+    Each Clojure app you write has the following structure:
+    
+    1. The app is in a single file.
+    
+    2. The app has direct access to the entire Android SDK API surface.  It can make API calls directly.
+    
+    3. The app's entry point is a -main function that takes no arguments. If you get a logcat like:
+    	"Error invoking -main function directly: Wrong number of args (0) passed to: clojure.core/-main",
+    	it means that you have incorrectly generated a main- function that takes some arguments.
+    
+    4. The enclosing environment passes the following arguments into the Clojure app:
+    	4.a. *context* -- the Android Context (an Activity instance);
+    	4.b. *content-layout* -- the Layout;
+    	4.c. *cache-dir* -- a directory for persistent cache.
+    
+    5. The app uses Logcat with a tag of "ClojureApp".  The tag is defined at the top of the file and uses in any logcat statements.
+    
+    7. Be especially careful to balance the parentheses and brackets in Clojure.
+    	An error on logcat containing "clojure.lang.LispReader$ReaderException:
+    	java.lang.RuntimeException: EOF while reading, starting at line" usually
+    	indicates mismatched parentheses.
+    
+    8. Always fully qualify LinearLayout.LayoutParams, like so: android.widget.LinearLayout$LayoutParams.
+    
+    9. Make sure to import everything you use.
+    
+    10. In let statements, make sure to not use a label before its definition.
+    
+    11. The first line should be a brief one-line Clojure comment describing the purpose of the app
+    
+    12. DO NOT try to create or switch to any namespace at all.
+    	Just use the "user" namespace that's been established
+    	Import what we need directly without namespace manipulation
+    
+    13. Follow Java-to-Clojure naming conventions:
+    	13.a. Inner classes are accessed with $ instead of . (e.g., Lifecycle$Event not Lifecycle.Event)
+    	13.b. Static fields are accessed with / (e.g., View/VISIBLE)
+    	13.c. For interfaces without concrete implementations, use proxy instead of reify
+    	13.d. For event listeners and callbacks, consider using separate handler functions
+    
+    14. The code will run within a single Android Activity. Implement the Android application lifecycle callbacks using the AndroidX LifecycleObserver:
+    	- Import androidx.lifecycle.LifecycleEventObserver
+    	- Use (proxy [LifecycleEventObserver] [] (onStateChanged [source event] ...))
+    	- Get lifecycle with (.. *context* (getLifecycle))
+    	- Register with (.addObserver lifecycle observer)
+    	- Handle events by examining event.name ("ON_CREATE", "ON_START", etc.)
+    	- Prefer using LifecycleEventObserver interface over annotation-based approaches
+    	- Use proxy for implementing interfaces with concrete methods (like LifecycleEventObserver)
+    	- Be aware that Java annotations (@OnLifecycleEvent) don't translate directly to Clojure
+    	- Remember to include all necessary inner classes in imports (e.g., Lifecycle$Event, Lifecycle$State)
+    
+    15. Lifecycle debugging tips:
+        18.a. Add specific debugging for lifecycle registration issues
+        18.b. Log the current lifecycle state before attempting to observe changes
+        18.c. Check logcat for specific exception messages related to interface implementation
+        18.d. Wrap lifecycle registration in try/catch to prevent app crashes
+    
+    16. Pay attention to contrast.  Use black text on bright backgrond.
+    
+    17. Add debug logging to help troubleshoot issues:
+    	16.a. Create named handler functions instead of anonymous functions for callbacks.
+    	16.b. Log the entry to each lifecycle callback with the parameters received.
+    	16.c. Include a utility function for debug logging.
+    
+    18. VERY IMPORTANT: When providing the final code, enclose it with as follows:
+    ```clojure
+    	... code ...
+    ```
+    	EXTREMELY IMPORTANT: NEVER INCLUDE OTHER CODE snippets enclosed with ```clojure and ```, ONLY the final answer.
+    
+    19. Show your reasoning steps AND final result in a single response.
+    
+    
+    Always respond with Clojure code in a markdown code block.
+
+---------------------------------------------------------------
+
+👤 USER:
+    Implement the following app:
+    When you tap on an apk and go back, the code fetches the apk list again.  Save the list instead and simply restore it when returning to it.  Otherwise keep the code unmodified.
+    
+    Use the following code as a starting point. Improve and expand upon it to meet all requirements:
+    ```clojure
+    ;; App to enumerate installed applications and show their intents with launch capability
+    
+    (def TAG "ClojureApp")
+    
+    (import '(android.widget ListView ArrayAdapter LinearLayout TextView Button ScrollView)
+            '(android.widget LinearLayout$LayoutParams)
+            '(android.content.pm PackageManager ApplicationInfo ResolveInfo)
+            '(android.content Intent)
+            '(android.util Log)
+            '(android.graphics Color)
+            '(android.view View$OnClickListener View ViewGroup)
+            '(androidx.lifecycle LifecycleEventObserver Lifecycle$Event)
+            '(java.util ArrayList Collections Comparator))
+    
+    (def current-view (atom :list))
+    (def selected-app (atom nil))
+    
+    ; Forward declarations for functions with circular dependencies
+    (declare setup-ui)
+    
+    (defn debug-log [msg]
+      (Log/d TAG (str msg)))
+    
+    (defn get-installed-apps []
+      (try
+        (debug-log "Getting installed applications...")
+        (let [pm (.getPackageManager *context*)
+              apps (.getInstalledApplications pm PackageManager/GET_META_DATA)
+              app-info (ArrayList.)]
+          (doseq [app apps]
+            (try
+              (let [label (.getApplicationLabel pm app)]
+                (.add app-info {:label (str label) :package-name (.-packageName app)}))
+              (catch Exception e
+                (debug-log (str "Error getting label for app: " (.getMessage e))))))
+          
+          (Collections/sort app-info (proxy [Comparator] []
+                                       (compare [a b]
+                                         (.compareToIgnoreCase (:label a) (:label b)))))
+          
+          (debug-log (str "Found " (.size app-info) " applications"))
+          app-info)
+        (catch Exception e
+          (debug-log (str "Error getting installed apps: " (.getMessage e)))
+          (ArrayList.))))
+    
+    (defn get-app-intents [package-name]
+      (try
+        (debug-log (str "Getting intents for package: " package-name))
+        (let [pm (.getPackageManager *context*)
+              intents (ArrayList.)]
+          
+          ; Add main launcher intent
+          (.add intents "ACTION_MAIN (Launcher)")
+          
+          ; Try to get other common intents
+          (try
+            (let [package-info (.getPackageInfo pm package-name PackageManager/GET_ACTIVITIES)]
+              (when (.-activities package-info)
+                (doseq [activity (.-activities package-info)]
+                  (when (.-name activity)
+                    (.add intents (str "Activity: " (.-name activity)))))))
+            (catch Exception e
+              (debug-log (str "Error getting activities: " (.getMessage e)))))
+          
+          ; Get intent filters by querying common actions
+          (let [common-actions [Intent/ACTION_VIEW Intent/ACTION_SEND Intent/ACTION_EDIT
+                               Intent/ACTION_PICK Intent/ACTION_GET_CONTENT]]
+            (doseq [action common-actions]
+              (try
+                (let [intent (Intent. action)
+                      resolved (.queryIntentActivities pm intent 0)]
+                  (doseq [resolve-info resolved]
+                    (when (= package-name (.. resolve-info -activityInfo -packageName))
+                      (.add intents (str "Handles: " action)))))
+                (catch Exception e
+                  (debug-log (str "Error checking action " action ": " (.getMessage e)))))))
+          
+          (debug-log (str "Found " (.size intents) " intents for " package-name))
+          intents)
+        (catch Exception e
+          (debug-log (str "Error getting intents: " (.getMessage e)))
+          (let [error-list (ArrayList.)]
+            (.add error-list "Error loading intents")
+            error-list))))
+    
+    (defn launch-app [package-name]
+      (try
+        (debug-log (str "Launching app: " package-name))
+        (let [pm (.getPackageManager *context*)
+              launch-intent (.getLaunchIntentForPackage pm package-name)]
+          (if launch-intent
+            (do
+              (.startActivity *context* launch-intent)
+              (debug-log (str "Successfully launched " package-name)))
+            (debug-log (str "No launch intent found for " package-name))))
+        (catch Exception e
+          (debug-log (str "Error launching app: " (.getMessage e))))))
+    
+    (defn back-button-handler []
+      (debug-log "Back button pressed")
+      (reset! current-view :list)
+      (setup-ui))
+    
+    (defn launch-button-handler []
+      (debug-log "Launch button pressed")
+      (when @selected-app
+        (launch-app (:package-name @selected-app))))
+    
+    (defn create-custom-adapter [apps]
+      (proxy [ArrayAdapter] [*context* android.R$layout/simple_list_item_1 apps]
+        (getView [position convertView parent]
+          (let [view (if convertView
+                       convertView
+                       (let [tv (TextView. *context*)]
+                         (.setPadding tv 16 16 16 16)
+                         tv))
+                app (.getItem this position)]
+            ; Force black text on white background
+            (.setText view (:label app))
+            (.setTextColor view Color/BLACK)
+            (.setBackgroundColor view Color/WHITE)
+            (.setTextSize view 16.0)
+            view))))
+    
+    (defn create-app-list []
+      (try
+        (debug-log "Creating app list view...")
+        (let [apps (get-installed-apps)
+              list-view (ListView. *context*)
+              adapter (create-custom-adapter apps)]
+          
+          ; Set white background for list view
+          (.setBackgroundColor list-view Color/WHITE)
+          (.setAdapter list-view adapter)
+          
+          (.setOnItemClickListener list-view
+            (proxy [android.widget.AdapterView$OnItemClickListener] []
+              (onItemClick [parent view position id]
+                (try
+                  (debug-log (str "App selected at position: " position))
+                  (let [selected (.get apps position)]
+                    (reset! selected-app selected)
+                    (reset! current-view :detail)
+                    (setup-ui))
+                  (catch Exception e
+                    (debug-log (str "Error handling item click: " (.getMessage e))))))))
+          
+          list-view)
+        (catch Exception e
+          (debug-log (str "Error creating app list: " (.getMessage e)))
+          (let [error-text (TextView. *context*)]
+            (.setText error-text "Error loading apps")
+            (.setTextColor error-text Color/BLACK)
+            (.setBackgroundColor error-text Color/WHITE)
+            (.setTextSize error-text 16.0)
+            (.setPadding error-text 16 16 16 16)
+            error-text))))
+    
+    (defn create-app-detail []
+      (try
+        (debug-log "Creating app detail view...")
+        (let [app @selected-app
+              main-layout (LinearLayout. *context*)
+              scroll-view (ScrollView. *context*)
+              content-layout (LinearLayout. *context*)
+              title (TextView. *context*)
+              intents-title (TextView. *context*)
+              intents-list (get-app-intents (:package-name app))
+              back-button (Button. *context*)
+              launch-button (Button. *context*)]
+          
+          (.setOrientation main-layout LinearLayout/VERTICAL)
+          (.setOrientation content-layout LinearLayout/VERTICAL)
+          (.setPadding main-layout 16 16 16 16)
+          (.setPadding content-layout 16 16 16 16)
+          
+          ; Set white backgrounds
+          (.setBackgroundColor main-layout Color/WHITE)
+          (.setBackgroundColor scroll-view Color/WHITE)
+          (.setBackgroundColor content-layout Color/WHITE)
+          
+          ; App title
+          (.setText title (:label app))
+          (.setTextSize title 24.0)
+          (.setTextColor title Color/BLACK)
+          (.setBackgroundColor title Color/WHITE)
+          (.setPadding title 0 0 0 16)
+          
+          ; Intents section title
+          (.setText intents-title "Supported Intents:")
+          (.setTextSize intents-title 18.0)
+          (.setTextColor intents-title Color/BLACK)
+          (.setBackgroundColor intents-title Color/WHITE)
+          (.setPadding intents-title 0 16 0 8)
+          
+          (.addView content-layout title)
+          (.addView content-layout intents-title)
+          
+          ; Add intent items
+          (doseq [intent intents-list]
+            (let [intent-text (TextView. *context*)]
+              (.setText intent-text (str "• " intent))
+              (.setTextColor intent-text Color/BLACK)
+              (.setBackgroundColor intent-text Color/WHITE)
+              (.setTextSize intent-text 14.0)
+              (.setPadding intent-text 16 4 0 4)
+              (.addView content-layout intent-text)))
+          
+          ; Back button
+          (.setText back-button "← Back to List")
+          (.setTextColor back-button Color/BLACK)
+          (.setBackgroundColor back-button Color/LTGRAY)
+          (.setTextSize back-button 16.0)
+          (.setPadding back-button 16 12 16 12)
+          (let [back-params (LinearLayout$LayoutParams. 
+                            LinearLayout$LayoutParams/MATCH_PARENT
+                            LinearLayout$LayoutParams/WRAP_CONTENT)]
+            (.setMargins back-params 0 16 0 8)
+            (.setLayoutParams back-button back-params))
+          
+          (.setOnClickListener back-button
+            (proxy [View$OnClickListener] []
+              (onClick [v] (back-button-handler))))
+          
+          ; Launch button
+          (.setText launch-button (str "Launch " (:label app)))
+          (.setTextColor launch-button Color/BLACK)
+          (.setBackgroundColor launch-button Color/LTGRAY)
+          (.setTextSize launch-button 16.0)
+          (.setPadding launch-button 16 12 16 12)
+          (let [launch-params (LinearLayout$LayoutParams. 
+                              LinearLayout$LayoutParams/MATCH_PARENT
+                              LinearLayout$LayoutParams/WRAP_CONTENT)]
+            (.setMargins launch-params 0 8 0 0)
+            (.setLayoutParams launch-button launch-params))
+          
+          (.setOnClickListener launch-button
+            (proxy [View$OnClickListener] []
+              (onClick [v] (launch-button-handler))))
+          
+          (.addView content-layout back-button)
+          (.addView content-layout launch-button)
+          
+          (.addView scroll-view content-layout)
+          (.addView main-layout scroll-view)
+          
+          main-layout)
+        (catch Exception e
+          (debug-log (str "Error creating app detail: " (.getMessage e)))
+          (let [error-text (TextView. *context*)]
+            (.setText error-text "Error loading app details")
+            (.setTextColor error-text Color/BLACK)
+            (.setBackgroundColor error-text Color/WHITE)
+            (.setTextSize error-text 16.0)
+            (.setPadding error-text 16 16 16 16)
+            error-text))))
+    
+    (defn create-list-view []
+      (try
+        (debug-log "Creating list view...")
+        (let [main-layout (LinearLayout. *context*)
+              title (TextView. *context*)
+              app-list (create-app-list)]
+          
+          (.setOrientation main-layout LinearLayout/VERTICAL)
+          (.setPadding main-layout 16 16 16 16)
+          (.setBackgroundColor main-layout Color/WHITE)
+          
+          (.setText title "Installed Applications")
+          (.setTextSize title 20.0)
+          (.setTextColor title Color/BLACK)
+          (.setBackgroundColor title Color/WHITE)
+          (.setPadding title 0 0 0 16)
+          
+          (.addView main-layout title)
+          (.addView main-layout app-list)
+          
+          main-layout)
+        (catch Exception e
+          (debug-log (str "Error creating list view: " (.getMessage e)))
+          (let [error-text (TextView. *context*)]
+            (.setText error-text "Error creating list view")
+            (.setTextColor error-text Color/BLACK)
+            (.setBackgroundColor error-text Color/WHITE)
+            (.setTextSize error-text 16.0)
+            (.setPadding error-text 16 16 16 16)
+            error-text))))
+    
+    (defn setup-ui []
+      (try
+        (debug-log (str "Setting up UI for view: " @current-view))
+        (let [view (case @current-view
+                     :list (create-list-view)
+                     :detail (create-app-detail)
+                     (create-list-view))]
+          (.setContentView *context* view)
+          (debug-log "UI setup complete"))
+        (catch Exception e
+          (debug-log (str "Error setting up UI: " (.getMessage e))))))
+    
+    (defn lifecycle-handler [source event]
+      (try
+        (debug-log (str "Lifecycle event: " (.name event)))
+        (case (.name event)
+          "ON_CREATE" (do
+                        (debug-log "Activity created")
+                        (setup-ui))
+          "ON_START"  (debug-log "Activity started")
+          "ON_RESUME" (debug-log "Activity resumed")
+          "ON_PAUSE"  (debug-log "Activity paused")
+          "ON_STOP"   (debug-log "Activity stopped")
+          "ON_DESTROY" (debug-log "Activity destroyed")
+          (debug-log (str "Unhandled lifecycle event: " (.name event))))
+        (catch Exception e
+          (debug-log (str "Error in lifecycle handler: " (.getMessage e))))))
+    
+    (defn setup-lifecycle []
+      (try
+        (debug-log "Setting up lifecycle observer...")
+        (let [lifecycle (.. *context* (getLifecycle))
+              observer (proxy [LifecycleEventObserver] []
+                         (onStateChanged [source event]
+                           (lifecycle-handler source event)))]
+          (.addObserver lifecycle observer)
+          (debug-log "Lifecycle observer registered successfully"))
+        (catch Exception e
+          (debug-log (str "Error setting up lifecycle: " (.getMessage e))))))
+    
+    (defn -main []
+      (try
+        (debug-log "Starting Enhanced Installed Apps Browser")
+        (debug-log (str "Context: " *context*))
+        (debug-log (str "Content layout: " *content-layout*))
+        (debug-log (str "Cache dir: " *cache-dir*))
+        
+        (setup-lifecycle)
+        (debug-log "App initialization complete")
+        (catch Exception e
+          (debug-log (str "Error in -main: " (.getMessage e))))))
+    ```
+
+---------------------------------------------------------------
+
+🧠 ASSISTANT:
+    Let's start by analyzing the requirements:
+    
+    **What needs to change?**
+    
+    - Currently, `get-installed-apps` is called every time the list view is built, which means after returning from the details view, the APK/app list is fetched again.
+    - The requirement is to *cache the fetched list* and restore it when returning to the list, so the list isn't recomputed unless the process is killed.
+    
+    **How to implement this in Clojure?**
+    
+    - Introduce an atom, e.g. `(def cached-app-list (atom nil))`.
+    - When `create-app-list` is called, check if `@cached-app-list` is nil. If so, fetch; else, use the cached value.
+    - When the process/activity is recreated (e.g., via ON_CREATE), we need to check if we want to force a reload. The requirement says to just restore the cached list unless process is killed (in which case the atom is nil anyway).
+    - Do **not** change the rest of the code/UX.
+    
+    **Edge cases:**
+    
+    - If the user installs/uninstalls apps and then returns to the list, the list won't update until the process is killed. This matches the requirement.
+    - If you want to "force reload", code can be trivially modified to add a button, but the requirement says to keep everything else unmodified.
+    
+    **Implementation Steps:**
+    
+    1. Add `(def cached-app-list (atom nil))` at the top.
+    2. In `create-app-list`, check if `@cached-app-list` is nil. If yes, fetch, sort, and cache; if not, use cached.
+    3. When an app is selected, don't clear the cached list.
+    4. On back, don't clear cache; just restore the UI.
+    
+    **Debug Logging:**
+    
+    - Add extra logging when populating and using the cache for debug purposes.
+    
+    **Final code:**
+    
+    Below is the improved, requirements-compliant code.
+    
+    ```clojure
+    ;; App to enumerate installed applications, cache the app list, and show their intents with launch capability
+    
+    (def TAG "ClojureApp")
+    
+    (import '(android.widget ListView ArrayAdapter LinearLayout TextView Button ScrollView)
+            '(android.widget LinearLayout$LayoutParams)
+            '(android.content.pm PackageManager ApplicationInfo ResolveInfo)
+            '(android.content Intent)
+            '(android.util Log)
+            '(android.graphics Color)
+            '(android.view View$OnClickListener View ViewGroup)
+            '(androidx.lifecycle LifecycleEventObserver Lifecycle$Event)
+            '(java.util ArrayList Collections Comparator))
+    
+    (def current-view (atom :list))
+    (def selected-app (atom nil))
+    (def cached-app-list (atom nil)) ; Atom for caching the app list
+    
+    ; Forward declarations for functions with circular dependencies
+    (declare setup-ui)
+    
+    (defn debug-log [msg]
+      (Log/d TAG (str msg)))
+    
+    (defn get-installed-apps []
+      (try
+        (debug-log "Getting installed applications...")
+        (let [pm (.getPackageManager *context*)
+              apps (.getInstalledApplications pm PackageManager/GET_META_DATA)
+              app-info (ArrayList.)]
+          (doseq [app apps]
+            (try
+              (let [label (.getApplicationLabel pm app)]
+                (.add app-info {:label (str label) :package-name (.-packageName app)}))
+              (catch Exception e
+                (debug-log (str "Error getting label for app: " (.getMessage e))))))
+          
+          (Collections/sort app-info (proxy [Comparator] []
+                                       (compare [a b]
+                                         (.compareToIgnoreCase (:label a) (:label b)))))
+          
+          (debug-log (str "Found " (.size app-info) " applications"))
+          app-info)
+        (catch Exception e
+          (debug-log (str "Error getting installed apps: " (.getMessage e)))
+          (ArrayList.))))
+    
+    (defn get-app-intents [package-name]
+      (try
+        (debug-log (str "Getting intents for package: " package-name))
+        (let [pm (.getPackageManager *context*)
+              intents (ArrayList.)]
+          
+          ; Add main launcher intent
+          (.add intents "ACTION_MAIN (Launcher)")
+          
+          ; Try to get other common intents
+          (try
+            (let [package-info (.getPackageInfo pm package-name PackageManager/GET_ACTIVITIES)]
+              (when (.-activities package-info)
+                (doseq [activity (.-activities package-info)]
+                  (when (.-name activity)
+                    (.add intents (str "Activity: " (.-name activity)))))))
+            (catch Exception e
+              (debug-log (str "Error getting activities: " (.getMessage e)))))
+          
+          ; Get intent filters by querying common actions
+          (let [common-actions [Intent/ACTION_VIEW Intent/ACTION_SEND Intent/ACTION_EDIT
+                               Intent/ACTION_PICK Intent/ACTION_GET_CONTENT]]
+            (doseq [action common-actions]
+              (try
+                (let [intent (Intent. action)
+                      resolved (.queryIntentActivities pm intent 0)]
+                  (doseq [resolve-info resolved]
+                    (when (= package-name (.. resolve-info -activityInfo -packageName))
+                      (.add intents (str "Handles: " action)))))
+                (catch Exception e
+                  (debug-log (str "Error checking action " action ": " (.getMessage e)))))))
+          
+          (debug-log (str "Found " (.size intents) " intents for " package-name))
+          intents)
+        (catch Exception e
+          (debug-log (str "Error getting intents: " (.getMessage e)))
+          (let [error-list (ArrayList.)]
+            (.add error-list "Error loading intents")
+            error-list))))
+    
+    (defn launch-app [package-name]
+      (try
+        (debug-log (str "Launching app: " package-name))
+        (let [pm (.getPackageManager *context*)
+              launch-intent (.getLaunchIntentForPackage pm package-name)]
+          (if launch-intent
+            (do
+              (.startActivity *context* launch-intent)
+              (debug-log (str "Successfully launched " package-name)))
+            (debug-log (str "No launch intent found for " package-name))))
+        (catch Exception e
+          (debug-log (str "Error launching app: " (.getMessage e))))))
+    
+    (defn back-button-handler []
+      (debug-log "Back button pressed")
+      (reset! current-view :list)
+      (setup-ui))
+    
+    (defn launch-button-handler []
+      (debug-log "Launch button pressed")
+      (when @selected-app
+        (launch-app (:package-name @selected-app))))
+    
+    (defn create-custom-adapter [apps]
+      (proxy [ArrayAdapter] [*context* android.R$layout/simple_list_item_1 apps]
+        (getView [position convertView parent]
+          (let [view (if convertView
+                       convertView
+                       (let [tv (TextView. *context*)]
+                         (.setPadding tv 16 16 16 16)
+                         tv))
+                app (.getItem this position)]
+            ; Force black text on white background
+            (.setText view (:label app))
+            (.setTextColor view Color/BLACK)
+            (.setBackgroundColor view Color/WHITE)
+            (.setTextSize view 16.0)
+            view))))
+    
+    (defn create-app-list []
+      (try
+        (debug-log "Creating app list view...")
+        (let [apps (if @cached-app-list
+                     (do
+                       (debug-log "Using cached app list")
+                       @cached-app-list)
+                     (let [fetched-apps (get-installed-apps)]
+                       (reset! cached-app-list fetched-apps)
+                       (debug-log "App list fetched and cached")
+                       fetched-apps))
+              list-view (ListView. *context*)
+              adapter (create-custom-adapter apps)]
+          
+          ; Set white background for list view
+          (.setBackgroundColor list-view Color/WHITE)
+          (.setAdapter list-view adapter)
+          
+          (.setOnItemClickListener list-view
+            (proxy [android.widget.AdapterView$OnItemClickListener] []
+              (onItemClick [parent view position id]
+                (try
+                  (debug-log (str "App selected at position: " position))
+                  (let [selected (.get apps position)]
+                    (reset! selected-app selected)
+                    (reset! current-view :detail)
+                    (setup-ui))
+                  (catch Exception e
+                    (debug-log (str "Error handling item click: " (.getMessage e))))))))
+          
+          list-view)
+        (catch Exception e
+          (debug-log (str "Error creating app list: " (.getMessage e)))
+          (let [error-text (TextView. *context*)]
+            (.setText error-text "Error loading apps")
+            (.setTextColor error-text Color/BLACK)
+            (.setBackgroundColor error-text Color/WHITE)
+            (.setTextSize error-text 16.0)
+            (.setPadding error-text 16 16 16 16)
+            error-text))))
+    
+    (defn create-app-detail []
+      (try
+        (debug-log "Creating app detail view...")
+        (let [app @selected-app
+              main-layout (LinearLayout. *context*)
+              scroll-view (ScrollView. *context*)
+              content-layout (LinearLayout. *context*)
+              title (TextView. *context*)
+              intents-title (TextView. *context*)
+              intents-list (get-app-intents (:package-name app))
+              back-button (Button. *context*)
+              launch-button (Button. *context*)]
+          
+          (.setOrientation main-layout LinearLayout/VERTICAL)
+          (.setOrientation content-layout LinearLayout/VERTICAL)
+          (.setPadding main-layout 16 16 16 16)
+          (.setPadding content-layout 16 16 16 16)
+          
+          ; Set white backgrounds
+          (.setBackgroundColor main-layout Color/WHITE)
+          (.setBackgroundColor scroll-view Color/WHITE)
+          (.setBackgroundColor content-layout Color/WHITE)
+          
+          ; App title
+          (.setText title (:label app))
+          (.setTextSize title 24.0)
+          (.setTextColor title Color/BLACK)
+          (.setBackgroundColor title Color/WHITE)
+          (.setPadding title 0 0 0 16)
+          
+          ; Intents section title
+          (.setText intents-title "Supported Intents:")
+          (.setTextSize intents-title 18.0)
+          (.setTextColor intents-title Color/BLACK)
+          (.setBackgroundColor intents-title Color/WHITE)
+          (.setPadding intents-title 0 16 0 8)
+          
+          (.addView content-layout title)
+          (.addView content-layout intents-title)
+          
+          ; Add intent items
+          (doseq [intent intents-list]
+            (let [intent-text (TextView. *context*)]
+              (.setText intent-text (str "• " intent))
+              (.setTextColor intent-text Color/BLACK)
+              (.setBackgroundColor intent-text Color/WHITE)
+              (.setTextSize intent-text 14.0)
+              (.setPadding intent-text 16 4 0 4)
+              (.addView content-layout intent-text)))
+          
+          ; Back button
+          (.setText back-button "← Back to List")
+          (.setTextColor back-button Color/BLACK)
+          (.setBackgroundColor back-button Color/LTGRAY)
+          (.setTextSize back-button 16.0)
+          (.setPadding back-button 16 12 16 12)
+          (let [back-params (LinearLayout$LayoutParams. 
+                            LinearLayout$LayoutParams/MATCH_PARENT
+                            LinearLayout$LayoutParams/WRAP_CONTENT)]
+            (.setMargins back-params 0 16 0 8)
+            (.setLayoutParams back-button back-params))
+          
+          (.setOnClickListener back-button
+            (proxy [View$OnClickListener] []
+              (onClick [v] (back-button-handler))))
+          
+          ; Launch button
+          (.setText launch-button (str "Launch " (:label app)))
+          (.setTextColor launch-button Color/BLACK)
+          (.setBackgroundColor launch-button Color/LTGRAY)
+          (.setTextSize launch-button 16.0)
+          (.setPadding launch-button 16 12 16 12)
+          (let [launch-params (LinearLayout$LayoutParams. 
+                              LinearLayout$LayoutParams/MATCH_PARENT
+                              LinearLayout$LayoutParams/WRAP_CONTENT)]
+            (.setMargins launch-params 0 8 0 0)
+            (.setLayoutParams launch-button launch-params))
+          
+          (.setOnClickListener launch-button
+            (proxy [View$OnClickListener] []
+              (onClick [v] (launch-button-handler))))
+          
+          (.addView content-layout back-button)
+          (.addView content-layout launch-button)
+          
+          (.addView scroll-view content-layout)
+          (.addView main-layout scroll-view)
+          
+          main-layout)
+        (catch Exception e
+          (debug-log (str "Error creating app detail: " (.getMessage e)))
+          (let [error-text (TextView. *context*)]
+            (.setText error-text "Error loading app details")
+            (.setTextColor error-text Color/BLACK)
+            (.setBackgroundColor error-text Color/WHITE)
+            (.setTextSize error-text 16.0)
+            (.setPadding error-text 16 16 16 16)
+            error-text))))
+    
+    (defn create-list-view []
+      (try
+        (debug-log "Creating list view...")
+        (let [main-layout (LinearLayout. *context*)
+              title (TextView. *context*)
+              app-list (create-app-list)]
+          
+          (.setOrientation main-layout LinearLayout/VERTICAL)
+          (.setPadding main-layout 16 16 16 16)
+          (.setBackgroundColor main-layout Color/WHITE)
+          
+          (.setText title "Installed Applications")
+          (.setTextSize title 20.0)
+          (.setTextColor title Color/BLACK)
+          (.setBackgroundColor title Color/WHITE)
+          (.setPadding title 0 0 0 16)
+          
+          (.addView main-layout title)
+          (.addView main-layout app-list)
+          
+          main-layout)
+        (catch Exception e
+          (debug-log (str "Error creating list view: " (.getMessage e)))
+          (let [error-text (TextView. *context*)]
+            (.setText error-text "Error creating list view")
+            (.setTextColor error-text Color/BLACK)
+            (.setBackgroundColor error-text Color/WHITE)
+            (.setTextSize error-text 16.0)
+            (.setPadding error-text 16 16 16 16)
+            error-text))))
+    
+    (defn setup-ui []
+      (try
+        (debug-log (str "Setting up UI for view: " @current-view))
+        (let [view (case @current-view
+                     :list (create-list-view)
+                     :detail (create-app-detail)
+                     (create-list-view))]
+          (.setContentView *context* view)
+          (debug-log "UI setup complete"))
+        (catch Exception e
+          (debug-log (str "Error setting up UI: " (.getMessage e))))))
+    
+    (defn lifecycle-handler [source event]
+      (try
+        (debug-log (str "Lifecycle event: " (.name event)))
+        (case (.name event)
+          "ON_CREATE" (do
+                        (debug-log "Activity created")
+                        (setup-ui))
+          "ON_START"  (debug-log "Activity started")
+          "ON_RESUME" (debug-log "Activity resumed")
+          "ON_PAUSE"  (debug-log "Activity paused")
+          "ON_STOP"   (debug-log "Activity stopped")
+          "ON_DESTROY" (debug-log "Activity destroyed")
+          (debug-log (str "Unhandled lifecycle event: " (.name event))))
+        (catch Exception e
+          (debug-log (str "Error in lifecycle handler: " (.getMessage e))))))
+    
+    (defn setup-lifecycle []
+      (try
+        (debug-log "Setting up lifecycle observer...")
+        (let [lifecycle (.. *context* (getLifecycle))
+              observer (proxy [LifecycleEventObserver] []
+                         (onStateChanged [source event]
+                           (lifecycle-handler source event)))]
+          (.addObserver lifecycle observer)
+          (debug-log "Lifecycle observer registered successfully"))
+        (catch Exception e
+          (debug-log (str "Error setting up lifecycle: " (.getMessage e))))))
+    
+    (defn -main []
+      (try
+        (debug-log "Starting Enhanced Installed Apps Browser")
+        (debug-log (str "Context: " *context*))
+        (debug-log (str "Content layout: " *content-layout*))
+        (debug-log (str "Cache dir: " *cache-dir*))
+        (setup-lifecycle)
+        (debug-log "App initialization complete")
+        (catch Exception e
+          (debug-log (str "Error in -main: " (.getMessage e))))))
+    ```
+    **Reasoning Summary:**  
+    - Added `cached-app-list` atom.
+    - In `create-app-list`, populate from cache if present, otherwise fetch and cache.
+    - Debug logging added for cache usage.
+    - No other logic is changed, so UI and navigation remain as before, but the app list is only fetched once per process.
+    
+    This meets the requirements precisely and preserves all prior functionality.
+
+---------------------------------------------------------------
+
