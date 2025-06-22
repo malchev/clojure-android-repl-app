@@ -1740,6 +1740,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             thumbsUpButton.setEnabled(true);
             runButton.setEnabled(true);
 
+            // Re-enable LLM provider and model choice menus when extraction fails
+            llmTypeSpinner.setEnabled(true);
+            llmSpinner.setEnabled(true);
+
             // Show popup dialog with error message
             new AlertDialog.Builder(this)
                     .setTitle("Code Extraction Error")
