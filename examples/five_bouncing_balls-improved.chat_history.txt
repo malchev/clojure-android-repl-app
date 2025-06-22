@@ -1,0 +1,601 @@
+===============================================================
+CHAT HISTORY FOR SESSION: 26f0fedc-e8ad-48d2-b6c8-b1f6597be3b0
+Created: 2025-06-12 12:26:22
+Model: OPENAI (gpt-4.1)
+===============================================================
+
+🤖 SYSTEM:
+    You are an expert Clojure programmer with extensive experience in Android development.
+    
+    Each Clojure app you write has the following structure:
+    
+    1. The app is in a single file.
+    
+    2. The app has direct access to the entire Android SDK API surface.  It can make API calls directly.
+    
+    3. The app's entry point is a -main function that takes no arguments. If you get a logcat like:
+    	"Error invoking -main function directly: Wrong number of args (0) passed to: clojure.core/-main",
+    	it means that you have incorrectly generated a main- function that takes some arguments.
+    
+    4. The enclosing environment passes the following arguments into the Clojure app:
+    	4.a. *context* -- the Android Context (an Activity instance);
+    	4.b. *content-layout* -- the Layout;
+    	4.c. *cache-dir* -- a directory for persistent cache.
+    
+    5. The app uses Logcat with a tag of "ClojureApp".  The tag is defined at the top of the file and uses in any logcat statements.
+    
+    7. Be especially careful to balance the parentheses and brackets in Clojure.
+    	An error on logcat containing "clojure.lang.LispReader$ReaderException:
+    	java.lang.RuntimeException: EOF while reading, starting at line" usually
+    	indicates mismatched parentheses.
+    
+    8. Always fully qualify LinearLayout.LayoutParams, like so: android.widget.LinearLayout$LayoutParams.
+    
+    9. Make sure to import everything you use.
+    
+    10. In let statements, make sure to not use a label before its definition.
+    
+    11. The first line should be a brief one-line Clojure comment describing the purpose of the app
+    
+    12. DO NOT try to create or switch to any namespace at all.
+    	Just use the "user" namespace that's been established
+    	Import what we need directly without namespace manipulation
+    
+    13. Follow Java-to-Clojure naming conventions:
+    	13.a. Inner classes are accessed with $ instead of . (e.g., Lifecycle$Event not Lifecycle.Event)
+    	13.b. Static fields are accessed with / (e.g., View/VISIBLE)
+    	13.c. For interfaces without concrete implementations, use proxy instead of reify
+    	13.d. For event listeners and callbacks, consider using separate handler functions
+    
+    14. The code will run within a single Android Activity. Implement the Android application lifecycle callbacks using the AndroidX LifecycleObserver:
+    	- Import androidx.lifecycle.LifecycleEventObserver
+    	- Use (proxy [LifecycleEventObserver] [] (onStateChanged [source event] ...))
+    	- Get lifecycle with (.. *context* (getLifecycle))
+    	- Register with (.addObserver lifecycle observer)
+    	- Handle events by examining event.name ("ON_CREATE", "ON_START", etc.)
+    	- Prefer using LifecycleEventObserver interface over annotation-based approaches
+    	- Use proxy for implementing interfaces with concrete methods (like LifecycleEventObserver)
+    	- Be aware that Java annotations (@OnLifecycleEvent) don't translate directly to Clojure
+    	- Remember to include all necessary inner classes in imports (e.g., Lifecycle$Event, Lifecycle$State)
+    
+    15. Lifecycle debugging tips:
+        18.a. Add specific debugging for lifecycle registration issues
+        18.b. Log the current lifecycle state before attempting to observe changes
+        18.c. Check logcat for specific exception messages related to interface implementation
+        18.d. Wrap lifecycle registration in try/catch to prevent app crashes
+    
+    16. Pay attention to contrast.  Use black text on bright backgrond.
+    
+    17. Add debug logging to help troubleshoot issues:
+    	16.a. Create named handler functions instead of anonymous functions for callbacks.
+    	16.b. Log the entry to each lifecycle callback with the parameters received.
+    	16.c. Include a utility function for debug logging.
+    
+    18. VERY IMPORTANT: When providing the final code, enclose it with as follows:
+    ```clojure
+    	... code ...
+    ```
+    	EXTREMELY IMPORTANT: NEVER INCLUDE OTHER CODE snippets enclosed with ```clojure and ```, ONLY the final answer.
+    
+    19. Show your reasoning steps AND final result in a single response.
+    
+    
+    Always respond with Clojure code in a markdown code block.
+
+---------------------------------------------------------------
+
+👤 USER:
+    Implement the following app:
+    Make it five balls that alternate between red and green while expanding and shrinking, and also bounce around the screen off of each other.
+    
+    Use the following code as a starting point. Improve and expand upon it to meet all requirements:
+    ```clojure
+    ;; Two bouncing balls that alternate between red and green while expanding and shrinking, bouncing off walls and each other
+    (import '[android.content Context]
+            '[android.graphics Canvas Paint Paint$Style Color]
+            '[android.view View]
+            '[android.widget LinearLayout]
+            '[android.os Handler Looper]
+            '[android.util Log]
+            '[androidx.lifecycle LifecycleEventObserver]
+            '[androidx.lifecycle Lifecycle$Event Lifecycle$State])
+    
+    (def TAG "ClojureApp")
+    
+    (defn debug-log [msg]
+      (Log/d TAG (str msg)))
+    
+    (defn interpolate-color [color1 color2 factor]
+      "Interpolate between two colors based on factor (0.0 to 1.0)"
+      (let [r1 (bit-and (bit-shift-right color1 16) 0xFF)
+            g1 (bit-and (bit-shift-right color1 8) 0xFF)
+            b1 (bit-and color1 0xFF)
+            r2 (bit-and (bit-shift-right color2 16) 0xFF)
+            g2 (bit-and (bit-shift-right color2 8) 0xFF)
+            b2 (bit-and color2 0xFF)
+            r (int (+ r1 (* factor (- r2 r1))))
+            g (int (+ g1 (* factor (- g2 g1))))
+            b (int (+ b1 (* factor (- b2 b1))))]
+        (Color/rgb r g b)))
+    
+    (defn distance [x1 y1 x2 y2]
+      "Calculate distance between two points"
+      (Math/sqrt (+ (* (- x2 x1) (- x2 x1)) (* (- y2 y1) (- y2 y1)))))
+    
+    (defn handle-ball-collision [ball1 ball2]
+      "Handle collision between two balls using conservation of momentum"
+      (let [dx (- (:x @ball2) (:x @ball1))
+            dy (- (:y @ball2) (:y @ball1))
+            dist (distance (:x @ball1) (:y @ball1) (:x @ball2) (:y @ball2))
+            min-dist (+ (:radius @ball1) (:radius @ball2))]
+        
+        (when (< dist min-dist)
+          ;; Normalize collision vector
+          (let [nx (/ dx dist)
+                ny (/ dy dist)
+                ;; Relative velocity
+                dvx (- (:vx @ball2) (:vx @ball1))
+                dvy (- (:vy @ball2) (:vy @ball1))
+                ;; Relative velocity along collision normal
+                dvn (+ (* dvx nx) (* dvy ny))]
+            
+            ;; Only resolve if balls are moving towards each other
+            (when (< dvn 0)
+              ;; Collision impulse (assuming equal mass)
+              (let [impulse dvn
+                    ;; Update velocities
+                    new-vx1 (+ (:vx @ball1) (* impulse nx))
+                    new-vy1 (+ (:vy @ball1) (* impulse ny))
+                    new-vx2 (- (:vx @ball2) (* impulse nx))
+                    new-vy2 (- (:vy @ball2) (* impulse ny))]
+                
+                ;; Separate balls to prevent overlap
+                (let [overlap (- min-dist dist)
+                      separation (/ overlap 2)
+                      sep-x (* separation nx)
+                      sep-y (* separation ny)]
+                  
+                  (swap! ball1 assoc 
+                         :vx new-vx1 :vy new-vy1
+                         :x (- (:x @ball1) sep-x)
+                         :y (- (:y @ball1) sep-y))
+                  (swap! ball2 assoc 
+                         :vx new-vx2 :vy new-vy2
+                         :x (+ (:x @ball2) sep-x)
+                         :y (+ (:y @ball2) sep-y)))))))))
+    
+    (defn update-ball-position [ball width height]
+      "Update ball position and handle wall bouncing"
+      (let [radius (:radius @ball)
+            new-x (+ (:x @ball) (:vx @ball))
+            new-y (+ (:y @ball) (:vy @ball))]
+        
+        ;; Handle wall bouncing
+        (let [bounce-x (or (<= new-x radius) (>= new-x (- width radius)))
+              bounce-y (or (<= new-y radius) (>= new-y (- height radius)))
+              final-vx (if bounce-x (- (:vx @ball)) (:vx @ball))
+              final-vy (if bounce-y (- (:vy @ball)) (:vy @ball))
+              final-x (max radius (min (- width radius) new-x))
+              final-y (max radius (min (- height radius) new-y))]
+          
+          (swap! ball assoc 
+                 :x final-x :y final-y 
+                 :vx final-vx :vy final-vy))))
+    
+    (defn create-two-balls-view [context]
+      (let [paint (Paint.)
+            handler (Handler. (Looper/getMainLooper))
+            start-time (atom (System/currentTimeMillis))
+            view-ref (atom nil)
+            animation-runnable (atom nil)
+            ;; Two balls with different starting positions and velocities
+            ball1 (atom {:x 150.0 :y 200.0 :vx 3.5 :vy 2.8 :phase-offset 0.0 :radius 30.0})
+            ball2 (atom {:x 300.0 :y 400.0 :vx -2.8 :vy -3.2 :phase-offset Math/PI :radius 30.0})]
+        
+        ;; Configure paint
+        (.setStyle paint Paint$Style/FILL)
+        (.setAntiAlias paint true)
+        
+        (debug-log "Creating two bouncing balls view")
+        
+        (let [view (proxy [View] [context]
+                     (onDraw [canvas]
+                       (let [width (.getWidth this)
+                             height (.getHeight this)
+                             current-time (System/currentTimeMillis)
+                             elapsed-time (- current-time @start-time)
+                             time-factor (/ elapsed-time 3000.0)]
+                         
+                         (when (and (> width 0) (> height 0))
+                           ;; Update ball positions
+                           (update-ball-position ball1 width height)
+                           (update-ball-position ball2 width height)
+                           
+                           ;; Check for ball-to-ball collision
+                           (handle-ball-collision ball1 ball2)
+                           
+                           ;; Draw both balls
+                           (doseq [ball [ball1 ball2]]
+                             (let [ball-data @ball
+                                   ;; Calculate radius with size animation
+                                   max-radius (/ (min width height) 12.0)
+                                   min-radius (/ max-radius 2.5)
+                                   size-sine (Math/sin (+ (* time-factor 2 Math/PI) (:phase-offset ball-data)))
+                                   radius (+ min-radius (* (+ size-sine 1) (/ (- max-radius min-radius) 2)))
+                                   ;; Calculate color with alternation
+                                   color-sine (Math/cos (+ (* time-factor 2 Math/PI) (:phase-offset ball-data)))
+                                   color-factor (/ (+ color-sine 1) 2)
+                                   current-color (interpolate-color Color/RED Color/GREEN color-factor)]
+                               
+                               ;; Update radius in ball data for collision detection
+                               (swap! ball assoc :radius radius)
+                               
+                               ;; Draw the ball
+                               (.setColor paint current-color)
+                               (.drawCircle canvas (:x ball-data) (:y ball-data) radius paint))))
+                         
+                         (debug-log (str "Drawing two balls: "
+                                       "Ball1=(" (format "%.1f" (:x @ball1)) "," (format "%.1f" (:y @ball1)) ") "
+                                       "Ball2=(" (format "%.1f" (:x @ball2)) "," (format "%.1f" (:y @ball2)) ")"))))
+                     
+                     (onSizeChanged [w h oldw oldh]
+                       (debug-log (str "View size changed: " w "x" h))
+                       ;; Reset positions when size changes
+                       (when (and (> w 0) (> h 0))
+                         (swap! ball1 assoc :x (/ w 3.0) :y (/ h 3.0))
+                         (swap! ball2 assoc :x (* w 2/3) :y (* h 2/3)))
+                       (proxy-super onSizeChanged w h oldw oldh))
+                     
+                     (onAttachedToWindow []
+                       (debug-log "View attached to window - starting two balls animation")
+                       (proxy-super onAttachedToWindow)
+                       (reset! start-time (System/currentTimeMillis))
+                       (let [animate-fn (fn []
+                                          (when @view-ref
+                                            (.invalidate @view-ref))
+                                          ;; Update every 16ms for ~60fps
+                                          (.postDelayed handler @animation-runnable 16))]
+                         (reset! animation-runnable animate-fn)
+                         (animate-fn)))
+                     
+                     (onDetachedFromWindow []
+                       (debug-log "View detached from window - stopping animation")
+                       (.removeCallbacksAndMessages handler nil)
+                       (proxy-super onDetachedFromWindow)))]
+          
+          ;; Store reference to view for invalidation
+          (reset! view-ref view)
+          (debug-log "Two balls view created")
+          view)))
+    
+    (defn setup-lifecycle-observer []
+      (let [lifecycle-observer 
+            (proxy [LifecycleEventObserver] []
+              (onStateChanged [source event]
+                (debug-log (str "Lifecycle event: " (.name event)))
+                (case (.name event)
+                  "ON_CREATE" (debug-log "Activity created")
+                  "ON_START" (debug-log "Activity started")
+                  "ON_RESUME" (debug-log "Activity resumed")
+                  "ON_PAUSE" (debug-log "Activity paused")
+                  "ON_STOP" (debug-log "Activity stopped")
+                  "ON_DESTROY" (debug-log "Activity destroyed")
+                  (debug-log (str "Unhandled lifecycle event: " (.name event))))))]
+        
+        (try
+          (let [lifecycle (.. *context* (getLifecycle))]
+            (debug-log (str "Current lifecycle state: " (.. lifecycle (getCurrentState) (name))))
+            (.addObserver lifecycle lifecycle-observer)
+            (debug-log "Lifecycle observer registered successfully"))
+          (catch Exception e
+            (debug-log (str "Error registering lifecycle observer: " (.getMessage e)))))))
+    
+    (defn -main []
+      (debug-log "Starting two bouncing balls app")
+      
+      (try
+        ;; Setup lifecycle observer
+        (setup-lifecycle-observer)
+        
+        ;; Create the two balls view
+        (let [balls-view (create-two-balls-view *context*)]
+          
+          ;; Set layout parameters to fill the screen
+          (let [layout-params (android.widget.LinearLayout$LayoutParams.
+                              android.widget.LinearLayout$LayoutParams/MATCH_PARENT
+                              android.widget.LinearLayout$LayoutParams/MATCH_PARENT)]
+            (.setLayoutParams balls-view layout-params))
+          
+          ;; Add view to layout
+          (.addView *content-layout* balls-view)
+          
+          (debug-log "Two bouncing balls app setup complete"))
+        
+        (catch Exception e
+          (debug-log (str "Error in main: " (.getMessage e)))
+          (.printStackTrace e))))
+    ```
+
+---------------------------------------------------------------
+
+🧠 ASSISTANT:
+    Let's break down your requirements and see what must be improved from the provided code:
+    
+    ### Requirements Analysis & Improvements
+    
+    1. **Five Balls:**  
+       - Initialize five balls instead of two.
+       - Each ball should have unique phase offsets for the expand/shrink animation, and unique initial positions/velocities to avoid overlapping and ensure diverse movement.
+    
+    2. **Alternate Red/Green, Expand/Shrink:**  
+       - Each ball alternates color between red and green, and expands/shrinks its radius in a sine wave, as in your code.
+    
+    3. **Ball-to-ball Bouncing:**  
+       - The original code already handles ball-to-ball collisions for two balls.  
+       - For five balls, we need to check every unique pair on each frame. We must avoid double-counting each pair.
+    
+    4. **Bounce off Walls:**  
+       - Already handled in `update-ball-position`.
+    
+    5. **High Contrast:**  
+       - Black text on bright background: The balls are colored, but the background is not specified.  
+       - We'll clear the canvas with a bright color at the start of each draw.
+    
+    6. **Debug Logging:**  
+       - Already present, but I'll add more logs as per the instructions.
+    
+    7. **Lifecycle Observer:**  
+       - Already implemented.
+    
+    8. **Imports, LayoutParams, Naming, etc.:**  
+       - Must expand import list for five balls.
+       - All other style points already met.
+    
+    9. **Handler Functions:**  
+       - Animation and lifecycle handler functions are named.
+    
+    ### Plan
+    
+    - Use a vector of five atoms for the balls, each storing its state.
+    - Loop over all unique ball pairs for collision.
+    - Randomize initial velocities and phase offsets.
+    - Expand `onDraw` to draw all five balls.
+    - Fill the canvas with a bright color (e.g., white) for contrast.
+    - Add more logging as appropriate.
+    
+    ---
+    
+    ## Final Code
+    
+    ```clojure
+    ;; Five bouncing balls that alternate red/green, expand/shrink, and bounce off each other and the walls.
+    
+    (import '[android.content Context]
+            '[android.graphics Canvas Paint Paint$Style Color]
+            '[android.view View]
+            '[android.widget LinearLayout]
+            '[android.os Handler Looper]
+            '[android.util Log]
+            '[androidx.lifecycle LifecycleEventObserver]
+            '[androidx.lifecycle Lifecycle$Event Lifecycle$State])
+    
+    (def TAG "ClojureApp")
+    
+    (defn debug-log [msg]
+      (Log/d TAG (str msg)))
+    
+    (defn interpolate-color [color1 color2 factor]
+      "Interpolate between two colors based on factor (0.0 to 1.0)"
+      (let [r1 (bit-and (bit-shift-right color1 16) 0xFF)
+            g1 (bit-and (bit-shift-right color1 8) 0xFF)
+            b1 (bit-and color1 0xFF)
+            r2 (bit-and (bit-shift-right color2 16) 0xFF)
+            g2 (bit-and (bit-shift-right color2 8) 0xFF)
+            b2 (bit-and color2 0xFF)
+            r (int (+ r1 (* factor (- r2 r1))))
+            g (int (+ g1 (* factor (- g2 g1))))
+            b (int (+ b1 (* factor (- b2 b1))))]
+        (Color/rgb r g b)))
+    
+    (defn distance [x1 y1 x2 y2]
+      "Calculate distance between two points"
+      (Math/sqrt (+ (* (- x2 x1) (- x2 x1)) (* (- y2 y1) (- y2 y1)))))
+    
+    (defn handle-ball-collision [ball1 ball2]
+      "Handle collision between two balls using conservation of momentum"
+      (let [dx (- (:x @ball2) (:x @ball1))
+            dy (- (:y @ball2) (:y @ball1))
+            dist (distance (:x @ball1) (:y @ball1) (:x @ball2) (:y @ball2))
+            min-dist (+ (:radius @ball1) (:radius @ball2))]
+        (when (< dist min-dist)
+          (let [nx (if (zero? dist) 1.0 (/ dx dist))
+                ny (if (zero? dist) 0.0 (/ dy dist))
+                dvx (- (:vx @ball2) (:vx @ball1))
+                dvy (- (:vy @ball2) (:vy @ball1))
+                dvn (+ (* dvx nx) (* dvy ny))]
+            (when (< dvn 0)
+              (let [impulse dvn
+                    new-vx1 (+ (:vx @ball1) (* impulse nx))
+                    new-vy1 (+ (:vy @ball1) (* impulse ny))
+                    new-vx2 (- (:vx @ball2) (* impulse nx))
+                    new-vy2 (- (:vy @ball2) (* impulse ny))
+                    overlap (- min-dist dist)
+                    separation (/ overlap 2)
+                    sep-x (* separation nx)
+                    sep-y (* separation ny)]
+                (swap! ball1 assoc
+                       :vx new-vx1 :vy new-vy1
+                       :x (- (:x @ball1) sep-x)
+                       :y (- (:y @ball1) sep-y))
+                (swap! ball2 assoc
+                       :vx new-vx2 :vy new-vy2
+                       :x (+ (:x @ball2) sep-x)
+                       :y (+ (:y @ball2) sep-y))))))))
+    
+    (defn update-ball-position [ball width height]
+      "Update ball position and handle wall bouncing"
+      (let [radius (:radius @ball)
+            new-x (+ (:x @ball) (:vx @ball))
+            new-y (+ (:y @ball) (:vy @ball))]
+        (let [bounce-x (or (<= new-x radius) (>= new-x (- width radius)))
+              bounce-y (or (<= new-y radius) (>= new-y (- height radius)))
+              final-vx (if bounce-x (- (:vx @ball)) (:vx @ball))
+              final-vy (if bounce-y (- (:vy @ball)) (:vy @ball))
+              final-x (max radius (min (- width radius) new-x))
+              final-y (max radius (min (- height radius) new-y))]
+          (swap! ball assoc
+                 :x final-x :y final-y
+                 :vx final-vx :vy final-vy))))
+    
+    (defn random-between [a b]
+      (+ a (* (Math/random) (- b a))))
+    
+    (defn generate-initial-balls [width height]
+      "Generate five balls with initial positions and velocities, spaced apart"
+      (let [center-x (/ width 2.0)
+            center-y (/ height 2.0)
+            angle-step (/ (* 2 Math/PI) 5)
+            base-radius (min (/ width 12.0) (/ height 12.0))
+            min-speed 2.5
+            max-speed 4.5]
+        (vec
+         (for [i (range 5)]
+           (let [angle (* i angle-step)
+                 phase-offset (* i (/ Math/PI 2.0))
+                 speed (random-between min-speed max-speed)
+                 vx (* speed (Math/cos angle))
+                 vy (* speed (Math/sin angle))
+                 ;; Place balls in a pentagon formation
+                 pos-radius (min (/ width 3.0) (/ height 3.0))
+                 x (+ center-x (* pos-radius (Math/cos angle)))
+                 y (+ center-y (* pos-radius (Math/sin angle)))]
+             (atom {:x x :y y :vx vx :vy vy
+                    :phase-offset phase-offset :radius base-radius}))))))
+    
+    (defn handle-all-collisions [balls]
+      "Handle collisions between all unique pairs of balls"
+      (doseq [i (range (count balls))
+              j (range (inc i) (count balls))]
+        (handle-ball-collision (balls i) (balls j))))
+    
+    (defn create-five-balls-view [context]
+      (let [paint (Paint.)
+            handler (Handler. (Looper/getMainLooper))
+            start-time (atom (System/currentTimeMillis))
+            view-ref (atom nil)
+            animation-runnable (atom nil)
+            balls-ref (atom nil)]
+        ;; Configure paint
+        (.setStyle paint Paint$Style/FILL)
+        (.setAntiAlias paint true)
+        (debug-log "Creating five bouncing balls view")
+        (let [view (proxy [View] [context]
+                     (onDraw [canvas]
+                       (let [width (.getWidth this)
+                             height (.getHeight this)
+                             current-time (System/currentTimeMillis)
+                             elapsed-time (- current-time @start-time)
+                             time-factor (/ elapsed-time 3000.0)]
+                         (when (and (> width 0) (> height 0))
+                           (when (nil? @balls-ref)
+                             ;; Initialize balls only once when we know the width/height
+                             (reset! balls-ref (generate-initial-balls width height)))
+                           ;; Fill background white for high contrast
+                           (.drawColor canvas Color/WHITE)
+                           ;; Update and draw balls
+                           (doseq [ball @balls-ref]
+                             (update-ball-position ball width height))
+                           (handle-all-collisions @balls-ref)
+                           (doseq [idx (range (count @balls-ref))]
+                             (let [ball (@balls-ref idx)
+                                   ball-data @ball
+                                   ;; Size animation
+                                   max-radius (/ (min width height) 12.0)
+                                   min-radius (/ max-radius 2.5)
+                                   size-sine (Math/sin (+ (* time-factor 2 Math/PI) (:phase-offset ball-data)))
+                                   radius (+ min-radius (* (+ size-sine 1) (/ (- max-radius min-radius) 2)))
+                                   ;; Color alternation
+                                   color-sine (Math/cos (+ (* time-factor 2 Math/PI) (:phase-offset ball-data)))
+                                   color-factor (/ (+ color-sine 1) 2)
+                                   current-color (interpolate-color Color/RED Color/GREEN color-factor)]
+                               (swap! ball assoc :radius radius)
+                               (.setColor paint current-color)
+                               (.drawCircle canvas (:x ball-data) (:y ball-data) radius paint)))
+                           (debug-log (str "Frame drawn at time " elapsed-time " ms")))))
+                     (onSizeChanged [w h oldw oldh]
+                       (debug-log (str "View size changed: " w "x" h))
+                       (when (and (> w 0) (> h 0))
+                         ;; Re-initialize balls with new size
+                         (reset! balls-ref (generate-initial-balls w h)))
+                       (proxy-super onSizeChanged w h oldw oldh))
+                     (onAttachedToWindow []
+                       (debug-log "View attached to window - starting five balls animation")
+                       (proxy-super onAttachedToWindow)
+                       (reset! start-time (System/currentTimeMillis))
+                       (letfn [(animate-fn []
+                                 (when @view-ref
+                                   (.invalidate @view-ref))
+                                 (.postDelayed handler @animation-runnable 16))]
+                         (reset! animation-runnable animate-fn)
+                         (animate-fn)))
+                     (onDetachedFromWindow []
+                       (debug-log "View detached from window - stopping animation")
+                       (.removeCallbacksAndMessages handler nil)
+                       (proxy-super onDetachedFromWindow)))]
+          (reset! view-ref view)
+          (debug-log "Five balls view created")
+          view)))
+    
+    (defn lifecycle-handler [source event]
+      (debug-log (str "Lifecycle event: " (.name event)))
+      (case (.name event)
+        "ON_CREATE" (debug-log "Activity created")
+        "ON_START" (debug-log "Activity started")
+        "ON_RESUME" (debug-log "Activity resumed")
+        "ON_PAUSE" (debug-log "Activity paused")
+        "ON_STOP" (debug-log "Activity stopped")
+        "ON_DESTROY" (debug-log "Activity destroyed")
+        (debug-log (str "Unhandled lifecycle event: " (.name event)))))
+    
+    (defn setup-lifecycle-observer []
+      (let [lifecycle-observer
+            (proxy [LifecycleEventObserver] []
+              (onStateChanged [source event]
+                (lifecycle-handler source event)))]
+        (try
+          (let [lifecycle (.. *context* (getLifecycle))]
+            (debug-log (str "Current lifecycle state: " (.. lifecycle (getCurrentState) (name))))
+            (.addObserver lifecycle lifecycle-observer)
+            (debug-log "Lifecycle observer registered successfully"))
+          (catch Exception e
+            (debug-log (str "Error registering lifecycle observer: " (.getMessage e)))))))
+    
+    (defn -main []
+      (debug-log "Starting five bouncing balls app")
+      (try
+        (setup-lifecycle-observer)
+        (let [balls-view (create-five-balls-view *context*)]
+          (let [layout-params (android.widget.LinearLayout$LayoutParams.
+                               android.widget.LinearLayout$LayoutParams/MATCH_PARENT
+                               android.widget.LinearLayout$LayoutParams/MATCH_PARENT)]
+            (.setLayoutParams balls-view layout-params))
+          (.addView *content-layout* balls-view)
+          (debug-log "Five bouncing balls app setup complete"))
+        (catch Exception e
+          (debug-log (str "Error in main: " (.getMessage e)))
+          (.printStackTrace e))))
+    ```
+    
+    ---
+    
+    **Reasoning Highlights:**
+    
+    - Each ball is stored as an atom within a vector, so we can mutate their state independently.
+    - `generate-initial-balls` ensures spatial separation and randomizes velocity/phase.
+    - The animation loop checks all pairs for collisions, and each frame updates and draws all five balls.
+    - The canvas is cleared to white for maximum contrast.
+    - Logging is thorough for lifecycle and animation events.
+    - All Android API features are fully qualified/imported as per requirements.
+
+---------------------------------------------------------------
+
