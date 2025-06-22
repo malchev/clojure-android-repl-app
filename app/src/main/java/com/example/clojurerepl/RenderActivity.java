@@ -667,8 +667,11 @@ public class RenderActivity extends AppCompatActivity {
             } catch (Exception e) {
                 Log.e(TAG, "Error in Clojure compilation", e);
                 lastResult = "Error: " + e.getMessage();
-                clojureStatus = e.getMessage(); // TODO: Have showError return this
-                showError(clojureStatus);
+
+                // Capture the full error information including "Caused by" details
+                String fullErrorMessage = formatFullErrorMessage(e);
+                clojureStatus = fullErrorMessage;
+                showError(fullErrorMessage);
             }
         } catch (Exception e) {
             Log.e(TAG, "Error setting up Clojure environment", e);
@@ -679,6 +682,43 @@ public class RenderActivity extends AppCompatActivity {
         } finally {
             Log.d(TAG, "Cleaning up bindings");
             Var.popThreadBindings();
+        }
+    }
+
+    /**
+     * Format a full error message including the "Caused by" information
+     *
+     * @param exception The exception to format
+     * @return A formatted error message with full details
+     */
+    private String formatFullErrorMessage(Throwable exception) {
+        try {
+            // Start with the original exception's message
+            StringBuilder fullMessage = new StringBuilder();
+            String originalMessage = exception.getMessage();
+            if (originalMessage != null) {
+                fullMessage.append(originalMessage);
+            } else {
+                fullMessage.append(exception.toString());
+            }
+
+            // Get the root cause of the exception
+            Throwable cause = getRootCause(exception);
+
+            // Add "Caused by" information if it exists and is different from the original
+            // message
+            if (cause != null && cause != exception) {
+                String causeMessage = cause.getMessage();
+                if (causeMessage != null && !causeMessage.equals(originalMessage)) {
+                    fullMessage.append("\n\nCaused by: ").append(causeMessage);
+                }
+            }
+
+            return fullMessage.toString();
+        } catch (Exception e) {
+            Log.e(TAG, "Error formatting full error message", e);
+            // Fall back to the original message if formatting fails
+            return exception.getMessage() != null ? exception.getMessage() : exception.toString();
         }
     }
 
@@ -701,10 +741,11 @@ public class RenderActivity extends AppCompatActivity {
             // Create main error message
             TextView errorMsgView = new TextView(this);
 
-            // Parse the message to separate main message, location, and source code
+            // Parse the message to separate main message, location, and additional details
             String mainMessage = message;
             String locationInfo = "";
             String sourceCode = "";
+            String additionalDetails = "";
 
             // Extract location information
             int atIndex = message.indexOf(" at (");
@@ -719,6 +760,16 @@ public class RenderActivity extends AppCompatActivity {
                     if (sourceIndex > 0) {
                         sourceCode = message.substring(sourceIndex + 1);
                     }
+                }
+            }
+
+            // Extract additional details (Caused by, Root cause, etc.)
+            int causedByIndex = message.indexOf("\n\nCaused by:");
+            if (causedByIndex > 0) {
+                additionalDetails = message.substring(causedByIndex + 2); // Skip the \n\n
+                // Remove additional details from main message if they were included
+                if (mainMessage.length() > causedByIndex) {
+                    mainMessage = mainMessage.substring(0, causedByIndex);
                 }
             }
 
@@ -749,6 +800,18 @@ public class RenderActivity extends AppCompatActivity {
                 errorContainer.addView(sourceView);
             }
 
+            // Add additional details if present
+            if (!additionalDetails.isEmpty()) {
+                TextView detailsView = new TextView(this);
+                detailsView.setText(additionalDetails);
+                detailsView.setTypeface(Typeface.MONOSPACE);
+                detailsView.setTextSize(12);
+                detailsView.setTextColor(Color.parseColor("#FF6F00")); // Material Orange
+                detailsView.setBackgroundColor(Color.parseColor("#FFF3E0")); // Light Orange
+                detailsView.setPadding(16, 8, 16, 8);
+                errorContainer.addView(detailsView);
+            }
+
             contentLayout.addView(errorContainer);
         });
     }
@@ -771,69 +834,6 @@ public class RenderActivity extends AppCompatActivity {
     }
 
     /**
-     * Format an exception with line and column information
-     *
-     * @param exception  The exception to format
-     * @param sourceCode The source code being evaluated
-     * @param reader     The reader used for compilation (may contain line/column
-     *                   info)
-     * @return A formatted error message
-     */
-    private String formatErrorWithLineInfo(Throwable exception, String sourceCode, LineNumberingPushbackReader reader) {
-        try {
-            // Get the root cause of the exception
-            Throwable rootCause = getRootCause(exception);
-            String message = rootCause.getMessage();
-
-            // Try to extract line and column from compiler exception first
-            int[] lineAndColumn = extractLineColumnFromException(rootCause);
-            int line = (lineAndColumn != null && lineAndColumn[0] > 0) ? lineAndColumn[0] : reader.getLineNumber();
-            int column = (lineAndColumn != null && lineAndColumn[1] > 0) ? lineAndColumn[1] : reader.getColumnNumber();
-
-            // Check if the message already has line/column info
-            if (message != null && message.contains("at (")) {
-                // Try to extract the actual line/column from the message if it has zeros
-                if (message.contains("at (0:0)")) {
-                    String updatedMessage = message.replace("at (0:0)", "at (" + line + ":" + column + ")");
-                    Log.d(TAG, "Updated error message with line/column: " + updatedMessage);
-
-                    // Try to include the problematic line of code
-                    if (line > 0 && sourceCode != null) {
-                        String[] lines = sourceCode.split("\n");
-                        if (line <= lines.length) {
-                            String sourceLine = lines[line - 1].trim();
-                            updatedMessage += "\nProblematic code: " + sourceLine;
-                        }
-                    }
-
-                    return updatedMessage;
-                }
-                return message; // Already has non-zero line/column info
-            }
-
-            // No line/column info at all, add it
-            StringBuilder enhancedMessage = new StringBuilder(message != null ? message : rootCause.toString());
-            enhancedMessage.append(" at (").append(line).append(":").append(column).append(")");
-
-            // Try to include the problematic line of code
-            if (line > 0 && sourceCode != null) {
-                String[] lines = sourceCode.split("\n");
-                if (line <= lines.length) {
-                    String sourceLine = lines[line - 1].trim();
-                    enhancedMessage.append("\nProblematic code: ").append(sourceLine);
-                }
-            }
-
-            return enhancedMessage.toString();
-        } catch (Exception e) {
-            // If anything goes wrong in our error formatting, fall back to the original
-            // message
-            Log.e(TAG, "Error formatting exception", e);
-            return exception.getMessage();
-        }
-    }
-
-    /**
      * Get the root cause of an exception
      */
     private Throwable getRootCause(Throwable t) {
@@ -842,68 +842,6 @@ public class RenderActivity extends AppCompatActivity {
             cause = cause.getCause();
         }
         return cause;
-    }
-
-    /**
-     * Extract line and column information from a Clojure compiler exception
-     *
-     * @param ex The exception to extract information from
-     * @return int array with [line, column] or null if not found
-     */
-    private int[] extractLineColumnFromException(Throwable ex) {
-        try {
-            // Check if it's a CompilerException which might have line info
-            if (ex.getClass().getName().equals("clojure.lang.Compiler$CompilerException")) {
-                // Try to access line and column fields using reflection
-                try {
-                    // Get the line field
-                    java.lang.reflect.Field lineField = ex.getClass().getDeclaredField("line");
-                    lineField.setAccessible(true);
-                    int line = (Integer) lineField.get(ex);
-
-                    // Get the column field
-                    java.lang.reflect.Field columnField = ex.getClass().getDeclaredField("column");
-                    columnField.setAccessible(true);
-                    int column = (Integer) columnField.get(ex);
-
-                    Log.d(TAG, "Extracted from CompilerException - line: " + line + ", column: " + column);
-                    return new int[] { line, column };
-                } catch (Exception e) {
-                    Log.w(TAG, "Failed to extract line/column via reflection", e);
-                }
-            }
-
-            // Check for "at (line:column)" pattern in the message
-            String message = ex.getMessage();
-            if (message != null) {
-                // Look for patterns like "at (123:45)" or "at line 123, column 45"
-                java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("at \\((\\d+):(\\d+)\\)");
-                java.util.regex.Matcher matcher = pattern.matcher(message);
-
-                if (matcher.find()) {
-                    int line = Integer.parseInt(matcher.group(1));
-                    int column = Integer.parseInt(matcher.group(2));
-                    Log.d(TAG, "Extracted from message pattern - line: " + line + ", column: " + column);
-                    return new int[] { line, column };
-                }
-
-                // Try alternative pattern
-                pattern = java.util.regex.Pattern.compile("at line (\\d+), column (\\d+)");
-                matcher = pattern.matcher(message);
-
-                if (matcher.find()) {
-                    int line = Integer.parseInt(matcher.group(1));
-                    int column = Integer.parseInt(matcher.group(2));
-                    Log.d(TAG, "Extracted from alt message pattern - line: " + line + ", column: " + column);
-                    return new int[] { line, column };
-                }
-            }
-
-            return null;
-        } catch (Exception e) {
-            Log.e(TAG, "Error extracting line/column info", e);
-            return null;
-        }
     }
 
     private boolean isInRenderProcess() {
