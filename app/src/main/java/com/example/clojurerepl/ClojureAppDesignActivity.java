@@ -633,8 +633,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         // Dismiss progress dialog
                         progressDialog.dismiss();
 
-                        Toast.makeText(this, "Error generating code: " + throwable.getMessage(),
-                                Toast.LENGTH_LONG).show();
+                        showLLMErrorDialog("Code Generation Error",
+                                "Error generating code: " + throwable.getMessage());
                         generateButton.setEnabled(true);
                     });
                     return null;
@@ -755,8 +755,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         // Dismiss progress dialog
                         progressDialog.dismiss();
 
-                        Toast.makeText(this, "Error generating next iteration: " + throwable.getMessage(),
-                                Toast.LENGTH_LONG).show();
+                        showLLMErrorDialog("Iteration Error",
+                                "Error generating next iteration: " + throwable.getMessage());
                         // Make sure buttons are enabled on error
                         thumbsUpButton.setEnabled(true);
                         runButton.setEnabled(true);
@@ -1106,7 +1106,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 progressDialog.dismiss();
                 Log.e(TAG, "Error updating model spinner", e);
                 runOnUiThread(() -> {
-                    Toast.makeText(this, "Failed to fetch models: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    showLLMErrorDialog("Model Fetch Error",
+                            "Failed to fetch models: " + e.getMessage());
                     llmSpinner.setVisibility(View.GONE);
                     modelsLoaded = false;
                 });
@@ -1240,7 +1241,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     Log.e(TAG, "Error in model fetching", e);
                     runOnUiThread(() -> {
                         progressDialog.dismiss();
-                        Toast.makeText(this, "Failed to fetch models: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                        showLLMErrorDialog("Model Fetch Error",
+                                "Failed to fetch models: " + e.getMessage());
                         // Still try to update spinner with fallback models
                         updateLlmSpinner(type);
                     });
@@ -1726,6 +1728,31 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     private void toggleLineNumbersDisplay() {
         showingLineNumbers = !showingLineNumbers;
         displayCurrentCode();
+    }
+
+    /**
+     * Shows a popup dialog for LLM errors and re-enables the LLM provider and model
+     * choice menus
+     * 
+     * @param title        The dialog title
+     * @param errorMessage The error message to display
+     */
+    private void showLLMErrorDialog(String title, String errorMessage) {
+        runOnUiThread(() -> {
+            // Re-enable LLM provider and model choice menus when LLM errors occur
+            llmTypeSpinner.setEnabled(true);
+            llmSpinner.setEnabled(true);
+
+            // Show popup dialog with error message
+            new AlertDialog.Builder(this)
+                    .setTitle(title)
+                    .setMessage(errorMessage)
+                    .setPositiveButton("OK", (dialog, which) -> {
+                        dialog.dismiss();
+                    })
+                    .setCancelable(false)
+                    .show();
+        });
     }
 
     /**
