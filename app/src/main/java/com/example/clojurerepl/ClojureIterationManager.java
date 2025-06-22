@@ -14,11 +14,19 @@ import java.util.concurrent.Executors;
 public class ClojureIterationManager {
     private static final String TAG = "ClojureIterationManager";
 
+    /**
+     * Callback interface for handling code extraction errors
+     */
+    public interface ExtractionErrorCallback {
+        void onExtractionError(String errorMessage);
+    }
+
     private final Context context;
     private final LLMClient llmClient;
     private final LogcatMonitor logcatMonitor;
     private final ScreenshotManager screenshotManager;
     private final String sessionId;
+    private ExtractionErrorCallback extractionErrorCallback;
 
     private CompletableFuture<IterationResult> currentIterationFuture;
     private ExecutorService executor;
@@ -80,6 +88,15 @@ public class ClojureIterationManager {
     }
 
     /**
+     * Sets the callback for handling code extraction errors
+     * 
+     * @param callback The callback to handle extraction errors
+     */
+    public void setExtractionErrorCallback(ExtractionErrorCallback callback) {
+        this.extractionErrorCallback = callback;
+    }
+
+    /**
      * Generates initial Clojure code based on a description.
      * This is the entry point for starting a new design.
      * 
@@ -131,8 +148,14 @@ public class ClojureIterationManager {
                     // Extract clean code from markdown blocks if present
                     CodeExtractionResult extractionResult = extractClojureCode(response);
                     if (!extractionResult.success) {
-                        generationFuture
-                                .completeExceptionally(new IllegalArgumentException(extractionResult.errorMessage));
+                        // Use callback if available, otherwise fall back to exception
+                        if (extractionErrorCallback != null) {
+                            extractionErrorCallback.onExtractionError(extractionResult.errorMessage);
+                            generationFuture.cancel(true);
+                        } else {
+                            generationFuture
+                                    .completeExceptionally(new IllegalArgumentException(extractionResult.errorMessage));
+                        }
                         return;
                     }
                     String cleanCode = extractionResult.code;
@@ -241,8 +264,14 @@ public class ClojureIterationManager {
                     // Extract clean code from markdown blocks if present
                     CodeExtractionResult extractionResult = extractClojureCode(response);
                     if (!extractionResult.success) {
-                        generationFuture
-                                .completeExceptionally(new IllegalArgumentException(extractionResult.errorMessage));
+                        // Use callback if available, otherwise fall back to exception
+                        if (extractionErrorCallback != null) {
+                            extractionErrorCallback.onExtractionError(extractionResult.errorMessage);
+                            generationFuture.cancel(true);
+                        } else {
+                            generationFuture
+                                    .completeExceptionally(new IllegalArgumentException(extractionResult.errorMessage));
+                        }
                         return;
                     }
                     String cleanCode = extractionResult.code;

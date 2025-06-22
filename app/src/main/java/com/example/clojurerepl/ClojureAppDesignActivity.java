@@ -36,7 +36,8 @@ import android.widget.ListView;
 import com.example.clojurerepl.session.DesignSession;
 import com.example.clojurerepl.session.SessionManager;
 
-public class ClojureAppDesignActivity extends AppCompatActivity {
+public class ClojureAppDesignActivity extends AppCompatActivity
+        implements ClojureIterationManager.ExtractionErrorCallback {
     private static final String TAG = "ClojureAppDesign";
 
     private EditText appDescriptionInput;
@@ -237,6 +238,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     iterationManager = new ClojureIterationManager(ClojureAppDesignActivity.this,
                             LLMClientFactory.createClient(ClojureAppDesignActivity.this, selectedType),
                             currentSession.getId());
+                    iterationManager.setExtractionErrorCallback(ClojureAppDesignActivity.this);
                 }
 
                 if (currentSession.getLlmType() != selectedType) {
@@ -378,6 +380,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                             sessionRestoreModel);
                     assert iterationManager == null : "iterationManager should be null before creating new instance";
                     iterationManager = new ClojureIterationManager(this, llmClient, currentSession.getId());
+                    iterationManager.setExtractionErrorCallback(this);
 
                     // We'll wait until llmTypeSpinner's selection listener fires to trigger model
                     // enumeration
@@ -561,6 +564,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             iterationManager = null;
         }
         iterationManager = new ClojureIterationManager(this, llmClient, currentSession.getId());
+        iterationManager.setExtractionErrorCallback(this);
 
         // Mark that generation has started - disable model selection
         Log.d(TAG, "startNewDesign: Generation started - disabling model selection");
@@ -1145,6 +1149,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                             ClojureAppDesignActivity.this,
                             LLMClientFactory.createClient(ClojureAppDesignActivity.this, currentType, selectedModel),
                             currentSession.getId());
+                    iterationManager.setExtractionErrorCallback(ClojureAppDesignActivity.this);
 
                     // Update session with new model
                     if (currentSession != null) {
@@ -1721,5 +1726,29 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     private void toggleLineNumbersDisplay() {
         showingLineNumbers = !showingLineNumbers;
         displayCurrentCode();
+    }
+
+    /**
+     * Implementation of ExtractionErrorCallback to show popup dialog for extraction
+     * errors
+     */
+    @Override
+    public void onExtractionError(String errorMessage) {
+        runOnUiThread(() -> {
+            // Re-enable buttons since the operation was cancelled
+            generateButton.setEnabled(true);
+            thumbsUpButton.setEnabled(true);
+            runButton.setEnabled(true);
+
+            // Show popup dialog with error message
+            new AlertDialog.Builder(this)
+                    .setTitle("Code Extraction Error")
+                    .setMessage("Failed to extract Clojure code from the AI response:\n\n" + errorMessage)
+                    .setPositiveButton("OK", (dialog, which) -> {
+                        dialog.dismiss();
+                    })
+                    .setCancelable(false)
+                    .show();
+        });
     }
 }
