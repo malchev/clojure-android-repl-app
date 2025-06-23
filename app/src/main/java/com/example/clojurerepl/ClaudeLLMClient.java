@@ -29,20 +29,12 @@ public class ClaudeLLMClient extends LLMClient {
     private static final String API_VERSION = "2023-06-01";
     private static final int HTTP_TIMEOUT = 60000; // 60 seconds timeout
 
-    // Default model in case we can't fetch from API
-    private static final String DEFAULT_MODEL = "claude-3-sonnet-20240229";
-
     private String currentModel = null;
     private Map<String, ChatSession> chatSessions = new HashMap<>();
 
     public ClaudeLLMClient(Context context) {
         super(context);
         Log.d(TAG, "Creating new ClaudeLLMClient");
-        // Set default model immediately to avoid issues
-        if (currentModel == null) {
-            currentModel = DEFAULT_MODEL;
-            Log.d(TAG, "Set default Claude model: " + currentModel);
-        }
     }
 
     @Override
@@ -62,26 +54,7 @@ public class ClaudeLLMClient extends LLMClient {
 
     private void ensureModelIsSet() {
         Log.d(TAG, "DEBUG: Checking if Claude model is set");
-        if (currentModel == null) {
-            Log.d(TAG, "DEBUG: No model set, trying to fetch available models");
-            try {
-                List<String> availableModels = fetchAvailableModels(context);
-                if (!availableModels.isEmpty()) {
-                    currentModel = availableModels.get(0);
-                    Log.d(TAG, "DEBUG: Using first available model: " + currentModel);
-                } else {
-                    Log.e(TAG, "ERROR: No Claude models available, using default");
-                    currentModel = DEFAULT_MODEL;
-                    Log.d(TAG, "Using default model: " + currentModel);
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "ERROR: Failed to fetch Claude models, using default", e);
-                currentModel = DEFAULT_MODEL;
-                Log.d(TAG, "Using default model: " + currentModel);
-            }
-        } else {
-            Log.d(TAG, "DEBUG: Using existing model: " + currentModel);
-        }
+        assert currentModel != null;
     }
 
     // Message Storage Implementation
@@ -155,7 +128,7 @@ public class ClaudeLLMClient extends LLMClient {
                     return response;
                 } catch (Exception e) {
                     Log.e(TAG, "ERROR: Exception in sendMessages CompletableFuture", e);
-                    throw new RuntimeException("Failed to get response from Claude", e);
+                    throw new RuntimeException("ERROR: Exception in sendMessages CompletableFuture", e);
                 }
             });
         }
@@ -357,36 +330,10 @@ public class ClaudeLLMClient extends LLMClient {
 
             String apiKey = ApiKeyManager.getInstance(context).getApiKey(LLMClientFactory.LLMType.CLAUDE);
             Log.d(TAG, "DEBUG: ApiKey retrieved: " + (apiKey != null ? "Yes (not showing key)" : "No key found"));
+            assert apiKey != null;
 
-            if (apiKey == null) {
-                Log.e(TAG, "ERROR: No Claude API key configured");
-
-                // DEBUGGING - Return fake response instead of failing
-                Log.d(TAG, "DEBUG: Returning fake response due to missing API key");
-                return ";;; No API key configured - using fake response\n\n" +
-                        ";; This is a placeholder Clojure program since no Claude API key is configured\n" +
-                        "(ns android.hello-clojure\n" +
-                        "  (:import [android.graphics Canvas Color Paint]\n" +
-                        "           [android.widget LinearLayout Button]))\n\n" +
-                        "(defn hello-world []\n" +
-                        "  (println \"Hello from Clojure on Android!\"))\n\n" +
-                        "(hello-world)";
-            }
-
-            Log.d(TAG, "DEBUG: About to call ensureModelIsSet()");
             ensureModelIsSet();
             Log.d(TAG, "DEBUG: Using Claude model: " + currentModel);
-
-            // TESTING - Return fake response for debugging if needed
-            boolean useFakeResponse = false; // Set to true to bypass actual API call
-            if (useFakeResponse) {
-                Log.d(TAG, "DEBUG: Returning fake response for testing");
-                return ";; Fake Claude response for debugging\n" +
-                        "(ns android.fake-response\n" +
-                        "  (:import [android.graphics Canvas Color Paint]\n" +
-                        "           [android.widget LinearLayout Button]))\n\n" +
-                        "(println \"This is a fake response to debug the client\")\n";
-            }
 
             Log.d(TAG, "DEBUG: Setting up HTTP connection to Claude API");
             URL url = new URL(API_BASE_URL + "/messages");
@@ -402,7 +349,7 @@ public class ClaudeLLMClient extends LLMClient {
             // Create Claude API compatible request
             JSONObject requestBody = new JSONObject();
             requestBody.put("model", currentModel);
-            requestBody.put("max_tokens", 64000); 
+            requestBody.put("max_tokens", 64000);
             requestBody.put("temperature", 0.7);
 
             // Convert message history to Claude message format
@@ -595,11 +542,11 @@ public class ClaudeLLMClient extends LLMClient {
                     }
 
                     Log.w(TAG, "Could not parse response in any known format");
-                    return generateFallbackCode();
+                    throw new RuntimeException("Could not parse response in any known format");
             }
         } catch (Exception e) {
             Log.e(TAG, "Error extracting text from Claude response", e);
-            return generateFallbackCode();
+            throw new RuntimeException("Error extracting text from Claude response", e);
         }
     }
 
@@ -684,7 +631,7 @@ public class ClaudeLLMClient extends LLMClient {
             if (contentText.isEmpty()) {
                 Log.w(TAG, "No text content found in array response: " +
                         jsonResponse.substring(0, Math.min(jsonResponse.length(), 200)));
-                return generateFallbackCode();
+                throw new RuntimeException("No text content found in array response");
             }
 
             // Extract code blocks from text content
@@ -705,7 +652,7 @@ public class ClaudeLLMClient extends LLMClient {
             } catch (Exception ex) {
                 Log.e(TAG, "Could not get sample of JSON", ex);
             }
-            return generateFallbackCode();
+            throw new RuntimeException("Error processing array response", e);
         }
     }
 
@@ -793,25 +740,11 @@ public class ClaudeLLMClient extends LLMClient {
 
             Log.w(TAG, "Could not extract content from object response: " +
                     jsonResponse.substring(0, Math.min(jsonResponse.length(), 200)));
-            return generateFallbackCode();
+            throw new RuntimeException("Could not extract content from object response");
         } catch (Exception e) {
             Log.e(TAG, "Error parsing response as JSON object: " + e.getMessage(), e);
-            return generateFallbackCode();
+            throw new RuntimeException("Error parsing response as JSON object", e);
         }
-    }
-
-    /**
-     * Generate a valid Clojure fallback when extraction fails
-     */
-    private String generateFallbackCode() {
-        return "(ns flappy-bird.core\n" +
-                "  (:import [android.graphics Canvas Color Paint]\n" +
-                "           [android.view View ViewGroup$LayoutParams]\n" +
-                "           [android.widget LinearLayout Button]))\n\n" +
-                ";; Failed to extract code from Claude API response\n\n" +
-                "(defn -main []\n" +
-                "  (println \"Error processing Claude response\"))\n\n" +
-                "(-main)";
     }
 
     /**
