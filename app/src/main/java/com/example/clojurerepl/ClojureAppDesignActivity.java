@@ -1211,6 +1211,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 ApiKeyManager.getInstance(this).saveApiKey(apiKey, type);
                 Toast.makeText(this, type.name() + " API key saved", Toast.LENGTH_SHORT).show();
 
+                // Clear all model caches since the new API key might have access to different
+                // models
+                LLMClientFactory.clearAllModelCaches();
+
                 // Show progress while fetching models
                 ProgressDialog progressDialog = new ProgressDialog(this);
                 progressDialog.setMessage("Fetching available models...");

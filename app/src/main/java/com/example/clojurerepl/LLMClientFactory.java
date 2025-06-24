@@ -70,4 +70,16 @@ public class LLMClientFactory {
                 throw new IllegalArgumentException("Unknown LLM type: " + type);
         }
     }
+
+    /**
+     * Clears the model cache for all LLM types
+     * This is useful when API keys are changed, as different keys might have access
+     * to different models
+     */
+    public static void clearAllModelCaches() {
+        Log.d(TAG, "Clearing all model caches");
+        GeminiLLMClient.clearModelCache();
+        OpenAIChatClient.clearModelCache();
+        ClaudeLLMClient.clearModelCache();
+    }
 }

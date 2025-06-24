@@ -29,6 +29,9 @@ public class GeminiLLMClient extends LLMClient {
     private static final int MAX_RETRIES = 1;
     private static final int RETRY_DELAY_MS = 2000; // 2 seconds between retries
 
+    // Static cache for available models
+    private static List<String> cachedModels = null;
+
     public GeminiLLMClient(Context context) {
         super(context);
         Log.d(TAG, "Creating new GeminiLLMClient");
@@ -127,6 +130,9 @@ public class GeminiLLMClient extends LLMClient {
         try {
             apiKeyManager.clearApiKey(LLMClientFactory.LLMType.GEMINI);
             currentModel = null;
+            // Clear the model cache since different API keys might have different model
+            // access
+            clearModelCache();
             return true;
         } catch (Exception e) {
             Log.e(TAG, "Error clearing Gemini API key", e);
@@ -501,10 +507,15 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     /**
-     * Fetches available Gemini models from the API
+     * Fetches available Gemini models from the API with caching
      */
     public static List<String> fetchAvailableModels(Context context) {
-        Log.d(TAG, "Fetching Gemini models");
+        if (cachedModels != null) {
+            Log.d(TAG, "Returning cached Gemini models");
+            return new ArrayList<>(cachedModels);
+        }
+
+        Log.d(TAG, "Fetching Gemini models from API (cache miss or expired)");
         List<String> models = new ArrayList<>();
         ApiKeyManager apiKeyManager = ApiKeyManager.getInstance(context);
         String apiKey = apiKeyManager.getApiKey(LLMClientFactory.LLMType.GEMINI);
@@ -581,7 +592,19 @@ public class GeminiLLMClient extends LLMClient {
             throw new RuntimeException("No Gemini models available");
         }
 
+        // Cache the successful result
+        cachedModels = new ArrayList<>(models);
+        Log.d(TAG, "Cached Gemini models for future use");
+
         return models;
+    }
+
+    /**
+     * Clears the cached models (useful for testing or when API key changes)
+     */
+    public static void clearModelCache() {
+        cachedModels = null;
+        Log.d(TAG, "Cleared Gemini model cache");
     }
 
     /**

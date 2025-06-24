@@ -25,6 +25,9 @@ public class OpenAIChatClient extends LLMClient {
     private String modelName = null;
     private final Map<String, List<Message>> sessionMessages = new HashMap<>();
 
+    // Static cache for available models
+    private static List<String> cachedModels = null;
+
     public OpenAIChatClient(Context context) {
         super(context);
         Log.d(TAG, "Creating new OpenAIChatClient");
@@ -48,10 +51,16 @@ public class OpenAIChatClient extends LLMClient {
     }
 
     /**
-     * Fetches available OpenAI models from the API
+     * Fetches available OpenAI models from the API with caching
      */
     public static List<String> fetchAvailableModels(Context context) {
-        Log.d(TAG, "Fetching OpenAI models");
+        // Check if we have a valid cached result
+        if (cachedModels != null) {
+            Log.d(TAG, "Returning cached OpenAI models");
+            return new ArrayList<>(cachedModels);
+        }
+
+        Log.d(TAG, "Fetching OpenAI models from API (cache miss or expired)");
         List<String> models = new ArrayList<>();
         ApiKeyManager apiKeyManager = ApiKeyManager.getInstance(context);
         String apiKey = apiKeyManager.getApiKey(LLMClientFactory.LLMType.OPENAI);
@@ -115,7 +124,20 @@ public class OpenAIChatClient extends LLMClient {
         if (models.isEmpty()) {
             throw new RuntimeException("Failed to fetch OpenAI models and no fallback models available");
         }
+
+        // Cache the successful result
+        cachedModels = new ArrayList<>(models);
+        Log.d(TAG, "Cached OpenAI models for future use");
+
         return models;
+    }
+
+    /**
+     * Clears the cached models (useful for testing or when API key changes)
+     */
+    public static void clearModelCache() {
+        cachedModels = null;
+        Log.d(TAG, "Cleared OpenAI model cache");
     }
 
     private class OpenAIChatSession implements ChatSession {
@@ -224,6 +246,9 @@ public class OpenAIChatClient extends LLMClient {
         try {
             ApiKeyManager.getInstance(context).clearApiKey(LLMClientFactory.LLMType.OPENAI);
             modelName = null;
+            // Clear the model cache since different API keys might have different model
+            // access
+            clearModelCache();
             return true;
         } catch (Exception e) {
             Log.e(TAG, "Error clearing OpenAI API key", e);

@@ -32,6 +32,9 @@ public class ClaudeLLMClient extends LLMClient {
     private String currentModel = null;
     private Map<String, ChatSession> chatSessions = new HashMap<>();
 
+    // Static cache for available models
+    private static List<String> cachedModels = null;
+
     public ClaudeLLMClient(Context context) {
         super(context);
         Log.d(TAG, "Creating new ClaudeLLMClient");
@@ -298,6 +301,9 @@ public class ClaudeLLMClient extends LLMClient {
         try {
             ApiKeyManager.getInstance(context).clearApiKey(LLMClientFactory.LLMType.CLAUDE);
             currentModel = null;
+            // Clear the model cache since different API keys might have different model
+            // access
+            clearModelCache();
             return true;
         } catch (Exception e) {
             Log.e(TAG, "Error clearing Claude API key", e);
@@ -828,10 +834,16 @@ public class ClaudeLLMClient extends LLMClient {
     }
 
     /**
-     * Fetches available Claude models from the API
+     * Fetches available Claude models from the API with caching
      */
     public static List<String> fetchAvailableModels(Context context) {
-        Log.d(TAG, "Fetching Claude models");
+        // Check if we have a valid cached result
+        if (cachedModels != null) {
+            Log.d(TAG, "Returning cached Claude models");
+            return new ArrayList<>(cachedModels);
+        }
+
+        Log.d(TAG, "Fetching Claude models from API (cache miss or expired)");
         List<String> models = new ArrayList<>();
         String apiKey = ApiKeyManager.getInstance(context).getApiKey(LLMClientFactory.LLMType.CLAUDE);
 
@@ -931,7 +943,19 @@ public class ClaudeLLMClient extends LLMClient {
             return getDefaultModels();
         }
 
+        // Cache the successful result
+        cachedModels = new ArrayList<>(models);
+        Log.d(TAG, "Cached Claude models for future use");
+
         return models;
+    }
+
+    /**
+     * Clears the cached models (useful for testing or when API key changes)
+     */
+    public static void clearModelCache() {
+        cachedModels = null;
+        Log.d(TAG, "Cleared Claude model cache");
     }
 
     private static List<String> getDefaultModels() {
