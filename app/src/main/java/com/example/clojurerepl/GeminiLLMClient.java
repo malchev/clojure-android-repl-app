@@ -20,14 +20,12 @@ import com.example.clojurerepl.auth.ApiKeyManager;
 
 public class GeminiLLMClient extends LLMClient {
     private static final String TAG = "GeminiLLMClient";
-    private static final String API_BASE_URL = "https://generativelanguage.googleapis.com/v1";
+    private static final String API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
     private String currentModel = null;
     private ApiKeyManager apiKeyManager;
     private Map<String, ChatSession> chatSessions = new HashMap<>();
 
     private static final int HTTP_TIMEOUT = 30000; // 30 seconds timeout
-    // Define a prefix for system prompts converted to user messages
-    private static final String SYSTEM_PROMPT_PREFIX = "[SYSTEM INSTRUCTION]: ";
 
     public GeminiLLMClient(Context context) {
         super(context);
@@ -39,6 +37,7 @@ public class GeminiLLMClient extends LLMClient {
     private class GeminiChatSession implements ChatSession {
         private String sessionId;
         private List<Message> messageHistory = new ArrayList<>();
+        private String systemPrompt = null;
 
         public GeminiChatSession(String sessionId) {
             this.sessionId = sessionId;
@@ -47,10 +46,9 @@ public class GeminiLLMClient extends LLMClient {
 
         @Override
         public void queueSystemPrompt(String content) {
-            Log.d(TAG, "Queuing system prompt as user message with prefix in session: " + sessionId);
-            // Gemini doesn't support system role, so convert it to a user message with a
-            // prefix
-            messageHistory.add(new Message("user", SYSTEM_PROMPT_PREFIX + content));
+            Log.d(TAG, "Setting system prompt in session: " + sessionId);
+            // Store system prompt separately since Gemini now supports it natively
+            this.systemPrompt = content;
         }
 
         @Override
@@ -71,8 +69,8 @@ public class GeminiLLMClient extends LLMClient {
 
             return CompletableFuture.supplyAsync(() -> {
                 try {
-                    // Call the API with the full context
-                    String response = callGeminiAPI(messageHistory);
+                    // Call the API with the full context including system prompt
+                    String response = callGeminiAPI(messageHistory, systemPrompt);
 
                     // Save the original response to history
                     queueAssistantResponse(response);
@@ -89,6 +87,7 @@ public class GeminiLLMClient extends LLMClient {
         @Override
         public void reset() {
             messageHistory.clear();
+            systemPrompt = null;
             Log.d(TAG, "Reset chat session: " + sessionId);
         }
 
@@ -199,10 +198,11 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     // Helper method to call the Gemini API with message history
-    private String callGeminiAPI(List<Message> history) {
+    private String callGeminiAPI(List<Message> history, String systemPrompt) {
         try {
             Log.d(TAG, "=== Calling Gemini API ===");
             Log.d(TAG, "Message history size: " + history.size());
+            Log.d(TAG, "System prompt present: " + (systemPrompt != null));
             for (int i = 0; i < history.size(); i++) {
                 Message msg = history.get(i);
                 Log.d(TAG, String.format("Message %d - Role: %s\nContent:\n%s",
@@ -226,6 +226,13 @@ public class GeminiLLMClient extends LLMClient {
 
             // Create the API request
             JSONObject requestBody = new JSONObject();
+
+            // Add system instruction if present
+            if (systemPrompt != null && !systemPrompt.trim().isEmpty()) {
+                JSONObject systemInstruction = new JSONObject();
+                systemInstruction.put("parts", new JSONArray().put(new JSONObject().put("text", systemPrompt)));
+                requestBody.put("systemInstruction", systemInstruction);
+            }
 
             // Build the contents array from history
             JSONArray contents = new JSONArray();
