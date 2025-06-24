@@ -25,7 +25,9 @@ public class GeminiLLMClient extends LLMClient {
     private ApiKeyManager apiKeyManager;
     private Map<String, ChatSession> chatSessions = new HashMap<>();
 
-    private static final int HTTP_TIMEOUT = 30000; // 30 seconds timeout
+    private static final int HTTP_TIMEOUT = 60000; // 60 seconds timeout (increased from 30)
+    private static final int MAX_RETRIES = 3;
+    private static final int RETRY_DELAY_MS = 2000; // 2 seconds between retries
 
     public GeminiLLMClient(Context context) {
         super(context);
@@ -199,8 +201,76 @@ public class GeminiLLMClient extends LLMClient {
 
     // Helper method to call the Gemini API with message history
     private String callGeminiAPI(List<Message> history, String systemPrompt) {
+        int retryCount = 0;
+        Exception lastException = null;
+
+        while (retryCount < MAX_RETRIES) {
+            try {
+                Log.d(TAG, "=== Calling Gemini API (attempt " + (retryCount + 1) + "/" + MAX_RETRIES + ") ===");
+                return performGeminiAPICall(history, systemPrompt);
+            } catch (java.net.SocketTimeoutException e) {
+                lastException = e;
+                retryCount++;
+                Log.w(TAG, "Timeout on attempt " + retryCount + "/" + MAX_RETRIES + ": " + e.getMessage());
+                if (retryCount < MAX_RETRIES) {
+                    try {
+                        Thread.sleep(RETRY_DELAY_MS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException("Interrupted during retry delay", ie);
+                    }
+                }
+            } catch (java.net.SocketException e) {
+                lastException = e;
+                retryCount++;
+                Log.w(TAG, "Socket error on attempt " + retryCount + "/" + MAX_RETRIES + ": " + e.getMessage());
+                if (retryCount < MAX_RETRIES) {
+                    try {
+                        Thread.sleep(RETRY_DELAY_MS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException("Interrupted during retry delay", ie);
+                    }
+                }
+            } catch (java.net.ConnectException e) {
+                lastException = e;
+                retryCount++;
+                Log.w(TAG, "Connection error on attempt " + retryCount + "/" + MAX_RETRIES + ": " + e.getMessage());
+                if (retryCount < MAX_RETRIES) {
+                    try {
+                        Thread.sleep(RETRY_DELAY_MS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException("Interrupted during retry delay", ie);
+                    }
+                }
+            } catch (java.net.UnknownHostException e) {
+                lastException = e;
+                retryCount++;
+                Log.w(TAG, "Unknown host error on attempt " + retryCount + "/" + MAX_RETRIES + ": " + e.getMessage());
+                if (retryCount < MAX_RETRIES) {
+                    try {
+                        Thread.sleep(RETRY_DELAY_MS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException("Interrupted during retry delay", ie);
+                    }
+                }
+            } catch (Exception e) {
+                // For non-network errors, don't retry
+                Log.e(TAG, "Non-retryable error calling Gemini API", e);
+                throw new RuntimeException("Failed to call Gemini API", e);
+            }
+        }
+
+        // If we get here, all retries failed
+        Log.e(TAG, "All " + MAX_RETRIES + " attempts to call Gemini API failed");
+        throw new RuntimeException("Failed to call Gemini API after " + MAX_RETRIES + " attempts", lastException);
+    }
+
+    // Actual API call implementation
+    private String performGeminiAPICall(List<Message> history, String systemPrompt) {
         try {
-            Log.d(TAG, "=== Calling Gemini API ===");
             Log.d(TAG, "Message history size: " + history.size());
             Log.d(TAG, "System prompt present: " + (systemPrompt != null));
             for (int i = 0; i < history.size(); i++) {
@@ -318,8 +388,34 @@ public class GeminiLLMClient extends LLMClient {
                     }
                     errorResponse = response.toString();
                 }
+
+                // Provide specific error messages based on response code
+                String errorMessage;
+                switch (responseCode) {
+                    case 429:
+                        errorMessage = "Rate limit exceeded. Please try again later.";
+                        break;
+                    case 400:
+                        errorMessage = "Bad request. Check your API key and request format.";
+                        break;
+                    case 401:
+                        errorMessage = "Unauthorized. Check your API key.";
+                        break;
+                    case 403:
+                        errorMessage = "Forbidden. Check your API key permissions.";
+                        break;
+                    case 500:
+                        errorMessage = "Internal server error. Please try again.";
+                        break;
+                    case 503:
+                        errorMessage = "Service unavailable. Please try again later.";
+                        break;
+                    default:
+                        errorMessage = "HTTP error: " + responseCode;
+                }
+
                 Log.e(TAG, "Gemini API error response: " + errorResponse);
-                throw new RuntimeException("Gemini API error: " + responseCode + " - " + errorResponse);
+                throw new RuntimeException("Gemini API error: " + errorMessage + " (HTTP " + responseCode + ")");
             }
         } catch (Exception e) {
             Log.e(TAG, "Error calling Gemini API", e);
