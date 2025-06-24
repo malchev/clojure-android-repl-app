@@ -44,15 +44,7 @@ public class OpenAIChatClient extends LLMClient {
     }
 
     private void ensureModelIsSet() {
-        if (modelName == null) {
-            List<String> availableModels = fetchAvailableModels(context);
-            if (!availableModels.isEmpty()) {
-                modelName = availableModels.get(0);
-                Log.d(TAG, "Using first available model: " + modelName);
-            } else {
-                throw new IllegalStateException("No OpenAI models available. Please set a model first.");
-            }
-        }
+        assert modelName != null;
     }
 
     /**
