@@ -140,7 +140,28 @@ public class OpenAIChatClient extends LLMClient {
         @Override
         public void queueSystemPrompt(String content) {
             Log.d(TAG, "Queuing system prompt in session: " + sessionId);
-            messages.add(new Message("system", content));
+            // List of old models that require 'system' role
+            String[] oldModels = {
+                    "gpt-3.5-turbo",
+                    "gpt-3.5-turbo-16k",
+                    "gpt-4",
+                    "gpt-4-32k",
+                    "gpt-4-turbo",
+                    "gpt-4-0125-preview",
+                    "gpt-4-1106-preview",
+                    "gpt-4-vision-preview"
+            };
+            String model = OpenAIChatClient.this.modelName;
+            String role = "developer";
+            if (model != null) {
+                for (String oldModel : oldModels) {
+                    if (model.startsWith(oldModel)) {
+                        role = "system";
+                        break;
+                    }
+                }
+            }
+            messages.add(new Message(role, content));
         }
 
         @Override
