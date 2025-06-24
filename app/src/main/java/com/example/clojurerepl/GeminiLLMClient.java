@@ -32,6 +32,384 @@ public class GeminiLLMClient extends LLMClient {
     // Static cache for available models
     private static List<String> cachedModels = null;
 
+    /**
+     * Static lookup table for Gemini model properties
+     * Based on Firebase AI Logic and Google Cloud Vertex AI documentation
+     * https://firebase.google.com/docs/ai-logic/models
+     * https://cloud.google.com/vertex-ai/generative-ai/docs/models
+     */
+    private static final Map<String, ModelProperties> MODEL_PROPERTIES = new HashMap<>();
+
+    static {
+        // Gemini 2.5 Pro models
+        MODEL_PROPERTIES.put("gemini-2.5-pro", new ModelProperties(
+                2_000_000, // ~2M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Stable"));
+
+        // Gemini 2.5 Flash models
+        MODEL_PROPERTIES.put("gemini-2.5-flash", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Stable"));
+
+        // Gemini 2.0 Pro models
+        MODEL_PROPERTIES.put("gemini-2.0-pro", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Preview"));
+
+        MODEL_PROPERTIES.put("gemini-2.0-pro-exp", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Experimental"));
+
+        // Gemini 2.0 Flash models
+        MODEL_PROPERTIES.put("gemini-2.0-flash", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Preview"));
+
+        MODEL_PROPERTIES.put("gemini-2.0-flash-001", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Preview"));
+
+        MODEL_PROPERTIES.put("gemini-2.0-flash-exp", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Experimental"));
+
+        // Gemini 2.0 Flash Lite models
+        MODEL_PROPERTIES.put("gemini-2.0-flash-lite", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Preview"));
+
+        MODEL_PROPERTIES.put("gemini-2.0-flash-lite-001", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Preview"));
+
+        // Gemini 1.5 Pro models (upcoming retirement)
+        MODEL_PROPERTIES.put("gemini-1.5-pro", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Upcoming Retirement"));
+
+        MODEL_PROPERTIES.put("gemini-1.5-pro-001", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Upcoming Retirement"));
+
+        MODEL_PROPERTIES.put("gemini-1.5-pro-002", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Upcoming Retirement"));
+
+        MODEL_PROPERTIES.put("gemini-1.5-pro-latest", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Upcoming Retirement"));
+
+        // Gemini 1.5 Flash models (upcoming retirement)
+        MODEL_PROPERTIES.put("gemini-1.5-flash", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Upcoming Retirement"));
+
+        MODEL_PROPERTIES.put("gemini-1.5-flash-001", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Upcoming Retirement"));
+
+        MODEL_PROPERTIES.put("gemini-1.5-flash-002", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Upcoming Retirement"));
+
+        MODEL_PROPERTIES.put("gemini-1.5-flash-latest", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Upcoming Retirement"));
+
+        // Gemini 1.5 Flash 8B models (upcoming retirement)
+        MODEL_PROPERTIES.put("gemini-1.5-flash-8b", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Upcoming Retirement"));
+
+        MODEL_PROPERTIES.put("gemini-1.5-flash-8b-001", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Upcoming Retirement"));
+
+        MODEL_PROPERTIES.put("gemini-1.5-flash-8b-latest", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Upcoming Retirement"));
+
+        // Gemini 1.0 Pro models (retired)
+        MODEL_PROPERTIES.put("gemini-1.0-pro", new ModelProperties(
+                30_720, // 30,720 tokens input context
+                2_048, // 2,048 tokens output
+                false, // text-only
+                "Retired"));
+
+        MODEL_PROPERTIES.put("gemini-1.0-pro-001", new ModelProperties(
+                30_720, // 30,720 tokens input context
+                2_048, // 2,048 tokens output
+                false, // text-only
+                "Retired"));
+
+        MODEL_PROPERTIES.put("gemini-1.0-pro-002", new ModelProperties(
+                30_720, // 30,720 tokens input context
+                2_048, // 2,048 tokens output
+                false, // text-only
+                "Retired"));
+
+        // Gemini 1.0 Pro Vision models (retired)
+        MODEL_PROPERTIES.put("gemini-1.0-pro-vision", new ModelProperties(
+                30_720, // 30,720 tokens input context
+                2_048, // 2,048 tokens output
+                true, // multimodal
+                "Retired"));
+
+        MODEL_PROPERTIES.put("gemini-1.0-pro-vision-001", new ModelProperties(
+                30_720, // 30,720 tokens input context
+                2_048, // 2,048 tokens output
+                true, // multimodal
+                "Retired"));
+
+        MODEL_PROPERTIES.put("gemini-1.0-pro-vision-latest", new ModelProperties(
+                30_720, // 30,720 tokens input context
+                2_048, // 2,048 tokens output
+                true, // multimodal
+                "Retired"));
+
+        // Legacy gemini-pro-vision (retired)
+        MODEL_PROPERTIES.put("gemini-pro-vision", new ModelProperties(
+                30_720, // 30,720 tokens input context
+                2_048, // 2,048 tokens output
+                true, // multimodal
+                "Retired"));
+
+        // Experimental and preview models
+        MODEL_PROPERTIES.put("gemini-2.5-pro-exp-03-25", new ModelProperties(
+                2_000_000, // ~2M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Experimental"));
+
+        MODEL_PROPERTIES.put("gemini-2.5-pro-preview-03-25", new ModelProperties(
+                2_000_000, // ~2M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Preview"));
+
+        MODEL_PROPERTIES.put("gemini-2.5-pro-preview-05-06", new ModelProperties(
+                2_000_000, // ~2M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Preview"));
+
+        MODEL_PROPERTIES.put("gemini-2.5-pro-preview-06-05", new ModelProperties(
+                2_000_000, // ~2M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Preview"));
+
+        MODEL_PROPERTIES.put("gemini-2.5-pro-preview-tts", new ModelProperties(
+                2_000_000, // ~2M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal with TTS
+                "Preview"));
+
+        MODEL_PROPERTIES.put("gemini-2.5-flash-lite-preview-06-17", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Preview"));
+
+        MODEL_PROPERTIES.put("gemini-2.5-flash-preview-04-17", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Preview"));
+
+        MODEL_PROPERTIES.put("gemini-2.5-flash-preview-04-17-thinking", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal with thinking
+                "Preview"));
+
+        MODEL_PROPERTIES.put("gemini-2.5-flash-preview-05-20", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Preview"));
+
+        MODEL_PROPERTIES.put("gemini-2.5-flash-preview-tts", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal with TTS
+                "Preview"));
+
+        MODEL_PROPERTIES.put("gemini-2.0-flash-lite-preview", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Preview"));
+
+        MODEL_PROPERTIES.put("gemini-2.0-flash-lite-preview-02-05", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Preview"));
+
+        MODEL_PROPERTIES.put("gemini-2.0-pro-exp-02-05", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Experimental"));
+
+        // Thinking models
+        MODEL_PROPERTIES.put("gemini-2.0-flash-thinking-exp", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal with thinking
+                "Experimental"));
+
+        MODEL_PROPERTIES.put("gemini-2.0-flash-thinking-exp-01-21", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal with thinking
+                "Experimental"));
+
+        MODEL_PROPERTIES.put("gemini-2.0-flash-thinking-exp-1219", new ModelProperties(
+                1_000_000, // ~1M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal with thinking
+                "Experimental"));
+
+        // Embedding models
+        MODEL_PROPERTIES.put("gemini-embedding-exp", new ModelProperties(
+                2_048, // 2,048 tokens input context
+                768, // 768-dimensional embeddings
+                false, // embedding model
+                "Experimental"));
+
+        MODEL_PROPERTIES.put("gemini-embedding-exp-03-07", new ModelProperties(
+                2_048, // 2,048 tokens input context
+                768, // 768-dimensional embeddings
+                false, // embedding model
+                "Experimental"));
+
+        // Other experimental models
+        MODEL_PROPERTIES.put("gemini-exp-1206", new ModelProperties(
+                1_000_000, // ~1M tokens input context (estimated)
+                8_192, // 8,192 tokens output (estimated)
+                true, // multimodal (estimated)
+                "Experimental"));
+    }
+
+    /**
+     * Model properties data class
+     */
+    public static class ModelProperties {
+        public final int maxInputTokens;
+        public final int maxOutputTokens;
+        public final boolean isMultimodal;
+        public final String status;
+
+        public ModelProperties(int maxInputTokens, int maxOutputTokens, boolean isMultimodal, String status) {
+            this.maxInputTokens = maxInputTokens;
+            this.maxOutputTokens = maxOutputTokens;
+            this.isMultimodal = isMultimodal;
+            this.status = status;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("ModelProperties{maxInputTokens=%d, maxOutputTokens=%d, isMultimodal=%s, status='%s'}",
+                    maxInputTokens, maxOutputTokens, isMultimodal, status);
+        }
+    }
+
+    /**
+     * Get model properties for a specific model
+     * 
+     * @param modelName The name of the model
+     * @return ModelProperties for the model, or null if not found
+     */
+    public static ModelProperties getModelProperties(String modelName) {
+        return MODEL_PROPERTIES.get(modelName);
+    }
+
+    /**
+     * Get the maximum input tokens for a model
+     * 
+     * @param modelName The name of the model
+     * @return Maximum input tokens, or default value if model not found
+     */
+    public static int getMaxInputTokens(String modelName) {
+        ModelProperties props = getModelProperties(modelName);
+        return props != null ? props.maxInputTokens : 1_000_000; // Default to 1M tokens
+    }
+
+    /**
+     * Get the maximum output tokens for a model
+     * 
+     * @param modelName The name of the model
+     * @return Maximum output tokens, or default value if model not found
+     */
+    public static int getMaxOutputTokens(String modelName) {
+        ModelProperties props = getModelProperties(modelName);
+        return props != null ? props.maxOutputTokens : 8_192; // Default to 8,192 tokens
+    }
+
+    /**
+     * Check if a model is multimodal
+     * 
+     * @param modelName The name of the model
+     * @return true if multimodal, false otherwise
+     */
+    public static boolean isMultimodal(String modelName) {
+        ModelProperties props = getModelProperties(modelName);
+        return props != null ? props.isMultimodal : true; // Default to true for safety
+    }
+
+    /**
+     * Get the status of a model
+     * 
+     * @param modelName The name of the model
+     * @return Status string, or "Unknown" if model not found
+     */
+    public static String getModelStatus(String modelName) {
+        ModelProperties props = getModelProperties(modelName);
+        return props != null ? props.status : "Unknown";
+    }
+
     public GeminiLLMClient(Context context) {
         super(context);
         Log.d(TAG, "Creating new GeminiLLMClient");
@@ -358,7 +736,7 @@ public class GeminiLLMClient extends LLMClient {
             // prompt adherence
             JSONObject generationConfig = new JSONObject();
             generationConfig.put("temperature", 0.3); // Lower temperature for more consistent adherence to instructions
-            generationConfig.put("maxOutputTokens", 8192);
+            generationConfig.put("maxOutputTokens", getMaxOutputTokens(currentModel));
             generationConfig.put("topP", 0.8); // Add top_p for better quality
             generationConfig.put("topK", 40); // Add top_k for better quality
             requestBody.put("generationConfig", generationConfig);
@@ -492,6 +870,52 @@ public class GeminiLLMClient extends LLMClient {
     public void setModel(String model) {
         this.currentModel = model;
         Log.d(TAG, "Set Gemini model to: " + model);
+
+        // Log model properties for debugging
+        ModelProperties props = getModelProperties(model);
+        if (props != null) {
+            Log.d(TAG, "Model properties: " + props.toString());
+        } else {
+            Log.w(TAG, "Unknown model: " + model + " - using default properties");
+        }
+    }
+
+    /**
+     * Get a summary of the current model's capabilities
+     * 
+     * @return A string describing the current model's properties
+     */
+    public String getCurrentModelSummary() {
+        if (currentModel == null) {
+            return "No model selected";
+        }
+
+        ModelProperties props = getModelProperties(currentModel);
+        if (props == null) {
+            return "Unknown model: " + currentModel;
+        }
+
+        return String.format("Model: %s (Status: %s, Multimodal: %s, Max Input: %d tokens, Max Output: %d tokens)",
+                currentModel, props.status, props.isMultimodal ? "Yes" : "No",
+                props.maxInputTokens, props.maxOutputTokens);
+    }
+
+    /**
+     * Check if the current model supports multimodal input (images, etc.)
+     * 
+     * @return true if the model supports multimodal input
+     */
+    public boolean isCurrentModelMultimodal() {
+        return isMultimodal(currentModel);
+    }
+
+    /**
+     * Get the status of the current model
+     * 
+     * @return Status string for the current model
+     */
+    public String getCurrentModelStatus() {
+        return getModelStatus(currentModel);
     }
 
     private void ensureModelIsSet() {
@@ -641,11 +1065,21 @@ public class GeminiLLMClient extends LLMClient {
 
         Log.d(TAG, "Total estimated context size: " + totalSize + " characters");
 
+        // Get model-specific input token limit and convert to character estimate
+        // Rough estimate: 1 token ≈ 4 characters for English text
+        int maxInputTokens = getMaxInputTokens(currentModel);
+        int maxCharacters = maxInputTokens * 4; // Conservative estimate
+
+        // Use 80% of the limit to be safe
+        int safeCharacterLimit = (int) (maxCharacters * 0.8);
+
+        Log.d(TAG, "Model: " + currentModel + ", Max input tokens: " + maxInputTokens +
+                ", Safe character limit: " + safeCharacterLimit);
+
         // If context is getting too large, keep only recent messages
-        // Gemini 2.5 Flash has a context window of ~1M tokens, but we'll be
-        // conservative
-        if (totalSize > 500000) { // ~500K characters as a conservative limit
-            Log.w(TAG, "Context size too large, truncating conversation history");
+        if (totalSize > safeCharacterLimit) {
+            Log.w(TAG, "Context size too large (" + totalSize + " chars), truncating conversation history. Limit: "
+                    + safeCharacterLimit + " chars");
 
             // Keep system prompt and last few messages
             List<Message> truncatedHistory = new ArrayList<>();
