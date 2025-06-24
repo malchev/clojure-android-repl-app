@@ -25,8 +25,8 @@ public class GeminiLLMClient extends LLMClient {
     private ApiKeyManager apiKeyManager;
     private Map<String, ChatSession> chatSessions = new HashMap<>();
 
-    private static final int HTTP_TIMEOUT = 60000; // 60 seconds timeout (increased from 30)
-    private static final int MAX_RETRIES = 3;
+    private static final int HTTP_TIMEOUT = 120000; // 120 seconds timeout (increased from 30)
+    private static final int MAX_RETRIES = 1;
     private static final int RETRY_DELAY_MS = 2000; // 2 seconds between retries
 
     public GeminiLLMClient(Context context) {
@@ -51,6 +51,8 @@ public class GeminiLLMClient extends LLMClient {
             Log.d(TAG, "Setting system prompt in session: " + sessionId);
             // Store system prompt separately since Gemini now supports it natively
             this.systemPrompt = content;
+            Log.d(TAG, "System prompt set successfully, length: " + (content != null ? content.length() : 0)
+                    + " characters");
         }
 
         @Override
@@ -62,12 +64,13 @@ public class GeminiLLMClient extends LLMClient {
         @Override
         public void queueAssistantResponse(String content) {
             Log.d(TAG, "Queuing assistant response in session: " + sessionId);
-            messageHistory.add(new Message("assistant", content));
+            messageHistory.add(new Message("model", content));
         }
 
         @Override
         public CompletableFuture<String> sendMessages() {
             Log.d(TAG, "Sending " + messageHistory.size() + " messages in session: " + sessionId);
+            Log.d(TAG, "System prompt available: " + (systemPrompt != null ? "yes" : "no"));
 
             return CompletableFuture.supplyAsync(() -> {
                 try {
@@ -88,6 +91,7 @@ public class GeminiLLMClient extends LLMClient {
 
         @Override
         public void reset() {
+            Log.d(TAG, "Resetting chat session: " + sessionId);
             messageHistory.clear();
             systemPrompt = null;
             Log.d(TAG, "Reset chat session: " + sessionId);
@@ -96,6 +100,16 @@ public class GeminiLLMClient extends LLMClient {
         @Override
         public List<Message> getMessages() {
             return new ArrayList<>(messageHistory);
+        }
+
+        // Helper method to check if system prompt is still available
+        public boolean hasSystemPrompt() {
+            return systemPrompt != null && !systemPrompt.trim().isEmpty();
+        }
+
+        // Helper method to get system prompt length for debugging
+        public int getSystemPromptLength() {
+            return systemPrompt != null ? systemPrompt.length() : 0;
         }
     }
 
@@ -208,53 +222,27 @@ public class GeminiLLMClient extends LLMClient {
             try {
                 Log.d(TAG, "=== Calling Gemini API (attempt " + (retryCount + 1) + "/" + MAX_RETRIES + ") ===");
                 return performGeminiAPICall(history, systemPrompt);
-            } catch (java.net.SocketTimeoutException e) {
+            } catch (java.io.IOException e) {
                 lastException = e;
                 retryCount++;
-                Log.w(TAG, "Timeout on attempt " + retryCount + "/" + MAX_RETRIES + ": " + e.getMessage());
-                if (retryCount < MAX_RETRIES) {
+
+                // Check if this is a retryable network error
+                boolean isRetryable = isRetryableException(e);
+                String errorType = getExceptionType(e);
+
+                Log.w(TAG, errorType + " on attempt " + retryCount + "/" + MAX_RETRIES + ": " + e.getMessage());
+
+                if (isRetryable && retryCount < MAX_RETRIES) {
                     try {
                         Thread.sleep(RETRY_DELAY_MS);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         throw new RuntimeException("Interrupted during retry delay", ie);
                     }
-                }
-            } catch (java.net.SocketException e) {
-                lastException = e;
-                retryCount++;
-                Log.w(TAG, "Socket error on attempt " + retryCount + "/" + MAX_RETRIES + ": " + e.getMessage());
-                if (retryCount < MAX_RETRIES) {
-                    try {
-                        Thread.sleep(RETRY_DELAY_MS);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException("Interrupted during retry delay", ie);
-                    }
-                }
-            } catch (java.net.ConnectException e) {
-                lastException = e;
-                retryCount++;
-                Log.w(TAG, "Connection error on attempt " + retryCount + "/" + MAX_RETRIES + ": " + e.getMessage());
-                if (retryCount < MAX_RETRIES) {
-                    try {
-                        Thread.sleep(RETRY_DELAY_MS);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException("Interrupted during retry delay", ie);
-                    }
-                }
-            } catch (java.net.UnknownHostException e) {
-                lastException = e;
-                retryCount++;
-                Log.w(TAG, "Unknown host error on attempt " + retryCount + "/" + MAX_RETRIES + ": " + e.getMessage());
-                if (retryCount < MAX_RETRIES) {
-                    try {
-                        Thread.sleep(RETRY_DELAY_MS);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException("Interrupted during retry delay", ie);
-                    }
+                } else if (!isRetryable) {
+                    // For non-retryable errors, don't retry
+                    Log.e(TAG, "Non-retryable error calling Gemini API", e);
+                    throw new RuntimeException("Failed to call Gemini API", e);
                 }
             } catch (Exception e) {
                 // For non-network errors, don't retry
@@ -268,13 +256,47 @@ public class GeminiLLMClient extends LLMClient {
         throw new RuntimeException("Failed to call Gemini API after " + MAX_RETRIES + " attempts", lastException);
     }
 
+    // Helper method to determine if an exception is retryable
+    private boolean isRetryableException(Exception e) {
+        return e instanceof java.net.SocketTimeoutException ||
+                e instanceof java.net.SocketException ||
+                e instanceof java.net.ConnectException ||
+                e instanceof java.net.UnknownHostException ||
+                (e instanceof java.io.IOException && e.getMessage() != null &&
+                        (e.getMessage().contains("timeout") || e.getMessage().contains("connection")));
+    }
+
+    // Helper method to get a human-readable exception type
+    private String getExceptionType(Exception e) {
+        if (e instanceof java.net.SocketTimeoutException) {
+            return "Timeout";
+        } else if (e instanceof java.net.SocketException) {
+            return "Socket error";
+        } else if (e instanceof java.net.ConnectException) {
+            return "Connection error";
+        } else if (e instanceof java.net.UnknownHostException) {
+            return "Unknown host error";
+        } else {
+            return "Network error";
+        }
+    }
+
     // Actual API call implementation
-    private String performGeminiAPICall(List<Message> history, String systemPrompt) {
+    private String performGeminiAPICall(List<Message> history, String systemPrompt) throws java.io.IOException {
         try {
-            Log.d(TAG, "Message history size: " + history.size());
+            // Manage conversation history to prevent context overflow
+            List<Message> managedHistory = manageConversationHistory(history, systemPrompt);
+
+            Log.d(TAG, "Message history size: " + managedHistory.size() + " (original: " + history.size() + ")");
             Log.d(TAG, "System prompt present: " + (systemPrompt != null));
-            for (int i = 0; i < history.size(); i++) {
-                Message msg = history.get(i);
+            if (systemPrompt != null) {
+                Log.d(TAG, "System prompt length: " + systemPrompt.length() + " characters");
+                Log.d(TAG, "System prompt preview: " + systemPrompt.substring(0, Math.min(200, systemPrompt.length()))
+                        + "...");
+            }
+
+            for (int i = 0; i < managedHistory.size(); i++) {
+                Message msg = managedHistory.get(i);
                 Log.d(TAG, String.format("Message %d - Role: %s\nContent:\n%s",
                         i, msg.role, msg.content.length() > 100 ? msg.content.substring(0, 100) + "..." : msg.content));
             }
@@ -297,18 +319,21 @@ public class GeminiLLMClient extends LLMClient {
             // Create the API request
             JSONObject requestBody = new JSONObject();
 
-            // Add system instruction if present
+            // Add system instruction if present - ensure it's always included
             if (systemPrompt != null && !systemPrompt.trim().isEmpty()) {
                 JSONObject systemInstruction = new JSONObject();
                 systemInstruction.put("parts", new JSONArray().put(new JSONObject().put("text", systemPrompt)));
                 requestBody.put("systemInstruction", systemInstruction);
+                Log.d(TAG, "Added system instruction to request");
+            } else {
+                Log.w(TAG, "No system prompt provided - this may cause the model to ignore important instructions");
             }
 
             // Build the contents array from history
             JSONArray contents = new JSONArray();
 
             // Add each message from history
-            for (Message message : history) {
+            for (Message message : managedHistory) {
                 JSONObject messageObj = new JSONObject();
                 messageObj.put("role", message.role);
 
@@ -323,10 +348,13 @@ public class GeminiLLMClient extends LLMClient {
 
             requestBody.put("contents", contents);
 
-            // Add generation config
+            // Add generation config with more conservative settings for better system
+            // prompt adherence
             JSONObject generationConfig = new JSONObject();
-            generationConfig.put("temperature", 0.7);
+            generationConfig.put("temperature", 0.3); // Lower temperature for more consistent adherence to instructions
             generationConfig.put("maxOutputTokens", 8192);
+            generationConfig.put("topP", 0.8); // Add top_p for better quality
+            generationConfig.put("topK", 40); // Add top_k for better quality
             requestBody.put("generationConfig", generationConfig);
 
             // Write the request
@@ -417,6 +445,9 @@ public class GeminiLLMClient extends LLMClient {
                 Log.e(TAG, "Gemini API error response: " + errorResponse);
                 throw new RuntimeException("Gemini API error: " + errorMessage + " (HTTP " + responseCode + ")");
             }
+        } catch (java.io.IOException e) {
+            // Re-throw IOException to allow retry logic to handle it
+            throw e;
         } catch (Exception e) {
             Log.e(TAG, "Error calling Gemini API", e);
             throw new RuntimeException("Failed to call Gemini API", e);
@@ -575,5 +606,37 @@ public class GeminiLLMClient extends LLMClient {
             // Not valid JSON structure, return as-is
             return jsonString;
         }
+    }
+
+    // Helper method to manage conversation history to prevent context overflow
+    private List<Message> manageConversationHistory(List<Message> history, String systemPrompt) {
+        // Estimate total context size
+        int totalSize = systemPrompt != null ? systemPrompt.length() : 0;
+        for (Message msg : history) {
+            totalSize += msg.content.length();
+        }
+
+        Log.d(TAG, "Total estimated context size: " + totalSize + " characters");
+
+        // If context is getting too large, keep only recent messages
+        // Gemini 2.5 Flash has a context window of ~1M tokens, but we'll be
+        // conservative
+        if (totalSize > 500000) { // ~500K characters as a conservative limit
+            Log.w(TAG, "Context size too large, truncating conversation history");
+
+            // Keep system prompt and last few messages
+            List<Message> truncatedHistory = new ArrayList<>();
+
+            // Keep the last 4 messages (2 user + 2 model pairs)
+            int startIndex = Math.max(0, history.size() - 4);
+            for (int i = startIndex; i < history.size(); i++) {
+                truncatedHistory.add(history.get(i));
+            }
+
+            Log.d(TAG, "Truncated history from " + history.size() + " to " + truncatedHistory.size() + " messages");
+            return truncatedHistory;
+        }
+
+        return history;
     }
 }
