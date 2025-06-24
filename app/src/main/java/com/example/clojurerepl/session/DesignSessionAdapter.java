@@ -39,10 +39,11 @@ public class DesignSessionAdapter extends ListAdapter<DesignSession, DesignSessi
 
             @Override
             public boolean areContentsTheSame(@NonNull DesignSession oldItem, @NonNull DesignSession newItem) {
+                String oldLlmModel = oldItem.getLlmModel();
                 return oldItem.getDescription().equals(newItem.getDescription()) &&
                         oldItem.getCreatedAt().equals(newItem.getCreatedAt()) &&
                         oldItem.getLlmType() == newItem.getLlmType() &&
-                        oldItem.getLlmModel().equals(newItem.getLlmModel()) &&
+                        oldLlmModel != null && oldLlmModel.equals(newItem.getLlmModel()) &&
                         oldItem.getIterationCount() == newItem.getIterationCount();
             }
         });
