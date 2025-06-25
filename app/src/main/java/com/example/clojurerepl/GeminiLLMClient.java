@@ -33,6 +33,80 @@ public class GeminiLLMClient extends LLMClient {
     private static List<String> cachedModels = null;
 
     /**
+     * Enum representing the status of a Gemini API response
+     */
+    public enum ResponseStatus {
+        SUCCESS("Success"),
+        MAX_TOKENS(
+                "Response was truncated due to token limit. Please try with a shorter prompt or use a model with higher token limits."),
+        SAFETY_BLOCKED("Response was blocked due to safety filters. Please try rephrasing your request."),
+        RECITATION_BLOCKED("Response was blocked due to recitation detection. Please try rephrasing your request."),
+        NO_CANDIDATES("No candidates in response"),
+        EMPTY_CANDIDATES("No candidates available"),
+        NO_CONTENT("No content in candidate"),
+        PARSE_ERROR("Could not extract text from response"),
+        API_ERROR("API returned an error"),
+        UNKNOWN_ERROR("Unknown error occurred");
+
+        private final String message;
+
+        ResponseStatus(String message) {
+            this.message = message;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+    }
+
+    /**
+     * Class to hold the result of text extraction
+     */
+    public static class ExtractionResult {
+        private final ResponseStatus status;
+        private final String text;
+        private final String rawResponse;
+
+        public ExtractionResult(ResponseStatus status, String text, String rawResponse) {
+            this.status = status;
+            this.text = text;
+            this.rawResponse = rawResponse;
+        }
+
+        public ResponseStatus getStatus() {
+            return status;
+        }
+
+        public String getText() {
+            return text;
+        }
+
+        public String getRawResponse() {
+            return rawResponse;
+        }
+
+        public boolean isSuccess() {
+            return status == ResponseStatus.SUCCESS;
+        }
+
+        public String getErrorMessage() {
+            return status.getMessage();
+        }
+
+        @Override
+        public String toString() {
+            return "ExtractionResult{" +
+                    "status=" + status +
+                    ", text=" + (text != null ? text.substring(0, Math.min(100, text.length())) + "..." : "null") +
+                    ", rawResponse="
+                    + (rawResponse != null ? rawResponse.substring(0, Math.min(200, rawResponse.length())) + "..."
+                            : "null")
+                    +
+                    '}';
+        }
+    }
+
+    /**
      * Static lookup table for Gemini model properties
      * Based on Firebase AI Logic and Google Cloud Vertex AI documentation
      * https://firebase.google.com/docs/ai-logic/models
@@ -581,11 +655,30 @@ public class GeminiLLMClient extends LLMClient {
     private String callGeminiAPI(List<Message> history, String systemPrompt) {
         int retryCount = 0;
         Exception lastException = null;
+        int currentTokenLimit = getMaxOutputTokens(currentModel);
 
         while (retryCount < MAX_RETRIES) {
             try {
-                Log.d(TAG, "=== Calling Gemini API (attempt " + (retryCount + 1) + "/" + MAX_RETRIES + ") ===");
-                return performGeminiAPICall(history, systemPrompt);
+                Log.d(TAG, "=== Calling Gemini API (attempt " + (retryCount + 1) + "/" + MAX_RETRIES
+                        + ") with token limit: " + currentTokenLimit + " ===");
+                ExtractionResult extractionResult = performGeminiAPICall(history, systemPrompt, currentTokenLimit);
+
+                // Check if the response indicates a token limit issue by parsing it again
+                if (extractionResult.getStatus() == ResponseStatus.MAX_TOKENS) {
+                    Log.w(TAG, "Token limit hit, reducing token limit and retrying");
+                    currentTokenLimit = Math.max(currentTokenLimit / 2, 1024); // Reduce by half, minimum 1024
+                    retryCount++;
+                    if (retryCount < MAX_RETRIES) {
+                        Log.d(TAG, "Retrying with reduced token limit: " + currentTokenLimit + " (attempt "
+                                + (retryCount + 1) + "/" + MAX_RETRIES + ")");
+                        continue;
+                    } else {
+                        Log.e(TAG, "All retry attempts exhausted. Final token limit: " + currentTokenLimit);
+                    }
+                }
+
+                // Return the text if successful, otherwise return the error message
+                return extractionResult.isSuccess() ? extractionResult.getText() : extractionResult.getErrorMessage();
             } catch (java.io.IOException e) {
                 lastException = e;
                 retryCount++;
@@ -646,7 +739,8 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     // Actual API call implementation
-    private String performGeminiAPICall(List<Message> history, String systemPrompt) throws java.io.IOException {
+    private ExtractionResult performGeminiAPICall(List<Message> history, String systemPrompt, int tokenLimit)
+            throws java.io.IOException {
         try {
             // Manage conversation history to prevent context overflow
             List<Message> managedHistory = manageConversationHistory(history, systemPrompt);
@@ -673,6 +767,7 @@ public class GeminiLLMClient extends LLMClient {
             ensureModelIsSet();
 
             URL url = new URL(API_BASE_URL + "/models/" + currentModel + ":generateContent?key=" + apiKey);
+            Log.d(TAG, "Calling Gemini API with URL: " + url.toString().replace(apiKey, "***API_KEY***"));
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
@@ -720,7 +815,10 @@ public class GeminiLLMClient extends LLMClient {
             // prompt adherence
             JSONObject generationConfig = new JSONObject();
             generationConfig.put("temperature", 0.3); // Lower temperature for more consistent adherence to instructions
-            generationConfig.put("maxOutputTokens", getMaxOutputTokens(currentModel));
+
+            // Use a more conservative token limit to avoid MAX_TOKENS truncation
+            generationConfig.put("maxOutputTokens", tokenLimit);
+
             generationConfig.put("topP", 0.8); // Add top_p for better quality
             generationConfig.put("topK", 40); // Add top_k for better quality
             requestBody.put("generationConfig", generationConfig);
@@ -759,6 +857,8 @@ public class GeminiLLMClient extends LLMClient {
                     "╚═════════════════════════╝");
 
             int responseCode = conn.getResponseCode();
+            Log.d(TAG, "Gemini API response code: " + responseCode);
+
             if (responseCode == HttpURLConnection.HTTP_OK) {
                 // Read the response
                 try (BufferedReader br = new BufferedReader(
@@ -768,9 +868,12 @@ public class GeminiLLMClient extends LLMClient {
                     while ((responseLine = br.readLine()) != null) {
                         response.append(responseLine.trim());
                     }
-                    String extractedResponse = extractTextFromResponse(response.toString());
+                    Log.d(TAG, "Raw HTTP response length: " + response.length());
+                    ExtractionResult extractionResult = extractTextFromResponse(response.toString());
+                    String extractedResponse = extractionResult.isSuccess() ? extractionResult.getText()
+                            : extractionResult.getErrorMessage();
                     Log.d(TAG, "=== Complete LLM Response ===\n" + formatResponseWithLineNumbers(extractedResponse));
-                    return extractedResponse;
+                    return extractionResult;
                 }
             } else {
                 // Handle error response
@@ -823,22 +926,103 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     // Simple method to get text from Gemini response
-    private String extractTextFromResponse(String jsonResponse) {
+    private ExtractionResult extractTextFromResponse(String jsonResponse) {
         try {
+            Log.d(TAG, "Raw Gemini response: " + jsonResponse);
+
             JSONObject json = new JSONObject(jsonResponse);
+
+            // Check if this is an error response
+            if (json.has("error")) {
+                JSONObject error = json.getJSONObject("error");
+                String errorMessage = error.optString("message", "Unknown error");
+                Log.e(TAG, "Gemini API returned error: " + errorMessage);
+                return new ExtractionResult(ResponseStatus.API_ERROR, null, jsonResponse);
+            }
+
+            // Check if candidates exist
+            if (!json.has("candidates")) {
+                Log.e(TAG, "No candidates field in response");
+                return new ExtractionResult(ResponseStatus.NO_CANDIDATES, null, jsonResponse);
+            }
+
             JSONArray candidates = json.getJSONArray("candidates");
-            if (candidates.length() > 0) {
-                JSONObject firstCandidate = candidates.getJSONObject(0);
-                JSONObject content = firstCandidate.getJSONObject("content");
-                JSONArray parts = content.getJSONArray("parts");
-                if (parts.length() > 0) {
-                    return parts.getJSONObject(0).getString("text");
+            if (candidates.length() == 0) {
+                Log.e(TAG, "Empty candidates array");
+                return new ExtractionResult(ResponseStatus.EMPTY_CANDIDATES, null, jsonResponse);
+            }
+
+            JSONObject firstCandidate = candidates.getJSONObject(0);
+
+            // Check for finish reason - if MAX_TOKENS, the response was truncated
+            if (firstCandidate.has("finishReason")) {
+                String finishReason = firstCandidate.getString("finishReason");
+                if ("MAX_TOKENS".equals(finishReason)) {
+                    Log.w(TAG, "Response truncated due to MAX_TOKENS limit");
+                    return new ExtractionResult(ResponseStatus.MAX_TOKENS, null, jsonResponse);
+                } else if ("SAFETY".equals(finishReason)) {
+                    Log.w(TAG, "Response blocked due to safety filters");
+                    return new ExtractionResult(ResponseStatus.SAFETY_BLOCKED, null, jsonResponse);
+                } else if ("RECITATION".equals(finishReason)) {
+                    Log.w(TAG, "Response blocked due to recitation detection");
+                    return new ExtractionResult(ResponseStatus.RECITATION_BLOCKED, null, jsonResponse);
                 }
             }
-            return "Failed to extract text from Gemini response";
+
+            // Check if content exists
+            if (!firstCandidate.has("content")) {
+                Log.e(TAG, "No content field in candidate");
+                return new ExtractionResult(ResponseStatus.NO_CONTENT, null, jsonResponse);
+            }
+
+            JSONObject content = firstCandidate.getJSONObject("content");
+
+            // Try different possible response structures
+            String text = null;
+
+            // Structure 1: content.parts[].text (standard structure)
+            if (content.has("parts")) {
+                JSONArray parts = content.getJSONArray("parts");
+                if (parts.length() > 0) {
+                    JSONObject firstPart = parts.getJSONObject(0);
+                    if (firstPart.has("text")) {
+                        text = firstPart.getString("text");
+                        Log.d(TAG, "Extracted text using parts structure");
+                    }
+                }
+            }
+
+            // Structure 2: content.text (direct text field)
+            if (text == null && content.has("text")) {
+                text = content.getString("text");
+                Log.d(TAG, "Extracted text using direct text field");
+            }
+
+            // Structure 3: content.parts[].inlineData.text (for multimodal responses)
+            if (text == null && content.has("parts")) {
+                JSONArray parts = content.getJSONArray("parts");
+                for (int i = 0; i < parts.length(); i++) {
+                    JSONObject part = parts.getJSONObject(i);
+                    if (part.has("inlineData") && part.getJSONObject("inlineData").has("text")) {
+                        text = part.getJSONObject("inlineData").getString("text");
+                        Log.d(TAG, "Extracted text using inlineData structure");
+                        break;
+                    }
+                }
+            }
+
+            if (text != null) {
+                return new ExtractionResult(ResponseStatus.SUCCESS, text, jsonResponse);
+            } else {
+                Log.e(TAG, "Could not extract text from any known response structure");
+                Log.e(TAG, "Content structure: " + content.toString());
+                return new ExtractionResult(ResponseStatus.PARSE_ERROR, null, jsonResponse);
+            }
+
         } catch (Exception e) {
             Log.e(TAG, "Error extracting text from Gemini response", e);
-            return "Error: " + e.getMessage();
+            Log.e(TAG, "Response was: " + jsonResponse);
+            return new ExtractionResult(ResponseStatus.UNKNOWN_ERROR, null, jsonResponse);
         }
     }
 
