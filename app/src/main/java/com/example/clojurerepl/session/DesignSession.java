@@ -101,7 +101,7 @@ public class DesignSession {
     public void setCurrentCode(String currentCode) {
         this.currentCode = currentCode;
         this.updatedAt = new Date();
-		updateCodeWithLineNumbers(this::addLineNumbersToCode);
+        updateCodeWithLineNumbers(this::addLineNumbersToCode);
     }
 
     public int getIterationCount() {
@@ -375,16 +375,6 @@ public class DesignSession {
                 String role = messageJson.getString("role");
                 String content = messageJson.getString("content");
                 session.chatHistory.add(new LLMClient.Message(role, content));
-            }
-        } else if (json.has("messageHistory")) {
-            // Handle legacy format for backward compatibility
-            JSONArray messagesJson = json.getJSONArray("messageHistory");
-            for (int i = 0; i < messagesJson.length(); i++) {
-                String messageStr = messagesJson.getString(i);
-                String[] parts = messageStr.split(":", 2);
-                if (parts.length == 2) {
-                    session.chatHistory.add(new LLMClient.Message(parts[0], parts[1]));
-                }
             }
         }
 
