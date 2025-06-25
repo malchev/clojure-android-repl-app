@@ -958,6 +958,17 @@ public class ClaudeLLMClient extends LLMClient {
         Log.d(TAG, "Cleared Claude model cache");
     }
 
+    /**
+     * Get model properties for a specific model
+     * 
+     * @param modelName The name of the model
+     * @return ModelProperties for the model, or null if not found
+     */
+    public static ModelProperties getModelProperties(String modelName) {
+        // TODO: Implement Claude model properties lookup table
+        return null;
+    }
+
     private static List<String> getDefaultModels() {
         Log.d(TAG, "Using default Claude models");
         List<String> models = new ArrayList<>();

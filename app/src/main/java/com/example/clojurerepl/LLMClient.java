@@ -183,6 +183,39 @@ public abstract class LLMClient {
         }
     }
 
+    /**
+     * Model properties data class
+     */
+    public static class ModelProperties {
+        public final int maxInputTokens;
+        public final int maxOutputTokens;
+        public final boolean isMultimodal;
+        public final String status;
+
+        public ModelProperties(int maxInputTokens, int maxOutputTokens, boolean isMultimodal, String status) {
+            this.maxInputTokens = maxInputTokens;
+            this.maxOutputTokens = maxOutputTokens;
+            this.isMultimodal = isMultimodal;
+            this.status = status;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("ModelProperties{maxInputTokens=%d, maxOutputTokens=%d, isMultimodal=%s, status='%s'}",
+                    maxInputTokens, maxOutputTokens, isMultimodal, status);
+        }
+    }
+
+    /**
+     * Get model properties for a specific model
+     * 
+     * @param modelName The name of the model
+     * @return ModelProperties for the model, or null if not found
+     */
+    public static ModelProperties getModelProperties(String modelName) {
+        return null; // Default implementation returns null
+    }
+
     // Chat session interface
     public interface ChatSession {
         /**

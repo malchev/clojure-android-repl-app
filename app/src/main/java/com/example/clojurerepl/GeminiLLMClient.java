@@ -334,26 +334,6 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     /**
-     * Model properties data class
-     */
-    public static class ModelProperties {
-        public final int maxInputTokens;
-        public final int maxOutputTokens;
-        public final boolean isMultimodal;
-        public final String status;
-
-        public ModelProperties(int maxInputTokens, int maxOutputTokens, boolean isMultimodal, String status) {
-            this.maxInputTokens = maxInputTokens;
-            this.maxOutputTokens = maxOutputTokens;
-            this.isMultimodal = isMultimodal;
-            this.status = status;
-        }
-
-        @Override
-        public String toString() {
-            return String.format("ModelProperties{maxInputTokens=%d, maxOutputTokens=%d, isMultimodal=%s, status='%s'}",
-                    maxInputTokens, maxOutputTokens, isMultimodal, status);
-        }
     }
 
     /**

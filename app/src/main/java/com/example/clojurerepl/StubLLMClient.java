@@ -106,6 +106,17 @@ public class StubLLMClient extends LLMClient {
         return "stub-model";
     }
 
+    /**
+     * Get model properties for a specific model
+     * 
+     * @param modelName The name of the model
+     * @return ModelProperties for the model, or null if not found
+     */
+    public static ModelProperties getModelProperties(String modelName) {
+        // TODO: Implement Stub model properties lookup table
+        return null;
+    }
+
     @Override
     public CompletableFuture<String> generateInitialCode(String description) {
         Log.d(TAG, "Generating initial code for description: " + description + " using stub client");

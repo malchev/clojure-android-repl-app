@@ -140,6 +140,17 @@ public class OpenAIChatClient extends LLMClient {
         Log.d(TAG, "Cleared OpenAI model cache");
     }
 
+    /**
+     * Get model properties for a specific model
+     * 
+     * @param modelName The name of the model
+     * @return ModelProperties for the model, or null if not found
+     */
+    public static ModelProperties getModelProperties(String modelName) {
+        // TODO: Implement OpenAI model properties lookup table
+        return null;
+    }
+
     private class OpenAIChatSession implements ChatSession {
         private final String sessionId;
         private final List<Message> messages;
