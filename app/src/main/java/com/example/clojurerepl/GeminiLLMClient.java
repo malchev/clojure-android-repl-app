@@ -334,9 +334,6 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     /**
-    }
-
-    /**
      * Get model properties for a specific model
      * 
      * @param modelName The name of the model
@@ -414,6 +411,9 @@ public class GeminiLLMClient extends LLMClient {
             this.systemPrompt = content;
             Log.d(TAG, "System prompt set successfully, length: " + (content != null ? content.length() : 0)
                     + " characters");
+            // Save the system prompt in the message history so that it gets
+            // saved and restored with the DesignSession object.
+            messageHistory.add(new Message("system", content));
         }
 
         @Override
@@ -699,15 +699,19 @@ public class GeminiLLMClient extends LLMClient {
             // Add each message from history
             for (Message message : managedHistory) {
                 JSONObject messageObj = new JSONObject();
-                messageObj.put("role", message.role);
+                // Skip the "system" message since it gets included with the
+                // systemInstruction parameter above.
+                if (message.role.equals("system") == false) {
+                    messageObj.put("role", message.role);
 
-                JSONArray parts = new JSONArray();
-                JSONObject textPart = new JSONObject();
-                textPart.put("text", message.content);
-                parts.put(textPart);
+                    JSONArray parts = new JSONArray();
+                    JSONObject textPart = new JSONObject();
+                    textPart.put("text", message.content);
+                    parts.put(textPart);
 
-                messageObj.put("parts", parts);
-                contents.put(messageObj);
+                    messageObj.put("parts", parts);
+                    contents.put(messageObj);
+                }
             }
 
             requestBody.put("contents", contents);
