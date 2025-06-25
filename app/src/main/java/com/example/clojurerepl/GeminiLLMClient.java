@@ -769,7 +769,7 @@ public class GeminiLLMClient extends LLMClient {
                         response.append(responseLine.trim());
                     }
                     String extractedResponse = extractTextFromResponse(response.toString());
-                    Log.d(TAG, "=== Complete LLM Response ===\n" + extractedResponse);
+                    Log.d(TAG, "=== Complete LLM Response ===\n" + formatResponseWithLineNumbers(extractedResponse));
                     return extractedResponse;
                 }
             } else {
@@ -840,6 +840,28 @@ public class GeminiLLMClient extends LLMClient {
             Log.e(TAG, "Error extracting text from Gemini response", e);
             return "Error: " + e.getMessage();
         }
+    }
+
+    /**
+     * Formats text with line numbers in the format: "001: line content"
+     * Each line number is three digits, right-aligned, followed by a colon and
+     * space
+     */
+    private String formatResponseWithLineNumbers(String text) {
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+
+        String[] lines = text.split("\n");
+        StringBuilder formatted = new StringBuilder();
+
+        for (int i = 0; i < lines.length; i++) {
+            // Format line number as three digits with leading zeros
+            String lineNumber = String.format("%03d", i + 1);
+            formatted.append(lineNumber).append(": ").append(lines[i]).append("\n");
+        }
+
+        return formatted.toString();
     }
 
     public String getModel() {
