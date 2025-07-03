@@ -40,4 +40,11 @@
             android:maxHeight="200dp"
             android:scrollbars="vertical" />
     </LinearLayout>
+
+    <CheckBox
+        android:id="@+id/include_screenshot_checkbox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Include screenshot in feedback"
+        android:layout_marginTop="16dp" />
 </LinearLayout>

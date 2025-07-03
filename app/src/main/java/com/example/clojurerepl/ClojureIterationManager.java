@@ -229,7 +229,7 @@ public class ClojureIterationManager {
     }
 
     public CompletableFuture<String> generateNextIteration(String description, String feedback,
-            IterationResult lastResult) {
+            IterationResult lastResult, File image) {
         // Cancel any previous generation task that might be running
         if (generationFuture != null && !generationFuture.isDone()) {
             generationFuture.cancel(true);
@@ -253,7 +253,7 @@ public class ClojureIterationManager {
                         lastResult.logcat,
                         lastResult.screenshot,
                         feedback,
-                        null); // Pass null for image parameter for now
+                        image); // Pass the selected image parameter
 
                 // When the LLM response is ready, complete our future
                 llmFuture.thenAccept(response -> {

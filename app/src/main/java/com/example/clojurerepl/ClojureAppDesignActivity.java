@@ -7,6 +7,7 @@ import android.graphics.BitmapFactory;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -35,6 +36,7 @@ import android.view.ViewGroup;
 import android.widget.ListView;
 import com.example.clojurerepl.session.DesignSession;
 import com.example.clojurerepl.session.SessionManager;
+import android.widget.ScrollView;
 
 public class ClojureAppDesignActivity extends AppCompatActivity
         implements ClojureIterationManager.ExtractionErrorCallback {
@@ -79,6 +81,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
     // Add a class field to store the prefilled feedback
     private String lastErrorFeedback = null;
+
+    // Add field to track selected screenshot for multimodal feedback
+    private File selectedScreenshot = null;
 
     // Add session support
     private SessionManager sessionManager;
@@ -642,6 +647,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     }
 
     private void submitFeedbackWithText(String feedback) {
+        submitFeedbackWithText(feedback, selectedScreenshot);
+    }
+
+    private void submitFeedbackWithText(String feedback, File image) {
         Log.d(TAG, "\n" +
                 "╔═══════════════════════════════════════════╗\n" +
                 "║         STARTING NEXT ITERATION           ║\n" +
@@ -649,12 +658,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         Log.d(TAG, "submitFeedbackWithText: feedback=" +
                 (feedback != null ? "present (len=" + feedback.length() + ")" : "null") +
+                ", image=" + (image != null ? image.getPath() : "null") +
                 ", iterationManager=" + (iterationManager != null ? "present" : "null") +
                 ", LLM client="
                 + (iterationManager != null && iterationManager.getLLMClient() != null ? "initialized" : "null"));
 
         // Clear stored error feedback since we're starting a new iteration
         lastErrorFeedback = null;
+        selectedScreenshot = null; // Clear selected screenshot after use
 
         // Check if models are still loading
         if (!modelsLoaded) {
@@ -721,7 +732,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         iterationManager.generateNextIteration(
                 currentSession.getDescription(),
                 feedback,
-                result)
+                result,
+                image)
                 .thenAccept(code -> {
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
@@ -1501,6 +1513,28 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             dialogView.findViewById(R.id.error_container).setVisibility(View.GONE);
         }
 
+        // Set up screenshot checkbox
+        CheckBox screenshotCheckbox = dialogView.findViewById(R.id.include_screenshot_checkbox);
+
+        // Check if current model is multimodal
+        boolean isMultimodal = false;
+        if (iterationManager != null && iterationManager.getLLMClient() != null) {
+            LLMClient.ModelProperties props = LLMClient.getModelProperties(iterationManager.getLLMClient().getModel());
+            isMultimodal = props != null && props.isMultimodal;
+        }
+
+        // Enable/disable checkbox based on multimodal capability
+        screenshotCheckbox.setEnabled(isMultimodal && !currentScreenshots.isEmpty());
+
+        // Set up checkbox listener
+        screenshotCheckbox.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (isChecked) {
+                showScreenshotSelectionDialog(screenshotCheckbox);
+            } else {
+                selectedScreenshot = null;
+            }
+        });
+
         // Set up dialog
         builder.setView(dialogView);
         builder.setPositiveButton("Submit", null); // We'll override this below
@@ -1785,5 +1819,74 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     .setCancelable(false)
                     .show();
         });
+    }
+
+    /**
+     * Shows a dialog for selecting a screenshot from the current screenshots
+     */
+    private void showScreenshotSelectionDialog(CheckBox screenshotCheckbox) {
+        if (currentScreenshots.isEmpty()) {
+            Toast.makeText(this, "No screenshots available", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Select Screenshot");
+
+        // Create a horizontal scrollable layout for screenshots
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.HORIZONTAL);
+        container.setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16));
+
+        // Create the dialog first so we can reference it in the click listeners
+        final AlertDialog[] dialogRef = new AlertDialog[1];
+
+        for (int i = 0; i < currentScreenshots.size(); i++) {
+            File screenshot = currentScreenshots.get(i);
+
+            // Create ImageView for each screenshot
+            ImageView imageView = new ImageView(this);
+            imageView.setLayoutParams(new LinearLayout.LayoutParams(
+                    dpToPx(120), dpToPx(200)));
+            imageView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            imageView.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4));
+            imageView.setBackgroundResource(android.R.drawable.btn_default);
+
+            // Load and set the bitmap
+            try {
+                Bitmap bitmap = BitmapFactory.decodeFile(screenshot.getAbsolutePath());
+                if (bitmap != null) {
+                    imageView.setImageBitmap(bitmap);
+
+                    // Set click listener
+                    final int index = i;
+                    imageView.setOnClickListener(v -> {
+                        selectedScreenshot = screenshot;
+                        Toast.makeText(this, "Screenshot " + (index + 1) + " selected", Toast.LENGTH_SHORT).show();
+                        if (dialogRef[0] != null) {
+                            dialogRef[0].dismiss();
+                        }
+                    });
+
+                    container.addView(imageView);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error loading screenshot " + screenshot.getPath(), e);
+            }
+        }
+
+        // Create a ScrollView to make it scrollable
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.addView(container);
+
+        builder.setView(scrollView);
+        builder.setPositiveButton("OK", (d, which) -> d.dismiss());
+        builder.setNegativeButton("Cancel", (d, which) -> {
+            selectedScreenshot = null;
+            d.dismiss();
+            screenshotCheckbox.setChecked(false);
+        });
+
+        dialogRef[0] = builder.show();
     }
 }
