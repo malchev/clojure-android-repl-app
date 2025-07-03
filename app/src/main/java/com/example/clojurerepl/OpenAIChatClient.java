@@ -292,11 +292,20 @@ public class OpenAIChatClient extends LLMClient {
 
     @Override
     public CompletableFuture<String> generateNextIteration(String description, String currentCode, String logcat,
-            File screenshot, String feedback) {
+            File screenshot, String feedback, File image) {
         ensureModelIsSet();
         Log.d(TAG, "┌───────────────────────────────────────────┐");
         Log.d(TAG, "│         GENERATING NEXT ITERATION         │");
         Log.d(TAG, "└───────────────────────────────────────────┘");
+
+        // Check if image is provided and model is multimodal
+        if (image != null) {
+            ModelProperties props = getModelProperties(getModel());
+            if (props == null || !props.isMultimodal) {
+                return CompletableFuture.failedFuture(
+                        new UnsupportedOperationException("Image parameter provided but model is not multimodal"));
+            }
+        }
 
         // Get existing session for this app description
         ChatSession session = getOrCreateSession(description);

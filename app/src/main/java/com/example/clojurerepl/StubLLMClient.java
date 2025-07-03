@@ -146,8 +146,18 @@ public class StubLLMClient extends LLMClient {
             String currentCode,
             String logcat,
             File screenshot,
-            String feedback) {
+            String feedback,
+            File image) {
         Log.d(TAG, "Generating next iteration for description: " + description + " using stub client");
+
+        // Check if image is provided and model is multimodal
+        if (image != null) {
+            ModelProperties props = getModelProperties(getModel());
+            if (props == null || !props.isMultimodal) {
+                return CompletableFuture.failedFuture(
+                        new UnsupportedOperationException("Image parameter provided but model is not multimodal"));
+            }
+        }
 
         // Get existing session for this app description
         ChatSession session = getOrCreateSession(description);

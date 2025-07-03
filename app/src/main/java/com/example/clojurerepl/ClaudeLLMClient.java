@@ -243,11 +243,21 @@ public class ClaudeLLMClient extends LLMClient {
             String currentCode,
             String logcat,
             File screenshot,
-            String feedback) {
+            String feedback,
+            File image) {
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +
                 "│         GENERATING NEXT ITERATION         │\n" +
                 "└───────────────────────────────────────────┘");
+
+        // Check if image is provided and model is multimodal
+        if (image != null) {
+            ModelProperties props = getModelProperties(getModel());
+            if (props == null || !props.isMultimodal) {
+                return CompletableFuture.failedFuture(
+                        new UnsupportedOperationException("Image parameter provided but model is not multimodal"));
+            }
+        }
 
         // Get the existing session without resetting it
         ChatSession session = getOrCreateSession(description);

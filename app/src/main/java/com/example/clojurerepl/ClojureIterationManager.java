@@ -252,7 +252,8 @@ public class ClojureIterationManager {
                         lastResult.code,
                         lastResult.logcat,
                         lastResult.screenshot,
-                        feedback);
+                        feedback,
+                        null); // Pass null for image parameter for now
 
                 // When the LLM response is ready, complete our future
                 llmFuture.thenAccept(response -> {

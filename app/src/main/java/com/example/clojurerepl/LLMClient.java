@@ -170,7 +170,8 @@ public abstract class LLMClient {
             String currentCode,
             String logcat,
             File screenshot,
-            String feedback);
+            String feedback,
+            File image);
 
     // Message class for chat history
     public static class Message {

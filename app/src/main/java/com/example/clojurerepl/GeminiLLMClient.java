@@ -620,7 +620,8 @@ public class GeminiLLMClient extends LLMClient {
             String currentCode,
             String logcat,
             File screenshot,
-            String feedback) {
+            String feedback,
+            File image) {
         // Get the iteration number from the chat session
         ChatSession session = getOrCreateSession(description);
 
@@ -628,6 +629,15 @@ public class GeminiLLMClient extends LLMClient {
                 "┌───────────────────────────────────────────┐\n" +
                 "│         GENERATING NEXT ITERATION         │\n" +
                 "└───────────────────────────────────────────┘");
+
+        // Check if image is provided and model is multimodal
+        if (image != null) {
+            ModelProperties props = getModelProperties(getModel());
+            if (props == null || !props.isMultimodal) {
+                return CompletableFuture.failedFuture(
+                        new UnsupportedOperationException("Image parameter provided but model is not multimodal"));
+            }
+        }
 
         Log.d(TAG, "=== Starting Next Iteration ===");
         Log.d(TAG, "Description: " + description);
