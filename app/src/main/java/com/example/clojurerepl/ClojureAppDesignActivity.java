@@ -1518,8 +1518,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         // Check if current model is multimodal
         boolean isMultimodal = false;
-        if (iterationManager != null && iterationManager.getLLMClient() != null) {
-            LLMClient.ModelProperties props = LLMClient.getModelProperties(iterationManager.getLLMClient().getModel());
+        if (iterationManager != null) {
+            LLMClient.ModelProperties props = iterationManager.getModelProperties();
             isMultimodal = props != null && props.isMultimodal;
         }
 

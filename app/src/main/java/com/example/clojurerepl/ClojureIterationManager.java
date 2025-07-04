@@ -329,4 +329,34 @@ public class ClojureIterationManager {
     public String getSessionId() {
         return sessionId;
     }
+
+    /**
+     * Get model properties for the current LLM client's model
+     *
+     * @return ModelProperties for the current model, or null if not found
+     */
+    public LLMClient.ModelProperties getModelProperties() {
+        if (llmClient == null) {
+            return null;
+        }
+
+        String modelName = llmClient.getModel();
+        if (modelName == null) {
+            return null;
+        }
+
+        // Delegate to the specific LLM client implementation
+        switch (llmClient.getType()) {
+            case GEMINI:
+                return com.example.clojurerepl.GeminiLLMClient.getModelProperties(modelName);
+            case OPENAI:
+                return com.example.clojurerepl.OpenAIChatClient.getModelProperties(modelName);
+            case CLAUDE:
+                return com.example.clojurerepl.ClaudeLLMClient.getModelProperties(modelName);
+            case STUB:
+                return com.example.clojurerepl.StubLLMClient.getModelProperties(modelName);
+            default:
+                return null;
+        }
+    }
 }

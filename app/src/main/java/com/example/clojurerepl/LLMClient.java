@@ -207,16 +207,6 @@ public abstract class LLMClient {
         }
     }
 
-    /**
-     * Get model properties for a specific model
-     * 
-     * @param modelName The name of the model
-     * @return ModelProperties for the model, or null if not found
-     */
-    public static ModelProperties getModelProperties(String modelName) {
-        return null; // Default implementation returns null
-    }
-
     // Chat session interface
     public interface ChatSession {
         /**
