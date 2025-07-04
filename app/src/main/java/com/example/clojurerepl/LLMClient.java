@@ -173,14 +173,29 @@ public abstract class LLMClient {
             String feedback,
             File image);
 
-    // Message class for chat history
+    // Message class for chat history (supports both text and images)
     public static class Message {
         public final String role;
         public final String content;
+        public final File imageFile;
+        public final String mimeType;
 
         public Message(String role, String content) {
             this.role = role;
             this.content = content;
+            this.imageFile = null;
+            this.mimeType = null;
+        }
+
+        public Message(String role, String content, File imageFile, String mimeType) {
+            this.role = role;
+            this.content = content;
+            this.imageFile = imageFile;
+            this.mimeType = mimeType;
+        }
+
+        public boolean hasImage() {
+            return imageFile != null && imageFile.exists() && imageFile.canRead();
         }
     }
 
@@ -226,7 +241,18 @@ public abstract class LLMClient {
          *
          * @param content The user message content
          */
-        void queueUserMessage(String content);
+        default void queueUserMessage(String content) {
+            queueUserMessageWithImage(content, null);
+        }
+
+        /**
+         * Queues a user message with an attached image to be sent in the next API call
+         *
+         * @param content   The user message content
+         * @param imageFile The image file to attach (can be null for text-only
+         *                  messages)
+         */
+        void queueUserMessageWithImage(String content, File imageFile);
 
         /**
          * Queues an assistant (model) response to be sent in the next API call

@@ -204,6 +204,13 @@ public class OpenAIChatClient extends LLMClient {
         }
 
         @Override
+        public void queueUserMessageWithImage(String content, File imageFile) {
+            Log.d(TAG, "Queuing user message with image in session: " + sessionId);
+            // For OpenAI client, just queue as regular message (ignore image for now)
+            messages.add(new Message("user", content));
+        }
+
+        @Override
         public void queueAssistantResponse(String content) {
             Log.d(TAG, "Queuing assistant response in session: " + sessionId);
             messages.add(new Message("assistant", content));
@@ -313,8 +320,8 @@ public class OpenAIChatClient extends LLMClient {
         // Format the iteration prompt
         String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback);
 
-        // Queue the user message and send all messages
-        session.queueUserMessage(prompt);
+        // Queue the user message (with image attachment if provided)
+        session.queueUserMessageWithImage(prompt, image);
         return session.sendMessages();
     }
 

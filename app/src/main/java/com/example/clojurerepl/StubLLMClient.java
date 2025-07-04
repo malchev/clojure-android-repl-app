@@ -40,6 +40,13 @@ public class StubLLMClient extends LLMClient {
         }
 
         @Override
+        public void queueUserMessageWithImage(String content, File imageFile) {
+            Log.d(TAG, "Queuing user message with image in stub session: " + sessionId);
+            // For stub client, just queue as regular message (ignore image)
+            messages.add(new Message("user", content));
+        }
+
+        @Override
         public void queueAssistantResponse(String content) {
             Log.d(TAG, "Queuing assistant response in stub session: " + sessionId);
             messages.add(new Message("assistant", content));
@@ -165,8 +172,8 @@ public class StubLLMClient extends LLMClient {
         // Format the iteration prompt
         String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback);
 
-        // Queue the user message
-        session.queueUserMessage(prompt);
+        // Queue the user message (with image attachment if provided)
+        session.queueUserMessageWithImage(prompt, image);
 
         // Send all messages and get the response
         return session.sendMessages();

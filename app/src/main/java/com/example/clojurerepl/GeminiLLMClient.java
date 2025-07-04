@@ -17,6 +17,9 @@ import java.util.UUID;
 import org.json.JSONObject;
 import org.json.JSONArray;
 import com.example.clojurerepl.auth.ApiKeyManager;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.util.Base64;
 
 public class GeminiLLMClient extends LLMClient {
     private static final String TAG = "GeminiLLMClient";
@@ -409,7 +412,7 @@ public class GeminiLLMClient extends LLMClient {
 
     /**
      * Get model properties for a specific model
-     * 
+     *
      * @param modelName The name of the model
      * @return ModelProperties for the model, or null if not found
      */
@@ -419,7 +422,7 @@ public class GeminiLLMClient extends LLMClient {
 
     /**
      * Get the maximum input tokens for a model
-     * 
+     *
      * @param modelName The name of the model
      * @return Maximum input tokens, or default value if model not found
      */
@@ -430,7 +433,7 @@ public class GeminiLLMClient extends LLMClient {
 
     /**
      * Get the maximum output tokens for a model
-     * 
+     *
      * @param modelName The name of the model
      * @return Maximum output tokens, or default value if model not found
      */
@@ -441,7 +444,7 @@ public class GeminiLLMClient extends LLMClient {
 
     /**
      * Check if a model is multimodal
-     * 
+     *
      * @param modelName The name of the model
      * @return true if multimodal, false otherwise
      */
@@ -452,7 +455,7 @@ public class GeminiLLMClient extends LLMClient {
 
     /**
      * Get the status of a model
-     * 
+     *
      * @param modelName The name of the model
      * @return Status string, or "Unknown" if model not found
      */
@@ -497,6 +500,20 @@ public class GeminiLLMClient extends LLMClient {
         }
 
         @Override
+        public void queueUserMessageWithImage(String content, File imageFile) {
+            Log.d(TAG, "Queuing user message with image in session: " + sessionId);
+
+            // Determine MIME type based on file extension
+            String mimeType = determineMimeType(imageFile);
+
+            // Create message with image
+            Message message = new Message("user", content, imageFile, mimeType);
+            messageHistory.add(message);
+
+            Log.d(TAG, "Added message with image, MIME type: " + mimeType);
+        }
+
+        @Override
         public void queueAssistantResponse(String content) {
             Log.d(TAG, "Queuing assistant response in session: " + sessionId);
             messageHistory.add(new Message("model", content));
@@ -530,6 +547,35 @@ public class GeminiLLMClient extends LLMClient {
             messageHistory.clear();
             systemPrompt = null;
             Log.d(TAG, "Reset chat session: " + sessionId);
+        }
+
+        /**
+         * Determines the MIME type of an image file based on its extension
+         *
+         * @param imageFile The image file
+         * @return The MIME type string
+         */
+        private String determineMimeType(File imageFile) {
+            if (imageFile == null) {
+                return "image/png"; // Default fallback
+            }
+
+            String fileName = imageFile.getName().toLowerCase();
+            if (fileName.endsWith(".png")) {
+                return "image/png";
+            } else if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) {
+                return "image/jpeg";
+            } else if (fileName.endsWith(".gif")) {
+                return "image/gif";
+            } else if (fileName.endsWith(".webp")) {
+                return "image/webp";
+            } else if (fileName.endsWith(".bmp")) {
+                return "image/bmp";
+            } else {
+                // Default to PNG if we can't determine the type
+                Log.w(TAG, "Unknown image format for file: " + fileName + ", defaulting to image/png");
+                return "image/png";
+            }
         }
 
         @Override
@@ -645,13 +691,14 @@ public class GeminiLLMClient extends LLMClient {
         Log.d(TAG,
                 "=== Logcat Content Being Sent === (" + (logcat != null ? logcat.split("\n").length : 0) + " lines)");
         Log.d(TAG, "Screenshot present: " + (screenshot != null ? screenshot.getPath() : "null"));
+        Log.d(TAG, "Image present: " + (image != null ? image.getPath() : "null"));
         Log.d(TAG, "Feedback: " + feedback);
 
         // Format the iteration prompt
         String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback);
 
-        // Queue the user message
-        session.queueUserMessage(prompt);
+        // Queue the user message (with image attachment if provided)
+        session.queueUserMessageWithImage(prompt, image);
 
         // Send all messages and get the response
         return session.sendMessages()
@@ -659,6 +706,21 @@ public class GeminiLLMClient extends LLMClient {
                     Log.d(TAG, "Got response response, length: " + response.length());
                     return response;
                 });
+    }
+
+    /**
+     * Encodes a PNG image file to base64 string
+     *
+     * @param imageFile The PNG image file to encode
+     * @return Base64 encoded string of the image
+     * @throws IOException If there's an error reading the file
+     */
+    private String encodeImageToBase64(File imageFile) throws IOException {
+        try (FileInputStream fis = new FileInputStream(imageFile)) {
+            byte[] imageBytes = new byte[(int) imageFile.length()];
+            fis.read(imageBytes);
+            return Base64.getEncoder().encodeToString(imageBytes);
+        }
     }
 
     // Helper method to call the Gemini API with message history
@@ -671,7 +733,8 @@ public class GeminiLLMClient extends LLMClient {
             try {
                 Log.d(TAG, "=== Calling Gemini API (attempt " + (retryCount + 1) + "/" + MAX_RETRIES
                         + ") with token limit: " + currentTokenLimit + " ===");
-                ExtractionResult extractionResult = performGeminiAPICall(history, systemPrompt, currentTokenLimit);
+                ExtractionResult extractionResult = performGeminiAPICall(history, systemPrompt,
+                        currentTokenLimit);
 
                 // Check if the response indicates a token limit issue by parsing it again
                 if (extractionResult.getStatus() == ResponseStatus.MAX_TOKENS) {
@@ -763,10 +826,14 @@ public class GeminiLLMClient extends LLMClient {
                         + "...");
             }
 
+            // Log all messages
             for (int i = 0; i < managedHistory.size(); i++) {
                 Message msg = managedHistory.get(i);
-                Log.d(TAG, String.format("Message %d - Role: %s\nContent:\n%s",
-                        i, msg.role, msg.content.length() > 100 ? msg.content.substring(0, 100) + "..." : msg.content));
+                String contentPreview = msg.content.length() > 100 ? msg.content.substring(0, 100) + "..."
+                        : msg.content;
+                Log.d(TAG, String.format("Message %d - Role: %s\nContent:\n%s\nImage: %s (MIME: %s)",
+                        i, msg.role, contentPreview,
+                        msg.hasImage() ? msg.imageFile.getPath() : "none", msg.mimeType));
             }
 
             String apiKey = apiKeyManager.getApiKey(LLMClientFactory.LLMType.GEMINI);
@@ -801,7 +868,7 @@ public class GeminiLLMClient extends LLMClient {
             // Build the contents array from history
             JSONArray contents = new JSONArray();
 
-            // Add each message from history
+            // Add all messages from history
             for (Message message : managedHistory) {
                 JSONObject messageObj = new JSONObject();
                 // Skip the "system" message since it gets included with the
@@ -810,9 +877,33 @@ public class GeminiLLMClient extends LLMClient {
                     messageObj.put("role", message.role);
 
                     JSONArray parts = new JSONArray();
-                    JSONObject textPart = new JSONObject();
-                    textPart.put("text", message.content);
-                    parts.put(textPart);
+
+                    // Add text part if not empty
+                    if (message.content != null && !message.content.trim().isEmpty()) {
+                        JSONObject textPart = new JSONObject();
+                        textPart.put("text", message.content);
+                        parts.put(textPart);
+                    }
+
+                    // Add image part if image exists and is readable
+                    if (message.hasImage()) {
+                        try {
+                            String base64Image = encodeImageToBase64(message.imageFile);
+                            JSONObject imagePart = new JSONObject();
+                            JSONObject inlineData = new JSONObject();
+                            inlineData.put("mime_type", message.mimeType);
+                            inlineData.put("data", base64Image);
+                            imagePart.put("inline_data", inlineData);
+                            parts.put(imagePart);
+
+                            Log.d(TAG, "Added message with image, text length: " +
+                                    message.content.length() + ", image base64 length: " + base64Image.length() +
+                                    ", MIME type: " + message.mimeType);
+                        } catch (IOException e) {
+                            Log.e(TAG, "Failed to encode image for message", e);
+                            // Continue without the image
+                        }
+                    }
 
                     messageObj.put("parts", parts);
                     contents.put(messageObj);
@@ -861,7 +952,8 @@ public class GeminiLLMClient extends LLMClient {
                 Log.w(TAG, "Failed to pretty print JSON: " + e.getMessage());
             }
 
-            Log.d(TAG, "Request length: " + requestStr.length() + "\n" +
+            Log.d(TAG, "Request length: " + requestStr.length() + " characters (" +
+                    String.format("%.2f", requestStr.length() / 1024.0) + " KB)\n" +
                     "╔═════════════════════════╗\n" +
                     "║ STOP GEMINI API REQUEST ║\n" +
                     "╚═════════════════════════╝");
@@ -1082,7 +1174,7 @@ public class GeminiLLMClient extends LLMClient {
 
     /**
      * Get a summary of the current model's capabilities
-     * 
+     *
      * @return A string describing the current model's properties
      */
     public String getCurrentModelSummary() {
@@ -1102,7 +1194,7 @@ public class GeminiLLMClient extends LLMClient {
 
     /**
      * Check if the current model supports multimodal input (images, etc.)
-     * 
+     *
      * @return true if the model supports multimodal input
      */
     public boolean isCurrentModelMultimodal() {
@@ -1111,7 +1203,7 @@ public class GeminiLLMClient extends LLMClient {
 
     /**
      * Get the status of the current model
-     * 
+     *
      * @return Status string for the current model
      */
     public String getCurrentModelStatus() {

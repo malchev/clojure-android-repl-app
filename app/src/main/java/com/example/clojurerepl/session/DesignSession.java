@@ -295,6 +295,13 @@ public class DesignSession {
             JSONObject messageJson = new JSONObject();
             messageJson.put("role", message.role);
             messageJson.put("content", message.content);
+
+            // Add image file path and MIME type if the message has an image
+            if (message.hasImage()) {
+                messageJson.put("imageFile", message.imageFile.getPath());
+                messageJson.put("mimeType", message.mimeType);
+            }
+
             messagesJson.put(messageJson);
         }
         json.put("chatHistory", messagesJson);
@@ -374,7 +381,25 @@ public class DesignSession {
                 JSONObject messageJson = messagesJson.getJSONObject(i);
                 String role = messageJson.getString("role");
                 String content = messageJson.getString("content");
-                session.chatHistory.add(new LLMClient.Message(role, content));
+
+                // Check if the message has an image
+                if (messageJson.has("imageFile") && messageJson.has("mimeType")) {
+                    String imagePath = messageJson.getString("imageFile");
+                    String mimeType = messageJson.getString("mimeType");
+                    File imageFile = new File(imagePath);
+
+                    // Only create message with image if the file exists
+                    if (imageFile.exists()) {
+                        session.chatHistory.add(new LLMClient.Message(role, content, imageFile, mimeType));
+                    } else {
+                        // File doesn't exist, create regular message
+                        Log.w(TAG, "Image file not found during deserialization: " + imagePath);
+                        session.chatHistory.add(new LLMClient.Message(role, content));
+                    }
+                } else {
+                    // Regular message without image
+                    session.chatHistory.add(new LLMClient.Message(role, content));
+                }
             }
         }
 

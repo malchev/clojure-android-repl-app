@@ -468,7 +468,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 if ("system".equals(message.role)) {
                     chatSession.queueSystemPrompt(message.content);
                 } else if ("user".equals(message.role)) {
-                    chatSession.queueUserMessage(message.content);
+                    if (message.hasImage()) {
+                        chatSession.queueUserMessageWithImage(message.content, message.imageFile);
+                    } else {
+                        chatSession.queueUserMessage(message.content);
+                    }
                 } else if ("assistant".equals(message.role)) {
                     chatSession.queueAssistantResponse(message.content);
                 }
