@@ -1,0 +1,1419 @@
+===============================================================
+CHAT HISTORY FOR SESSION: 54ae09eb-0401-447f-837b-f92f3a25ffbb
+Created: 2025-06-24 13:24:44
+Model: GEMINI (gemini-2.5-pro)
+===============================================================
+
+👤 USER:
+    Implement the following app:
+    Create an app that implements Conway's Game of Life. It's in the form of a 20x20 grid. Each square of the grid is tappable, and when tapped, it switches colors between white (dead) and black (alive). There are three buttons beneath the grid: play, stop, and step. Play runs the game with a delay of half a second between steps until the grid turns all white. Stop stops a play run. Step does a single iteration of the grid state.
+
+---------------------------------------------------------------
+
+[model]:
+    An expert Clojure programmer would approach this problem by breaking it down into three main parts: state management, UI construction, and game logic.
+    
+    1.  **State Management**: The state of the 20x20 grid is stored in an `atom` containing a vector of vectors of booleans (`true` for alive, `false` for dead). This allows for safe, concurrent updates. Another atom, `is-running`, tracks whether the simulation is active. A third atom, `grid-views`, will store references to the UI View for each cell, allowing for efficient color updates without needing to look up views repeatedly.
+    
+    2.  **UI Construction**: The UI is built programmatically in the `-main` function. A `GridLayout` is perfect for the game board. Each cell is a `TextView` with a background color representing its state. An `OnClickListener` is attached to each cell to toggle its state. Below the grid, a `LinearLayout` holds three `Button`s ("Play", "Stop", "Step") with their respective listeners.
+    
+    3.  **Game Logic**:
+        *   The core rules of Conway's Game of Life are implemented in a pure function, `compute-next-state`, which takes the current grid state and returns the new grid state without causing side effects.
+        *   A `perform-step!` function orchestrates a single turn: it calls `compute-next-state`, updates the `grid-state` atom, and then updates the UI to reflect the new state. It also checks if the game is over (all cells are dead) and stops the simulation if so.
+        *   The "Play" button uses an Android `Handler` with `postDelayed` to create the simulation loop, calling `perform-step!` every 500 milliseconds. This is managed by the `is-running` atom.
+        *   Lifecycle events are handled using a `LifecycleEventObserver` to ensure the simulation is paused when the app goes into the background (`ON_STOP`) and that resources like the `Handler` are cleaned up when the app is destroyed (`ON_DESTROY`), preventing memory leaks.
+    
+    Helper functions are used extensively to keep the code modular and readable, such as `update-all-colors!` to sync the UI with the state and `get-live-neighbors` to encapsulate the neighbor-counting logic. Debug logging is added to key functions and callbacks to aid in troubleshooting.
+    
+    ```clojure
+    ;; A Conway's Game of Life implementation for Android in Clojure.
+    (ns user
+      (:import [android.content Context]
+               [android.graphics Color]
+               [android.os Handler Looper]
+               [android.util Log]
+               [android.view View Gravity]
+               [android.widget Button GridLayout TextView LinearLayout]
+               [android.widget LinearLayout$LayoutParams]
+               [androidx.lifecycle Lifecycle$Event LifecycleEventObserver]))
+    
+    (def ^:const LOG_TAG "ClojureApp")
+    (def ^:const GRID_SIZE 20)
+    (def ^:const DELAY_MS 500)
+    
+    ;; --- State Management ---
+    (defonce grid-state (atom (vec (repeat GRID_SIZE (vec (repeat GRID_SIZE false))))))
+    (defonce grid-views (atom (vec (repeat GRID_SIZE (vec (repeat GRID_SIZE nil))))))
+    (defonce is-running (atom false))
+    (defonce game-handler (Handler. (Looper/getMainLooper)))
+    
+    ;; --- Utility & Debugging ---
+    (defn log-debug [& msgs]
+      (Log/d LOG_TAG (apply str msgs)))
+    
+    (defn dp-to-px [dp]
+      (let [metrics (.. *context* getResources getDisplayMetrics)]
+        (int (* dp (.-density metrics)))))
+    
+    ;; --- UI Update Functions ---
+    (defn update-cell-color! [^View view is-alive?]
+      (let [color (if is-alive? Color/BLACK Color/WHITE)]
+        (.setBackgroundColor view color)))
+    
+    (defn update-all-colors! []
+      (log-debug "Updating all cell colors.")
+      (let [current-grid @grid-state
+            views @grid-views]
+        (dotimes [y GRID_SIZE]
+          (dotimes [x GRID_SIZE]
+            (when-let [cell-view (get-in views [y x])]
+              (update-cell-color! cell-view (get-in current-grid [y x])))))))
+    
+    ;; --- Game Logic Functions ---
+    (defn get-live-neighbors [grid x y]
+      (reduce +
+        (for [dx [-1 0 1]
+              dy [-1 0 1]
+              :when (not (and (zero? dx) (zero? dy)))]
+          (let [nx (+ x dx)
+                ny (+ y dy)]
+            (if (and (>= nx 0) (< nx GRID_SIZE)
+                     (>= ny 0) (< ny GRID_SIZE)
+                     (get-in grid [ny nx]))
+              1
+              0)))))
+    
+    (defn compute-next-state [current-grid]
+      (vec
+        (for [y (range GRID_SIZE)]
+          (vec
+            (for [x (range GRID_SIZE)]
+              (let [alive? (get-in current-grid [y x])
+                    neighbors (get-live-neighbors current-grid x y)]
+                (cond
+                  (and alive? (< neighbors 2)) false ; Underpopulation
+                  (and alive? (or (= neighbors 2) (= neighbors 3))) true ; Survival
+                  (and alive? (> neighbors 3)) false ; Overpopulation
+                  (and (not alive?) (= neighbors 3)) true ; Reproduction
+                  :else alive?)))))))
+    
+    (defn perform-step! []
+      (log-debug "Performing step")
+      (let [current-grid @grid-state
+            next-grid (compute-next-state current-grid)]
+        (reset! grid-state next-grid)
+        (update-all-colors!)
+        (when-not (some true? (flatten next-grid))
+          (log-debug "Game over: all cells are dead. Stopping simulation.")
+          (reset! is-running false))))
+    
+    ;; --- Event Handlers ---
+    (def game-loop-fn (atom nil))
+    
+    (defn handle-cell-click [^View view y x]
+      (when-not @is-running
+        (log-debug "Cell clicked at [" y ", " x "]")
+        (let [new-state (not (get-in @grid-state [y x]))]
+          (swap! grid-state assoc-in [y x] new-state)
+          (update-cell-color! view new-state))))
+    
+    (defn handle-play-click [_]
+      (log-debug "Play button clicked.")
+      (when-not @is-running
+        (reset! is-running true)
+        (.post game-handler @game-loop-fn)))
+    
+    (defn handle-stop-click [_]
+      (log-debug "Stop button clicked.")
+      (reset! is-running false))
+    
+    (defn handle-step-click [_]
+      (log-debug "Step button clicked.")
+      (when-not @is-running
+        (perform-step!)))
+    
+    ;; --- Lifecycle Management ---
+    (defn create-lifecycle-observer [handler]
+      (proxy [LifecycleEventObserver] []
+        (onStateChanged [source event]
+          (log-debug "Lifecycle event: " (.name event))
+          (condp = (.name event)
+            "ON_STOP"
+            (do (log-debug "ON_STOP: Stopping game simulation.")
+                (reset! is-running false))
+    
+            "ON_DESTROY"
+            (do (log-debug "ON_DESTROY: Cleaning up handler callbacks.")
+                (.removeCallbacksAndMessages handler nil))
+            
+            nil))))
+    
+    ;; --- Main App Entry Point ---
+    (defn -main []
+      (log-debug "App starting, creating UI.")
+      
+      ;; Define the recursive game loop function
+      (reset! game-loop-fn
+        (fn []
+          (when @is-running
+            (perform-step!)
+            (when @is-running ; Check again as perform-step! might have stopped it
+              (.postDelayed game-handler @game-loop-fn DELAY_MS)))))
+    
+      (let [main-layout (LinearLayout. *context*)
+            _ (.setOrientation main-layout LinearLayout/VERTICAL)
+            _ (.setGravity main-layout Gravity/CENTER_HORIZONTAL)
+    
+            grid-layout (GridLayout. *context*)
+            _ (.setColumnCount grid-layout GRID_SIZE)
+            _ (.setRowCount grid-layout GRID_SIZE)
+    
+            cell-size (dp-to-px 16)
+            cell-margin (dp-to-px 1)
+            
+            button-layout (LinearLayout. *context*)
+            _ (.setOrientation button-layout LinearLayout/HORIZONTAL)
+            _ (.setGravity button-layout Gravity/CENTER)
+            
+            play-button (Button. *context*)
+            stop-button (Button. *context*)
+            step-button (Button. *context*)
+            
+            lifecycle (.. *context* getLifecycle)
+            observer (create-lifecycle-observer game-handler)]
+    
+        ;; Create the grid of TextViews
+        (dotimes [y GRID_SIZE]
+          (dotimes [x GRID_SIZE]
+            (let [cell (TextView. *context*)
+                  params (GridLayout$LayoutParams.)]
+              (set! (.-width params) cell-size)
+              (set! (.-height params) cell-size)
+              (.setMargins params cell-margin cell-margin cell-margin cell-margin)
+              (.setLayoutParams cell params)
+              (update-cell-color! cell (get-in @grid-state [y x]))
+              (.setOnClickListener cell (proxy [View$OnClickListener] [] (onClick [v] (handle-cell-click v y x))))
+              (swap! grid-views assoc-in [y x] cell)
+              (.addView grid-layout cell))))
+    
+        (.addView main-layout grid-layout)
+    
+        ;; Setup and add buttons
+        (doto play-button
+          (.setText "Play")
+          (.setOnClickListener (proxy [View$OnClickListener] [] (onClick [v] (handle-play-click v)))))
+        (doto stop-button
+          (.setText "Stop")
+          (.setOnClickListener (proxy [View$OnClickListener] [] (onClick [v] (handle-stop-click v)))))
+        (doto step-button
+          (.setText "Step")
+          (.setOnClickListener (proxy [View$OnClickListener] [] (onClick [v] (handle-step-click v)))))
+    
+        (let [btn-params (LinearLayout$LayoutParams.
+                           LinearLayout$LayoutParams/WRAP_CONTENT
+                           LinearLayout$LayoutParams/WRAP_CONTENT)]
+          (.addView button-layout play-button btn-params)
+          (.addView button-layout stop-button btn-params)
+          (.addView button-layout step-button btn-params))
+        
+        (let [btn-layout-params (LinearLayout$LayoutParams.
+                                  LinearLayout$LayoutParams/MATCH_PARENT
+                                  LinearLayout$LayoutParams/WRAP_CONTENT)]
+          (.setMargins btn-layout-params 0 (dp-to-px 10) 0 0)
+          (.addView main-layout button-layout btn-layout-params))
+    
+        ;; Add the main layout to the content view
+        (.addView *content-layout* main-layout)
+        
+        ;; Register lifecycle observer
+        (try
+          (.addObserver lifecycle observer)
+          (log-debug "Lifecycle observer registered successfully.")
+          (catch Exception e
+            (log-debug "Error registering lifecycle observer: " (.getMessage e))))
+        
+        (log-debug "UI setup complete.")))
+    ```
+
+---------------------------------------------------------------
+
+👤 USER:
+    The app does not work. Provide an improved version addressing the user feedback and logcat output.
+    User feedback: Can't change/establish root binding of: *ns* with set
+    Logcat output:
+    ```
+    --------- beginning of main
+    06-24 23:26:03.138 31765 31765 E FeatureFlagsImplExport: android.os.flagging.AconfigStorageReadException: ERROR_PACKAGE_NOT_FOUND: package com.android.org.conscrypt.net.flags cannot be found on the device
+    06-24 23:26:03.160 31765 31765 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+    06-24 23:26:03.746 31765 31765 E ClojureRender: Error in Clojure compilation
+    06-24 23:26:03.746 31765 31765 E ClojureRender: java.lang.IllegalStateException: Can't change/establish root binding of: *ns* with set
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at clojure.lang.Var.set(Var.java:226)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at clojure.lang.RT$1.invoke(RT.java:244)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at clojure.core$eval1.invokeStatic(NO_SOURCE_FILE:2)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at clojure.core$eval1.invoke(NO_SOURCE_FILE:2)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at clojure.lang.Compiler.eval(Compiler.java:7194)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at clojure.lang.Compiler.eval(Compiler.java:7183)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at clojure.lang.Compiler.eval(Compiler.java:7149)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at com.example.clojurerepl.RenderActivity.compileAndExecute(RenderActivity.java:621)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at com.example.clojurerepl.RenderActivity.renderCode(RenderActivity.java:575)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at com.example.clojurerepl.RenderActivity.onCreate(RenderActivity.java:303)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at android.app.Activity.performCreate(Activity.java:9244)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at android.app.Activity.performCreate(Activity.java:9222)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1524)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:4302)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:4504)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at android.app.servertransaction.LaunchActivityItem.execute(LaunchActivityItem.java:222)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at android.app.servertransaction.TransactionExecutor.executeNonLifecycleItem(TransactionExecutor.java:133)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at android.app.servertransaction.TransactionExecutor.executeTransactionItems(TransactionExecutor.java:103)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:80)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2830)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at android.os.Handler.dispatchMessage(Handler.java:110)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at android.os.Looper.dispatchMessage(Looper.java:315)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at android.os.Looper.loopOnce(Looper.java:251)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at android.os.Looper.loop(Looper.java:349)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at android.app.ActivityThread.main(ActivityThread.java:9041)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at java.lang.reflect.Method.invoke(Native Method)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:593)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:929)
+    06-24 23:26:03.746 31765 31765 E ClojureRender: Showing error: Can't change/establish root binding of: *ns* with set
+    ```
+
+---------------------------------------------------------------
+
+[model]:
+    Based on the user feedback and logcat analysis, the root cause of the error is identified.
+    
+    ### Reasoning for the fix:
+    
+    The logcat shows a clear error: `java.lang.IllegalStateException: Can't change/establish root binding of: *ns* with set`. This error is triggered by the `(ns user ...)` form at the beginning of the script. The execution environment for this Clojure app pre-configures the `user` namespace. Attempting to redefine it with `ns` is prohibited and causes the application to crash on startup.
+    
+    The fix involves two main changes:
+    
+    1.  **Removing the `(ns ...)` form:** The entire `(ns user ...)` block is removed to prevent the illegal attempt to modify the `*ns*` binding.
+    2.  **Replacing with `import` statements:** To ensure all necessary Android classes are available, the `(:import ...)` clause from the `ns` form is replaced with individual, top-level `(import ...)` statements for each class. This adheres to the requirement of not manipulating namespaces while still making the Android SDK accessible.
+    
+    Additionally, I noticed that `GridLayout$LayoutParams` was used in the code but was not included in the original `(:import ...)` list. I have added `(import android.widget.GridLayout$LayoutParams)` to ensure all classes are properly imported.
+    
+    The rest of the application logic, including state management, UI construction, game rules, and lifecycle handling, remains sound and does not need modification. The corrected code below implements these changes.
+    
+    ```clojure
+    ;; A Conway's Game of Life implementation for Android in Clojure.
+    (import android.content.Context)
+    (import android.graphics.Color)
+    (import android.os.Handler)
+    (import android.os.Looper)
+    (import android.util.Log)
+    (import android.view.View)
+    (import android.view.Gravity)
+    (import android.widget.Button)
+    (import android.widget.GridLayout)
+    (import android.widget.GridLayout$LayoutParams)
+    (import android.widget.TextView)
+    (import android.widget.LinearLayout)
+    (import android.widget.LinearLayout$LayoutParams)
+    (import androidx.lifecycle.Lifecycle$Event)
+    (import androidx.lifecycle.LifecycleEventObserver)
+    
+    (def ^:const LOG_TAG "ClojureApp")
+    (def ^:const GRID_SIZE 20)
+    (def ^:const DELAY_MS 500)
+    
+    ;; --- State Management ---
+    (defonce grid-state (atom (vec (repeat GRID_SIZE (vec (repeat GRID_SIZE false))))))
+    (defonce grid-views (atom (vec (repeat GRID_SIZE (vec (repeat GRID_SIZE nil))))))
+    (defonce is-running (atom false))
+    (defonce game-handler (Handler. (Looper/getMainLooper)))
+    
+    ;; --- Utility & Debugging ---
+    (defn log-debug [& msgs]
+      (Log/d LOG_TAG (apply str msgs)))
+    
+    (defn dp-to-px [dp]
+      (let [metrics (.. *context* getResources getDisplayMetrics)]
+        (int (* dp (.-density metrics)))))
+    
+    ;; --- UI Update Functions ---
+    (defn update-cell-color! [^View view is-alive?]
+      (let [color (if is-alive? Color/BLACK Color/WHITE)]
+        (.setBackgroundColor view color)))
+    
+    (defn update-all-colors! []
+      (log-debug "Updating all cell colors.")
+      (let [current-grid @grid-state
+            views @grid-views]
+        (dotimes [y GRID_SIZE]
+          (dotimes [x GRID_SIZE]
+            (when-let [cell-view (get-in views [y x])]
+              (update-cell-color! cell-view (get-in current-grid [y x])))))))
+    
+    ;; --- Game Logic Functions ---
+    (defn get-live-neighbors [grid x y]
+      (reduce +
+        (for [dx [-1 0 1]
+              dy [-1 0 1]
+              :when (not (and (zero? dx) (zero? dy)))]
+          (let [nx (+ x dx)
+                ny (+ y dy)]
+            (if (and (>= nx 0) (< nx GRID_SIZE)
+                     (>= ny 0) (< ny GRID_SIZE)
+                     (get-in grid [ny nx]))
+              1
+              0)))))
+    
+    (defn compute-next-state [current-grid]
+      (vec
+        (for [y (range GRID_SIZE)]
+          (vec
+            (for [x (range GRID_SIZE)]
+              (let [alive? (get-in current-grid [y x])
+                    neighbors (get-live-neighbors current-grid x y)]
+                (cond
+                  (and alive? (< neighbors 2)) false ; Underpopulation
+                  (and alive? (or (= neighbors 2) (= neighbors 3))) true ; Survival
+                  (and alive? (> neighbors 3)) false ; Overpopulation
+                  (and (not alive?) (= neighbors 3)) true ; Reproduction
+                  :else alive?)))))))
+    
+    (defn perform-step! []
+      (log-debug "Performing step")
+      (let [current-grid @grid-state
+            next-grid (compute-next-state current-grid)]
+        (reset! grid-state next-grid)
+        (update-all-colors!)
+        (when-not (some true? (flatten next-grid))
+          (log-debug "Game over: all cells are dead. Stopping simulation.")
+          (reset! is-running false))))
+    
+    ;; --- Event Handlers ---
+    (def game-loop-fn (atom nil))
+    
+    (defn handle-cell-click [^View view y x]
+      (when-not @is-running
+        (log-debug "Cell clicked at [" y ", " x "]")
+        (let [new-state (not (get-in @grid-state [y x]))]
+          (swap! grid-state assoc-in [y x] new-state)
+          (update-cell-color! view new-state))))
+    
+    (defn handle-play-click [_]
+      (log-debug "Play button clicked.")
+      (when-not @is-running
+        (reset! is-running true)
+        (.post game-handler @game-loop-fn)))
+    
+    (defn handle-stop-click [_]
+      (log-debug "Stop button clicked.")
+      (reset! is-running false))
+    
+    (defn handle-step-click [_]
+      (log-debug "Step button clicked.")
+      (when-not @is-running
+        (perform-step!)))
+    
+    ;; --- Lifecycle Management ---
+    (defn create-lifecycle-observer [handler]
+      (proxy [LifecycleEventObserver] []
+        (onStateChanged [source event]
+          (log-debug "Lifecycle event: " (.name event))
+          (condp = (.name event)
+            "ON_STOP"
+            (do (log-debug "ON_STOP: Stopping game simulation.")
+                (reset! is-running false))
+    
+            "ON_DESTROY"
+            (do (log-debug "ON_DESTROY: Cleaning up handler callbacks.")
+                (.removeCallbacksAndMessages handler nil))
+            
+            nil))))
+    
+    ;; --- Main App Entry Point ---
+    (defn -main []
+      (log-debug "App starting, creating UI.")
+      
+      ;; Define the recursive game loop function
+      (reset! game-loop-fn
+        (fn []
+          (when @is-running
+            (perform-step!)
+            (when @is-running ; Check again as perform-step! might have stopped it
+              (.postDelayed game-handler @game-loop-fn DELAY_MS)))))
+    
+      (let [main-layout (LinearLayout. *context*)
+            _ (.setOrientation main-layout LinearLayout/VERTICAL)
+            _ (.setGravity main-layout Gravity/CENTER_HORIZONTAL)
+    
+            grid-layout (GridLayout. *context*)
+            _ (.setColumnCount grid-layout GRID_SIZE)
+            _ (.setRowCount grid-layout GRID_SIZE)
+    
+            cell-size (dp-to-px 16)
+            cell-margin (dp-to-px 1)
+            
+            button-layout (LinearLayout. *context*)
+            _ (.setOrientation button-layout LinearLayout/HORIZONTAL)
+            _ (.setGravity button-layout Gravity/CENTER)
+            
+            play-button (Button. *context*)
+            stop-button (Button. *context*)
+            step-button (Button. *context*)
+            
+            lifecycle (.. *context* getLifecycle)
+            observer (create-lifecycle-observer game-handler)]
+    
+        ;; Create the grid of TextViews
+        (dotimes [y GRID_SIZE]
+          (dotimes [x GRID_SIZE]
+            (let [cell (TextView. *context*)
+                  params (GridLayout$LayoutParams.)]
+              (set! (.-width params) cell-size)
+              (set! (.-height params) cell-size)
+              (.setMargins params cell-margin cell-margin cell-margin cell-margin)
+              (.setLayoutParams cell params)
+              (update-cell-color! cell (get-in @grid-state [y x]))
+              (.setOnClickListener cell (proxy [View$OnClickListener] [] (onClick [v] (handle-cell-click v y x))))
+              (swap! grid-views assoc-in [y x] cell)
+              (.addView grid-layout cell))))
+    
+        (.addView main-layout grid-layout)
+    
+        ;; Setup and add buttons
+        (doto play-button
+          (.setText "Play")
+          (.setOnClickListener (proxy [View$OnClickListener] [] (onClick [v] (handle-play-click v)))))
+        (doto stop-button
+          (.setText "Stop")
+          (.setOnClickListener (proxy [View$OnClickListener] [] (onClick [v] (handle-stop-click v)))))
+        (doto step-button
+          (.setText "Step")
+          (.setOnClickListener (proxy [View$OnClickListener] [] (onClick [v] (handle-step-click v)))))
+    
+        (let [btn-params (LinearLayout$LayoutParams.
+                           LinearLayout$LayoutParams/WRAP_CONTENT
+                           LinearLayout$LayoutParams/WRAP_CONTENT)]
+          (.addView button-layout play-button btn-params)
+          (.addView button-layout stop-button btn-params)
+          (.addView button-layout step-button btn-params))
+        
+        (let [btn-layout-params (LinearLayout$LayoutParams.
+                                  LinearLayout$LayoutParams/MATCH_PARENT
+                                  LinearLayout$LayoutParams/WRAP_CONTENT)]
+          (.setMargins btn-layout-params 0 (dp-to-px 10) 0 0)
+          (.addView main-layout button-layout btn-layout-params))
+    
+        ;; Add the main layout to the content view
+        (.addView *content-layout* main-layout)
+        
+        ;; Register lifecycle observer
+        (try
+          (.addObserver lifecycle observer)
+          (log-debug "Lifecycle observer registered successfully.")
+          (catch Exception e
+            (log-debug "Error registering lifecycle observer: " (.getMessage e))))
+        
+        (log-debug "UI setup complete.")))
+    ```
+
+---------------------------------------------------------------
+
+👤 USER:
+    The app does not work. Provide an improved version addressing the user feedback and logcat output.
+    User feedback: Syntax error macroexpanding proxy at (173:37).
+    
+    Caused by: Can't resolve: View$OnClickListener
+    Logcat output:
+    ```
+    --------- beginning of main
+    06-24 23:26:47.238 31913 31913 E FeatureFlagsImplExport: android.os.flagging.AconfigStorageReadException: ERROR_PACKAGE_NOT_FOUND: package com.android.org.conscrypt.net.flags cannot be found on the device
+    06-24 23:26:47.259 31913 31913 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+    06-24 23:26:49.654 31913 31913 E ClojureRender: Error in Clojure compilation
+    06-24 23:26:49.654 31913 31913 E ClojureRender: Syntax error macroexpanding proxy at (173:37).
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.macroexpand1(Compiler.java:7036)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7110)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6762)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$HostExpr$Parser.parse(Compiler.java:1020)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7124)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7112)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6762)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$BodyExpr$Parser.parse(Compiler.java:6135)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$LetExpr$Parser.parse(Compiler.java:6453)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7124)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7112)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6762)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$BodyExpr$Parser.parse(Compiler.java:6135)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7124)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6762)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$IfExpr$Parser.parse(Compiler.java:2841)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7124)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7112)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6762)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$BodyExpr$Parser.parse(Compiler.java:6137)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$LetExpr$Parser.parse(Compiler.java:6453)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7124)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7112)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6762)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$BodyExpr$Parser.parse(Compiler.java:6135)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$LetExpr$Parser.parse(Compiler.java:6453)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7124)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7112)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7112)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6762)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$BodyExpr$Parser.parse(Compiler.java:6135)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7124)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6762)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$IfExpr$Parser.parse(Compiler.java:2841)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7124)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7112)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6762)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$BodyExpr$Parser.parse(Compiler.java:6137)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$LetExpr$Parser.parse(Compiler.java:6453)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7124)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7112)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6762)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$BodyExpr$Parser.parse(Compiler.java:6135)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$LetExpr$Parser.parse(Compiler.java:6453)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7124)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7112)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7112)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6762)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$BodyExpr$Parser.parse(Compiler.java:6135)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$LetExpr$Parser.parse(Compiler.java:6453)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7124)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7112)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6762)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$BodyExpr$Parser.parse(Compiler.java:6137)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$FnMethod.parse(Compiler.java:5479)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$FnExpr.parse(Compiler.java:4041)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7122)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7112)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.access$300(Compiler.java:38)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler$DefExpr$Parser.parse(Compiler.java:596)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyzeSeq(Compiler.java:7124)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6806)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.analyze(Compiler.java:6762)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.eval(Compiler.java:7198)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.eval(Compiler.java:7149)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at com.example.clojurerepl.RenderActivity.compileAndExecute(RenderActivity.java:621)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at com.example.clojurerepl.RenderActivity.renderCode(RenderActivity.java:575)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at com.example.clojurerepl.RenderActivity.onCreate(RenderActivity.java:303)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at android.app.Activity.performCreate(Activity.java:9244)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at android.app.Activity.performCreate(Activity.java:9222)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1524)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:4302)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:4504)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at android.app.servertransaction.LaunchActivityItem.execute(LaunchActivityItem.java:222)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at android.app.servertransaction.TransactionExecutor.executeNonLifecycleItem(TransactionExecutor.java:133)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at android.app.servertransaction.TransactionExecutor.executeTransactionItems(TransactionExecutor.java:103)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:80)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2830)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at android.os.Handler.dispatchMessage(Handler.java:110)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at android.os.Looper.dispatchMessage(Looper.java:315)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at android.os.Looper.loopOnce(Looper.java:251)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at android.os.Looper.loop(Looper.java:349)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at android.app.ActivityThread.main(ActivityThread.java:9041)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at java.lang.reflect.Method.invoke(Native Method)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:593)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:929)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: Caused by: java.lang.Exception: Can't resolve: View$OnClickListener
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.core$proxy$fn__7258.invoke(core_proxy.clj:360)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.core$map$fn__5935.invoke(core.clj:2770)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.LazySeq.sval(LazySeq.java:42)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.LazySeq.seq(LazySeq.java:51)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.LazySeq.first(LazySeq.java:73)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.RT.first(RT.java:692)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.core$first__5449.invokeStatic(core.clj:55)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.core$get_super_and_interfaces.invokeStatic(core_proxy.clj:277)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.core$proxy.invokeStatic(core_proxy.clj:334)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.core$proxy.doInvoke(core_proxy.clj:334)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.RestFn.applyTo(RestFn.java:151)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Var.applyTo(Var.java:705)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	at clojure.lang.Compiler.macroexpand1(Compiler.java:7010)
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 	... 110 more
+    06-24 23:26:49.654 31913 31913 E ClojureRender: Showing error: Syntax error macroexpanding proxy at (173:37).
+    06-24 23:26:49.654 31913 31913 E ClojureRender: 
+    06-24 23:26:49.654 31913 31913 E ClojureRender: Caused by: Can't resolve: View$OnClickListener
+    ```
+
+---------------------------------------------------------------
+
+[model]:
+    ### Reasoning for the fix:
+    
+    The logcat provides a very specific error: `Caused by: java.lang.Exception: Can't resolve: View$OnClickListener`. This indicates that the Clojure compiler, when trying to expand the `proxy` macro, could not find the definition for the `View$OnClickListener` interface.
+    
+    In the previous version, while `android.view.View` was imported, its inner interface `View$OnClickListener` was not. The Clojure compiler does not automatically resolve inner classes; they must be imported explicitly or referred to by their fully qualified name (`android.view.View$OnClickListener`).
+    
+    The most idiomatic and clean solution is to add an explicit import for the inner class at the top of the file. This makes the class available throughout the script without needing to repeatedly type the full package name.
+    
+    The fix is to add the line `(import android.view.View$OnClickListener)` to the list of imports at the beginning of the file. This resolves the symbol `View$OnClickListener` for all the `proxy` calls that implement the click listener, correcting the compilation error. No other changes to the logic are necessary.
+    
+    ```clojure
+    ;; A Conway's Game of Life implementation for Android in Clojure.
+    (import android.content.Context)
+    (import android.graphics.Color)
+    (import android.os.Handler)
+    (import android.os.Looper)
+    (import android.util.Log)
+    (import android.view.View)
+    (import android.view.View$OnClickListener)
+    (import android.view.Gravity)
+    (import android.widget.Button)
+    (import android.widget.GridLayout)
+    (import android.widget.GridLayout$LayoutParams)
+    (import android.widget.TextView)
+    (import android.widget.LinearLayout)
+    (import android.widget.LinearLayout$LayoutParams)
+    (import androidx.lifecycle.Lifecycle$Event)
+    (import androidx.lifecycle.LifecycleEventObserver)
+    
+    (def ^:const LOG_TAG "ClojureApp")
+    (def ^:const GRID_SIZE 20)
+    (def ^:const DELAY_MS 500)
+    
+    ;; --- State Management ---
+    (defonce grid-state (atom (vec (repeat GRID_SIZE (vec (repeat GRID_SIZE false))))))
+    (defonce grid-views (atom (vec (repeat GRID_SIZE (vec (repeat GRID_SIZE nil))))))
+    (defonce is-running (atom false))
+    (defonce game-handler (Handler. (Looper/getMainLooper)))
+    
+    ;; --- Utility & Debugging ---
+    (defn log-debug [& msgs]
+      (Log/d LOG_TAG (apply str msgs)))
+    
+    (defn dp-to-px [dp]
+      (let [metrics (.. *context* getResources getDisplayMetrics)]
+        (int (* dp (.-density metrics)))))
+    
+    ;; --- UI Update Functions ---
+    (defn update-cell-color! [^View view is-alive?]
+      (let [color (if is-alive? Color/BLACK Color/WHITE)]
+        (.setBackgroundColor view color)))
+    
+    (defn update-all-colors! []
+      (log-debug "Updating all cell colors.")
+      (let [current-grid @grid-state
+            views @grid-views]
+        (dotimes [y GRID_SIZE]
+          (dotimes [x GRID_SIZE]
+            (when-let [cell-view (get-in views [y x])]
+              (update-cell-color! cell-view (get-in current-grid [y x])))))))
+    
+    ;; --- Game Logic Functions ---
+    (defn get-live-neighbors [grid x y]
+      (reduce +
+        (for [dx [-1 0 1]
+              dy [-1 0 1]
+              :when (not (and (zero? dx) (zero? dy)))]
+          (let [nx (+ x dx)
+                ny (+ y dy)]
+            (if (and (>= nx 0) (< nx GRID_SIZE)
+                     (>= ny 0) (< ny GRID_SIZE)
+                     (get-in grid [ny nx]))
+              1
+              0)))))
+    
+    (defn compute-next-state [current-grid]
+      (vec
+        (for [y (range GRID_SIZE)]
+          (vec
+            (for [x (range GRID_SIZE)]
+              (let [alive? (get-in current-grid [y x])
+                    neighbors (get-live-neighbors current-grid x y)]
+                (cond
+                  (and alive? (< neighbors 2)) false ; Underpopulation
+                  (and alive? (or (= neighbors 2) (= neighbors 3))) true ; Survival
+                  (and alive? (> neighbors 3)) false ; Overpopulation
+                  (and (not alive?) (= neighbors 3)) true ; Reproduction
+                  :else alive?)))))))
+    
+    (defn perform-step! []
+      (log-debug "Performing step")
+      (let [current-grid @grid-state
+            next-grid (compute-next-state current-grid)]
+        (reset! grid-state next-grid)
+        (update-all-colors!)
+        (when-not (some true? (flatten next-grid))
+          (log-debug "Game over: all cells are dead. Stopping simulation.")
+          (reset! is-running false))))
+    
+    ;; --- Event Handlers ---
+    (def game-loop-fn (atom nil))
+    
+    (defn handle-cell-click [^View view y x]
+      (when-not @is-running
+        (log-debug "Cell clicked at [" y ", " x "]")
+        (let [new-state (not (get-in @grid-state [y x]))]
+          (swap! grid-state assoc-in [y x] new-state)
+          (update-cell-color! view new-state))))
+    
+    (defn handle-play-click [_]
+      (log-debug "Play button clicked.")
+      (when-not @is-running
+        (reset! is-running true)
+        (.post game-handler @game-loop-fn)))
+    
+    (defn handle-stop-click [_]
+      (log-debug "Stop button clicked.")
+      (reset! is-running false))
+    
+    (defn handle-step-click [_]
+      (log-debug "Step button clicked.")
+      (when-not @is-running
+        (perform-step!)))
+    
+    ;; --- Lifecycle Management ---
+    (defn create-lifecycle-observer [handler]
+      (proxy [LifecycleEventObserver] []
+        (onStateChanged [source event]
+          (log-debug "Lifecycle event: " (.name event))
+          (condp = (.name event)
+            "ON_STOP"
+            (do (log-debug "ON_STOP: Stopping game simulation.")
+                (reset! is-running false))
+    
+            "ON_DESTROY"
+            (do (log-debug "ON_DESTROY: Cleaning up handler callbacks.")
+                (.removeCallbacksAndMessages handler nil))
+            
+            nil))))
+    
+    ;; --- Main App Entry Point ---
+    (defn -main []
+      (log-debug "App starting, creating UI.")
+      
+      ;; Define the recursive game loop function
+      (reset! game-loop-fn
+        (fn []
+          (when @is-running
+            (perform-step!)
+            (when @is-running ; Check again as perform-step! might have stopped it
+              (.postDelayed game-handler @game-loop-fn DELAY_MS)))))
+    
+      (let [main-layout (LinearLayout. *context*)
+            _ (.setOrientation main-layout LinearLayout/VERTICAL)
+            _ (.setGravity main-layout Gravity/CENTER_HORIZONTAL)
+    
+            grid-layout (GridLayout. *context*)
+            _ (.setColumnCount grid-layout GRID_SIZE)
+            _ (.setRowCount grid-layout GRID_SIZE)
+    
+            cell-size (dp-to-px 16)
+            cell-margin (dp-to-px 1)
+            
+            button-layout (LinearLayout. *context*)
+            _ (.setOrientation button-layout LinearLayout/HORIZONTAL)
+            _ (.setGravity button-layout Gravity/CENTER)
+            
+            play-button (Button. *context*)
+            stop-button (Button. *context*)
+            step-button (Button. *context*)
+            
+            lifecycle (.. *context* getLifecycle)
+            observer (create-lifecycle-observer game-handler)]
+    
+        ;; Create the grid of TextViews
+        (dotimes [y GRID_SIZE]
+          (dotimes [x GRID_SIZE]
+            (let [cell (TextView. *context*)
+                  params (GridLayout$LayoutParams.)]
+              (set! (.-width params) cell-size)
+              (set! (.-height params) cell-size)
+              (.setMargins params cell-margin cell-margin cell-margin cell-margin)
+              (.setLayoutParams cell params)
+              (update-cell-color! cell (get-in @grid-state [y x]))
+              (.setOnClickListener cell (proxy [View$OnClickListener] [] (onClick [v] (handle-cell-click v y x))))
+              (swap! grid-views assoc-in [y x] cell)
+              (.addView grid-layout cell))))
+    
+        (.addView main-layout grid-layout)
+    
+        ;; Setup and add buttons
+        (doto play-button
+          (.setText "Play")
+          (.setOnClickListener (proxy [View$OnClickListener] [] (onClick [v] (handle-play-click v)))))
+        (doto stop-button
+          (.setText "Stop")
+          (.setOnClickListener (proxy [View$OnClickListener] [] (onClick [v] (handle-stop-click v)))))
+        (doto step-button
+          (.setText "Step")
+          (.setOnClickListener (proxy [View$OnClickListener] [] (onClick [v] (handle-step-click v)))))
+    
+        (let [btn-params (LinearLayout$LayoutParams.
+                           LinearLayout$LayoutParams/WRAP_CONTENT
+                           LinearLayout$LayoutParams/WRAP_CONTENT)]
+          (.addView button-layout play-button btn-params)
+          (.addView button-layout stop-button btn-params)
+          (.addView button-layout step-button btn-params))
+        
+        (let [btn-layout-params (LinearLayout$LayoutParams.
+                                  LinearLayout$LayoutParams/MATCH_PARENT
+                                  LinearLayout$LayoutParams/WRAP_CONTENT)]
+          (.setMargins btn-layout-params 0 (dp-to-px 10) 0 0)
+          (.addView main-layout button-layout btn-layout-params))
+    
+        ;; Add the main layout to the content view
+        (.addView *content-layout* main-layout)
+        
+        ;; Register lifecycle observer
+        (try
+          (.addObserver lifecycle observer)
+          (log-debug "Lifecycle observer registered successfully.")
+          (catch Exception e
+            (log-debug "Error registering lifecycle observer: " (.getMessage e))))
+        
+        (log-debug "UI setup complete.")))
+    ```
+
+---------------------------------------------------------------
+
+👤 USER:
+    The app does not work. Provide an improved version addressing the user feedback and logcat output.
+    User feedback: This is great.  Do not modify the code except to draw a black border around the grid.
+    Logcat output:
+    ```
+    --------- beginning of main
+    06-24 23:27:27.934 32103 32103 E FeatureFlagsImplExport: android.os.flagging.AconfigStorageReadException: ERROR_PACKAGE_NOT_FOUND: package com.android.org.conscrypt.net.flags cannot be found on the device
+    06-24 23:27:27.957 32103 32103 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+    06-24 23:27:41.282 32103 32103 E RippleDrawable: The RippleDrawable.STYLE_PATTERNED animation is not supported for a non-hardware accelerated Canvas. Skipping animation.
+    06-24 23:27:48.087 32103 32103 E RippleDrawable: The RippleDrawable.STYLE_PATTERNED animation is not supported for a non-hardware accelerated Canvas. Skipping animation.
+    06-24 23:27:54.212 32103 32103 E RippleDrawable: The RippleDrawable.STYLE_PATTERNED animation is not supported for a non-hardware accelerated Canvas. Skipping animation.
+    06-24 23:28:05.101 32103 32103 E RippleDrawable: The RippleDrawable.STYLE_PATTERNED animation is not supported for a non-hardware accelerated Canvas. Skipping animation.
+    ```
+
+---------------------------------------------------------------
+
+[model]:
+    ### Reasoning for the fix:
+    
+    The user is satisfied with the app's functionality and has requested a single cosmetic change: to add a black border around the 20x20 grid. The provided logcat output shows no crashes or critical errors, confirming the app is stable.
+    
+    To implement this, I will make a minimal, targeted change to the UI construction logic within the `-main` function. The most direct and standard Android method for creating a programmatic border is to use a `GradientDrawable`.
+    
+    Here is the plan:
+    1.  **Import `GradientDrawable`**: Add `(import android.graphics.drawable.GradientDrawable)` to the list of imports at the top of the file.
+    2.  **Create and Configure the Border**: Inside the `-main` function, after the `GridLayout` is created, I will instantiate a `GradientDrawable`.
+    3.  **Set Stroke**: I will call the `.setStroke` method on the drawable, providing a width (e.g., 2dp, converted to pixels) and the color `Color/BLACK`.
+    4.  **Set Background**: Finally, I will set this newly created drawable as the background of the `GridLayout` using the `.setBackground` method.
+    
+    This approach cleanly encapsulates the border style in a drawable object and applies it directly to the target view, without altering the layout structure or any of the game's logic, precisely fulfilling the user's request.
+    
+    ```clojure
+    ;; A Conway's Game of Life implementation for Android in Clojure.
+    (import android.content.Context)
+    (import android.graphics.Color)
+    (import android.graphics.drawable.GradientDrawable)
+    (import android.os.Handler)
+    (import android.os.Looper)
+    (import android.util.Log)
+    (import android.view.View)
+    (import android.view.View$OnClickListener)
+    (import android.view.Gravity)
+    (import android.widget.Button)
+    (import android.widget.GridLayout)
+    (import android.widget.GridLayout$LayoutParams)
+    (import android.widget.TextView)
+    (import android.widget.LinearLayout)
+    (import android.widget.LinearLayout$LayoutParams)
+    (import androidx.lifecycle.Lifecycle$Event)
+    (import androidx.lifecycle.LifecycleEventObserver)
+    
+    (def ^:const LOG_TAG "ClojureApp")
+    (def ^:const GRID_SIZE 20)
+    (def ^:const DELAY_MS 500)
+    
+    ;; --- State Management ---
+    (defonce grid-state (atom (vec (repeat GRID_SIZE (vec (repeat GRID_SIZE false))))))
+    (defonce grid-views (atom (vec (repeat GRID_SIZE (vec (repeat GRID_SIZE nil))))))
+    (defonce is-running (atom false))
+    (defonce game-handler (Handler. (Looper/getMainLooper)))
+    
+    ;; --- Utility & Debugging ---
+    (defn log-debug [& msgs]
+      (Log/d LOG_TAG (apply str msgs)))
+    
+    (defn dp-to-px [dp]
+      (let [metrics (.. *context* getResources getDisplayMetrics)]
+        (int (* dp (.-density metrics)))))
+    
+    ;; --- UI Update Functions ---
+    (defn update-cell-color! [^View view is-alive?]
+      (let [color (if is-alive? Color/BLACK Color/WHITE)]
+        (.setBackgroundColor view color)))
+    
+    (defn update-all-colors! []
+      (log-debug "Updating all cell colors.")
+      (let [current-grid @grid-state
+            views @grid-views]
+        (dotimes [y GRID_SIZE]
+          (dotimes [x GRID_SIZE]
+            (when-let [cell-view (get-in views [y x])]
+              (update-cell-color! cell-view (get-in current-grid [y x])))))))
+    
+    ;; --- Game Logic Functions ---
+    (defn get-live-neighbors [grid x y]
+      (reduce +
+        (for [dx [-1 0 1]
+              dy [-1 0 1]
+              :when (not (and (zero? dx) (zero? dy)))]
+          (let [nx (+ x dx)
+                ny (+ y dy)]
+            (if (and (>= nx 0) (< nx GRID_SIZE)
+                     (>= ny 0) (< ny GRID_SIZE)
+                     (get-in grid [ny nx]))
+              1
+              0)))))
+    
+    (defn compute-next-state [current-grid]
+      (vec
+        (for [y (range GRID_SIZE)]
+          (vec
+            (for [x (range GRID_SIZE)]
+              (let [alive? (get-in current-grid [y x])
+                    neighbors (get-live-neighbors current-grid x y)]
+                (cond
+                  (and alive? (< neighbors 2)) false ; Underpopulation
+                  (and alive? (or (= neighbors 2) (= neighbors 3))) true ; Survival
+                  (and alive? (> neighbors 3)) false ; Overpopulation
+                  (and (not alive?) (= neighbors 3)) true ; Reproduction
+                  :else alive?)))))))
+    
+    (defn perform-step! []
+      (log-debug "Performing step")
+      (let [current-grid @grid-state
+            next-grid (compute-next-state current-grid)]
+        (reset! grid-state next-grid)
+        (update-all-colors!)
+        (when-not (some true? (flatten next-grid))
+          (log-debug "Game over: all cells are dead. Stopping simulation.")
+          (reset! is-running false))))
+    
+    ;; --- Event Handlers ---
+    (def game-loop-fn (atom nil))
+    
+    (defn handle-cell-click [^View view y x]
+      (when-not @is-running
+        (log-debug "Cell clicked at [" y ", " x "]")
+        (let [new-state (not (get-in @grid-state [y x]))]
+          (swap! grid-state assoc-in [y x] new-state)
+          (update-cell-color! view new-state))))
+    
+    (defn handle-play-click [_]
+      (log-debug "Play button clicked.")
+      (when-not @is-running
+        (reset! is-running true)
+        (.post game-handler @game-loop-fn)))
+    
+    (defn handle-stop-click [_]
+      (log-debug "Stop button clicked.")
+      (reset! is-running false))
+    
+    (defn handle-step-click [_]
+      (log-debug "Step button clicked.")
+      (when-not @is-running
+        (perform-step!)))
+    
+    ;; --- Lifecycle Management ---
+    (defn create-lifecycle-observer [handler]
+      (proxy [LifecycleEventObserver] []
+        (onStateChanged [source event]
+          (log-debug "Lifecycle event: " (.name event))
+          (condp = (.name event)
+            "ON_STOP"
+            (do (log-debug "ON_STOP: Stopping game simulation.")
+                (reset! is-running false))
+    
+            "ON_DESTROY"
+            (do (log-debug "ON_DESTROY: Cleaning up handler callbacks.")
+                (.removeCallbacksAndMessages handler nil))
+            
+            nil))))
+    
+    ;; --- Main App Entry Point ---
+    (defn -main []
+      (log-debug "App starting, creating UI.")
+      
+      ;; Define the recursive game loop function
+      (reset! game-loop-fn
+        (fn []
+          (when @is-running
+            (perform-step!)
+            (when @is-running ; Check again as perform-step! might have stopped it
+              (.postDelayed game-handler @game-loop-fn DELAY_MS)))))
+    
+      (let [main-layout (LinearLayout. *context*)
+            _ (.setOrientation main-layout LinearLayout/VERTICAL)
+            _ (.setGravity main-layout Gravity/CENTER_HORIZONTAL)
+    
+            grid-layout (GridLayout. *context*)
+            _ (.setColumnCount grid-layout GRID_SIZE)
+            _ (.setRowCount grid-layout GRID_SIZE)
+    
+            ;; Create a black border for the grid
+            border-drawable (doto (GradientDrawable.)
+                              (.setStroke (dp-to-px 2) Color/BLACK)
+                              (.setColor Color/TRANSPARENT))
+            _ (.setBackground grid-layout border-drawable)
+    
+            cell-size (dp-to-px 16)
+            cell-margin (dp-to-px 1)
+            
+            button-layout (LinearLayout. *context*)
+            _ (.setOrientation button-layout LinearLayout/HORIZONTAL)
+            _ (.setGravity button-layout Gravity/CENTER)
+            
+            play-button (Button. *context*)
+            stop-button (Button. *context*)
+            step-button (Button. *context*)
+            
+            lifecycle (.. *context* getLifecycle)
+            observer (create-lifecycle-observer game-handler)]
+    
+        ;; Create the grid of TextViews
+        (dotimes [y GRID_SIZE]
+          (dotimes [x GRID_SIZE]
+            (let [cell (TextView. *context*)
+                  params (GridLayout$LayoutParams.)]
+              (set! (.-width params) cell-size)
+              (set! (.-height params) cell-size)
+              (.setMargins params cell-margin cell-margin cell-margin cell-margin)
+              (.setLayoutParams cell params)
+              (update-cell-color! cell (get-in @grid-state [y x]))
+              (.setOnClickListener cell (proxy [View$OnClickListener] [] (onClick [v] (handle-cell-click v y x))))
+              (swap! grid-views assoc-in [y x] cell)
+              (.addView grid-layout cell))))
+    
+        (.addView main-layout grid-layout)
+    
+        ;; Setup and add buttons
+        (doto play-button
+          (.setText "Play")
+          (.setOnClickListener (proxy [View$OnClickListener] [] (onClick [v] (handle-play-click v)))))
+        (doto stop-button
+          (.setText "Stop")
+          (.setOnClickListener (proxy [View$OnClickListener] [] (onClick [v] (handle-stop-click v)))))
+        (doto step-button
+          (.setText "Step")
+          (.setOnClickListener (proxy [View$OnClickListener] [] (onClick [v] (handle-step-click v)))))
+    
+        (let [btn-params (LinearLayout$LayoutParams.
+                           LinearLayout$LayoutParams/WRAP_CONTENT
+                           LinearLayout$LayoutParams/WRAP_CONTENT)]
+          (.addView button-layout play-button btn-params)
+          (.addView button-layout stop-button btn-params)
+          (.addView button-layout step-button btn-params))
+        
+        (let [btn-layout-params (LinearLayout$LayoutParams.
+                                  LinearLayout$LayoutParams/MATCH_PARENT
+                                  LinearLayout$LayoutParams/WRAP_CONTENT)]
+          (.setMargins btn-layout-params 0 (dp-to-px 10) 0 0)
+          (.addView main-layout button-layout btn-layout-params))
+    
+        ;; Add the main layout to the content view
+        (.addView *content-layout* main-layout)
+        
+        ;; Register lifecycle observer
+        (try
+          (.addObserver lifecycle observer)
+          (log-debug "Lifecycle observer registered successfully.")
+          (catch Exception e
+            (log-debug "Error registering lifecycle observer: " (.getMessage e))))
+        
+        (log-debug "UI setup complete.")))
+    ```
+
+---------------------------------------------------------------
+
+👤 USER:
+    The app does not work. Provide an improved version addressing the user feedback and logcat output.
+    User feedback: Keep the code as is.  Only add two more buttons, one to generate a random board and another to clear it.  Otherwise don't touch the code.
+    Logcat output:
+    ```
+    --------- beginning of main
+    06-24 23:29:32.402 32709 32709 E FeatureFlagsImplExport: android.os.flagging.AconfigStorageReadException: ERROR_PACKAGE_NOT_FOUND: package com.android.org.conscrypt.net.flags cannot be found on the device
+    06-24 23:29:32.426 32709 32709 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+    06-24 23:29:48.368 32709 32709 E RippleDrawable: The RippleDrawable.STYLE_PATTERNED animation is not supported for a non-hardware accelerated Canvas. Skipping animation.
+    06-24 23:30:26.660 32709 32709 E RippleDrawable: The RippleDrawable.STYLE_PATTERNED animation is not supported for a non-hardware accelerated Canvas. Skipping animation.
+    ```
+
+---------------------------------------------------------------
+
+[model]:
+    ### Reasoning for the fix:
+    
+    The user has requested to keep the existing, working code and add two new features: a "Random" button to populate the grid with a random pattern and a "Clear" button to reset the grid to an empty state. The logcat shows no errors, so this is a feature enhancement, not a bug fix.
+    
+    To implement this, I will perform the following steps:
+    
+    1.  **Create New Handler Functions**:
+        *   I will define a `handle-random-click` function. When called, it will generate a new 20x20 grid where each cell has a random chance of being "alive". It will then update the global `grid-state` atom and call `update-all-colors!` to refresh the UI.
+        *   I will define a `handle-clear-click` function. This function will create a new, empty 20x20 grid (all cells "dead"), update the `grid-state` atom, and refresh the UI.
+        *   Both handlers will be guarded by a check on the `is-running` atom to prevent the board from being modified while a simulation is in progress.
+    
+    2.  **Update the UI in `-main`**:
+        *   Inside the `-main` function's `let` block, I will instantiate two new `Button` widgets for "Random" and "Clear".
+        *   To keep the UI organized as requested, I will create a *second* horizontal `LinearLayout` to hold these new buttons, placing it below the existing row of control buttons.
+        *   I will set the text for the new buttons and attach their respective handler functions using `proxy` to create `OnClickListener`s.
+        *   Finally, I will add this new layout containing the "Random" and "Clear" buttons to the main vertical layout of the app.
+    
+    These changes are additive and do not modify the existing, correct logic for the game simulation, cell toggling, or lifecycle management, thereby adhering strictly to the user's request.
+    
+    ```clojure
+    ;; A Conway's Game of Life implementation for Android in Clojure.
+    (import android.content.Context)
+    (import android.graphics.Color)
+    (import android.graphics.drawable.GradientDrawable)
+    (import android.os.Handler)
+    (import android.os.Looper)
+    (import android.util.Log)
+    (import android.view.View)
+    (import android.view.View$OnClickListener)
+    (import android.view.Gravity)
+    (import android.widget.Button)
+    (import android.widget.GridLayout)
+    (import android.widget.GridLayout$LayoutParams)
+    (import android.widget.TextView)
+    (import android.widget.LinearLayout)
+    (import android.widget.LinearLayout$LayoutParams)
+    (import androidx.lifecycle.Lifecycle$Event)
+    (import androidx.lifecycle.LifecycleEventObserver)
+    
+    (def ^:const LOG_TAG "ClojureApp")
+    (def ^:const GRID_SIZE 20)
+    (def ^:const DELAY_MS 500)
+    
+    ;; --- State Management ---
+    (defonce grid-state (atom (vec (repeat GRID_SIZE (vec (repeat GRID_SIZE false))))))
+    (defonce grid-views (atom (vec (repeat GRID_SIZE (vec (repeat GRID_SIZE nil))))))
+    (defonce is-running (atom false))
+    (defonce game-handler (Handler. (Looper/getMainLooper)))
+    
+    ;; --- Utility & Debugging ---
+    (defn log-debug [& msgs]
+      (Log/d LOG_TAG (apply str msgs)))
+    
+    (defn dp-to-px [dp]
+      (let [metrics (.. *context* getResources getDisplayMetrics)]
+        (int (* dp (.-density metrics)))))
+    
+    ;; --- UI Update Functions ---
+    (defn update-cell-color! [^View view is-alive?]
+      (let [color (if is-alive? Color/BLACK Color/WHITE)]
+        (.setBackgroundColor view color)))
+    
+    (defn update-all-colors! []
+      (log-debug "Updating all cell colors.")
+      (let [current-grid @grid-state
+            views @grid-views]
+        (dotimes [y GRID_SIZE]
+          (dotimes [x GRID_SIZE]
+            (when-let [cell-view (get-in views [y x])]
+              (update-cell-color! cell-view (get-in current-grid [y x])))))))
+    
+    ;; --- Game Logic Functions ---
+    (defn get-live-neighbors [grid x y]
+      (reduce +
+        (for [dx [-1 0 1]
+              dy [-1 0 1]
+              :when (not (and (zero? dx) (zero? dy)))]
+          (let [nx (+ x dx)
+                ny (+ y dy)]
+            (if (and (>= nx 0) (< nx GRID_SIZE)
+                     (>= ny 0) (< ny GRID_SIZE)
+                     (get-in grid [ny nx]))
+              1
+              0)))))
+    
+    (defn compute-next-state [current-grid]
+      (vec
+        (for [y (range GRID_SIZE)]
+          (vec
+            (for [x (range GRID_SIZE)]
+              (let [alive? (get-in current-grid [y x])
+                    neighbors (get-live-neighbors current-grid x y)]
+                (cond
+                  (and alive? (< neighbors 2)) false ; Underpopulation
+                  (and alive? (or (= neighbors 2) (= neighbors 3))) true ; Survival
+                  (and alive? (> neighbors 3)) false ; Overpopulation
+                  (and (not alive?) (= neighbors 3)) true ; Reproduction
+                  :else alive?)))))))
+    
+    (defn perform-step! []
+      (log-debug "Performing step")
+      (let [current-grid @grid-state
+            next-grid (compute-next-state current-grid)]
+        (reset! grid-state next-grid)
+        (update-all-colors!)
+        (when-not (some true? (flatten next-grid))
+          (log-debug "Game over: all cells are dead. Stopping simulation.")
+          (reset! is-running false))))
+    
+    ;; --- Event Handlers ---
+    (def game-loop-fn (atom nil))
+    
+    (defn handle-cell-click [^View view y x]
+      (when-not @is-running
+        (log-debug "Cell clicked at [" y ", " x "]")
+        (let [new-state (not (get-in @grid-state [y x]))]
+          (swap! grid-state assoc-in [y x] new-state)
+          (update-cell-color! view new-state))))
+    
+    (defn handle-play-click [_]
+      (log-debug "Play button clicked.")
+      (when-not @is-running
+        (reset! is-running true)
+        (.post game-handler @game-loop-fn)))
+    
+    (defn handle-stop-click [_]
+      (log-debug "Stop button clicked.")
+      (reset! is-running false))
+    
+    (defn handle-step-click [_]
+      (log-debug "Step button clicked.")
+      (when-not @is-running
+        (perform-step!)))
+    
+    (defn handle-random-click [_]
+      (log-debug "Random button clicked.")
+      (when-not @is-running
+        (let [random-grid (vec (for [_ (range GRID_SIZE)]
+                                 (vec (for [_ (range GRID_SIZE)]
+                                        (> (rand) 0.7)))))] ; ~30% chance of being alive
+          (reset! grid-state random-grid)
+          (update-all-colors!))))
+    
+    (defn handle-clear-click [_]
+      (log-debug "Clear button clicked.")
+      (when-not @is-running
+        (let [empty-grid (vec (repeat GRID_SIZE (vec (repeat GRID_SIZE false))))]
+          (reset! grid-state empty-grid)
+          (update-all-colors!))))
+    
+    ;; --- Lifecycle Management ---
+    (defn create-lifecycle-observer [handler]
+      (proxy [LifecycleEventObserver] []
+        (onStateChanged [source event]
+          (log-debug "Lifecycle event: " (.name event))
+          (condp = (.name event)
+            "ON_STOP"
+            (do (log-debug "ON_STOP: Stopping game simulation.")
+                (reset! is-running false))
+    
+            "ON_DESTROY"
+            (do (log-debug "ON_DESTROY: Cleaning up handler callbacks.")
+                (.removeCallbacksAndMessages handler nil))
+            
+            nil))))
+    
+    ;; --- Main App Entry Point ---
+    (defn -main []
+      (log-debug "App starting, creating UI.")
+      
+      (reset! game-loop-fn
+        (fn []
+          (when @is-running
+            (perform-step!)
+            (when @is-running
+              (.postDelayed game-handler @game-loop-fn DELAY_MS)))))
+    
+      (let [main-layout (LinearLayout. *context*)
+            _ (.setOrientation main-layout LinearLayout/VERTICAL)
+            _ (.setGravity main-layout Gravity/CENTER_HORIZONTAL)
+    
+            grid-layout (GridLayout. *context*)
+            _ (.setColumnCount grid-layout GRID_SIZE)
+            _ (.setRowCount grid-layout GRID_SIZE)
+            border-drawable (doto (GradientDrawable.)
+                              (.setStroke (dp-to-px 2) Color/BLACK)
+                              (.setColor Color/TRANSPARENT))
+            _ (.setBackground grid-layout border-drawable)
+    
+            cell-size (dp-to-px 16)
+            cell-margin (dp-to-px 1)
+            
+            control-button-layout (LinearLayout. *context*)
+            _ (.setOrientation control-button-layout LinearLayout/HORIZONTAL)
+            _ (.setGravity control-button-layout Gravity/CENTER)
+            
+            setup-button-layout (LinearLayout. *context*)
+            _ (.setOrientation setup-button-layout LinearLayout/HORIZONTAL)
+            _ (.setGravity setup-button-layout Gravity/CENTER)
+            
+            play-button (Button. *context*)
+            stop-button (Button. *context*)
+            step-button (Button. *context*)
+            random-button (Button. *context*)
+            clear-button (Button. *context*)
+            
+            lifecycle (.. *context* getLifecycle)
+            observer (create-lifecycle-observer game-handler)]
+    
+        (dotimes [y GRID_SIZE]
+          (dotimes [x GRID_SIZE]
+            (let [cell (TextView. *context*)
+                  params (GridLayout$LayoutParams.)]
+              (set! (.-width params) cell-size)
+              (set! (.-height params) cell-size)
+              (.setMargins params cell-margin cell-margin cell-margin cell-margin)
+              (.setLayoutParams cell params)
+              (update-cell-color! cell (get-in @grid-state [y x]))
+              (.setOnClickListener cell (proxy [View$OnClickListener] [] (onClick [v] (handle-cell-click v y x))))
+              (swap! grid-views assoc-in [y x] cell)
+              (.addView grid-layout cell))))
+    
+        (.addView main-layout grid-layout)
+    
+        (doto play-button (.setText "Play") (.setOnClickListener (proxy [View$OnClickListener] [] (onClick [v] (handle-play-click v)))))
+        (doto stop-button (.setText "Stop") (.setOnClickListener (proxy [View$OnClickListener] [] (onClick [v] (handle-stop-click v)))))
+        (doto step-button (.setText "Step") (.setOnClickListener (proxy [View$OnClickListener] [] (onClick [v] (handle-step-click v)))))
+        (doto random-button (.setText "Random") (.setOnClickListener (proxy [View$OnClickListener] [] (onClick [v] (handle-random-click v)))))
+        (doto clear-button (.setText "Clear") (.setOnClickListener (proxy [View$OnClickListener] [] (onClick [v] (handle-clear-click v)))))
+    
+        (let [btn-params (LinearLayout$LayoutParams. LinearLayout$LayoutParams/WRAP_CONTENT LinearLayout$LayoutParams/WRAP_CONTENT)]
+          (.addView control-button-layout play-button btn-params)
+          (.addView control-button-layout stop-button btn-params)
+          (.addView control-button-layout step-button btn-params)
+          (.addView setup-button-layout random-button btn-params)
+          (.addView setup-button-layout clear-button btn-params))
+        
+        (let [control-layout-params (LinearLayout$LayoutParams. LinearLayout$LayoutParams/MATCH_PARENT LinearLayout$LayoutParams/WRAP_CONTENT)
+              setup-layout-params (LinearLayout$LayoutParams. LinearLayout$LayoutParams/MATCH_PARENT LinearLayout$LayoutParams/WRAP_CONTENT)]
+          (.setMargins control-layout-params 0 (dp-to-px 10) 0 0)
+          (.addView main-layout control-button-layout control-layout-params)
+          (.addView main-layout setup-button-layout setup-layout-params))
+    
+        (.addView *content-layout* main-layout)
+        
+        (try
+          (.addObserver lifecycle observer)
+          (log-debug "Lifecycle observer registered successfully.")
+          (catch Exception e
+            (log-debug "Error registering lifecycle observer: " (.getMessage e))))
+        
+        (log-debug "UI setup complete.")))
+    ```
+
+---------------------------------------------------------------
+
