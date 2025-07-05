@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.concurrent.CompletableFuture;
 import java.util.List;
+import java.util.UUID;
 
 public abstract class LLMClient {
     private static final String TAG = "LLMClient";
@@ -58,11 +59,6 @@ public abstract class LLMClient {
         }
     }
 
-    protected String formatInitialPrompt(String description) {
-        Log.d(TAG, "Formatting initial prompt with description: " + description);
-        return "Implement the following app:\n" + description;
-    }
-
     /**
      * Format initial prompt with option to provide starting code
      * 
@@ -81,7 +77,7 @@ public abstract class LLMClient {
                     +
                     initialCode + "\n```";
         } else {
-            return formatInitialPrompt(description);
+            return "Implement the following app:\n" + description;
         }
     }
 
@@ -93,35 +89,22 @@ public abstract class LLMClient {
         return promptTemplate + "\n\nAlways respond with Clojure code in a markdown code block.";
     }
 
-    public ChatSession preparePromptForInitialCode(String description) {
-        // Get or create a session for this app description
-        ChatSession session = getOrCreateSession(description);
-
-        // Reset session to start fresh
-        session.reset();
-
-        // Make sure we have a system message at the beginning
-        session.queueSystemPrompt(getSystemPrompt());
-
-        // Format the prompt using the helper from LLMClient
-        String prompt = formatInitialPrompt(description);
-
-        // Queue the user message and send all messages
-        session.queueUserMessage(prompt);
-        return session;
+    public ChatSession preparePromptForInitialCode(UUID sessionId, String description) {
+        return preparePromptForInitialCode(sessionId, description, null);
     }
 
     /**
      * Prepares a prompt for initial code generation with optional starting code
      * 
+     * @param sessionId   The session UUID
      * @param description The app description
      * @param initialCode Optional initial code to use as a starting point (may be
      *                    null)
      * @return The prepared ChatSession
      */
-    public ChatSession preparePromptForInitialCode(String description, String initialCode) {
+    public ChatSession preparePromptForInitialCode(UUID sessionId, String description, String initialCode) {
         // Get or create a session for this app description
-        ChatSession session = getOrCreateSession(description);
+        ChatSession session = getOrCreateSession(sessionId);
 
         // Reset session to start fresh
         session.reset();
@@ -137,17 +120,19 @@ public abstract class LLMClient {
         return session;
     }
 
-    public abstract CompletableFuture<String> generateInitialCode(String description);
+    public abstract CompletableFuture<String> generateInitialCode(UUID sessionId, String description);
 
     /**
      * Generate initial code with optional starting code
      * 
+     * @param sessionId   The session UUID
      * @param description The app description
      * @param initialCode Optional initial code to use as a starting point (may be
      *                    null)
      * @return A CompletableFuture containing the generated code
      */
-    public abstract CompletableFuture<String> generateInitialCode(String description, String initialCode);
+    public abstract CompletableFuture<String> generateInitialCode(UUID sessionId, String description,
+            String initialCode);
 
     protected String formatIterationPrompt(String description,
             String currentCode,
@@ -166,6 +151,7 @@ public abstract class LLMClient {
     }
 
     public abstract CompletableFuture<String> generateNextIteration(
+            UUID sessionId,
             String description,
             String currentCode,
             String logcat,
@@ -277,7 +263,7 @@ public abstract class LLMClient {
         List<Message> getMessages();
     }
 
-    public abstract ChatSession getOrCreateSession(String description);
+    public abstract ChatSession getOrCreateSession(UUID sessionId);
 
     /**
      * Clears the API key for this client type

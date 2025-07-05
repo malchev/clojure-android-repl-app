@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.UUID;
 
 /**
  * Manages design sessions by providing methods to save, load, and delete
@@ -52,7 +53,7 @@ public class SessionManager {
     /**
      * Gets a session by ID
      */
-    public DesignSession getSessionById(String sessionId) {
+    public DesignSession getSessionById(UUID sessionId) {
         for (DesignSession session : sessions) {
             if (session.getId().equals(sessionId)) {
                 return session;
@@ -144,7 +145,7 @@ public class SessionManager {
     /**
      * Deletes a session
      */
-    public void deleteSession(String sessionId) {
+    public void deleteSession(UUID sessionId) {
         // First, find the session to delete
         DesignSession sessionToDelete = null;
         for (DesignSession session : sessions) {

@@ -37,6 +37,7 @@ import android.widget.ListView;
 import com.example.clojurerepl.session.DesignSession;
 import com.example.clojurerepl.session.SessionManager;
 import android.widget.ScrollView;
+import java.util.UUID;
 
 public class ClojureAppDesignActivity extends AppCompatActivity
         implements ClojureIterationManager.ExtractionErrorCallback {
@@ -102,7 +103,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 "Create an app that implements Conway's Game of Life. It's in the form of a 20x20 grid. Each square of the grid is tappable, and when tapped, it switches colors between white (dead) and black (alive). There are three buttons beneath the grid: play, stop, and step. Play runs the game with a delay of half a second between steps until the grid turns all white. Stop stops a play run. Step does a single iteration of the grid state.");
         currentSession.setLlmType(defaultLLMType);
         sessionManager.updateSession(currentSession);
-        Log.d(TAG, "Created new session: " + currentSession.getId());
+        Log.d(TAG, "Created new session: " + currentSession.getId().toString());
     }
 
     @Override
@@ -122,9 +123,16 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             String sessionId = getIntent().getStringExtra("session_id");
             if (sessionId != null) {
                 // Load existing session
-                currentSession = sessionManager.getSessionById(sessionId);
+                try {
+                    UUID sessionUUID = UUID.fromString(sessionId);
+                    currentSession = sessionManager.getSessionById(sessionUUID);
+                } catch (IllegalArgumentException e) {
+                    Log.e(TAG, "Invalid session ID format: " + sessionId, e);
+                    createNewSession();
+                    return;
+                }
                 if (currentSession != null) {
-                    Log.d(TAG, "Loaded existing session: " + currentSession.getId());
+                    Log.d(TAG, "Loaded existing session: " + currentSession.getId().toString());
                 } else {
                     Log.e(TAG, "Session not found: " + sessionId);
                     createNewSession();
@@ -317,7 +325,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         // If we loaded an existing session, update the UI
         if (currentSession != null && currentSession.getDescription() != null) {
             Log.d(TAG, "Setting up session state: " +
-                    "id=" + currentSession.getId() +
+                    "id=" + currentSession.getId().toString() +
                     ", description=" + (currentSession.getDescription() != null ? "present" : "null") +
                     ", code=" + (currentSession.getCurrentCode() != null ? "present" : "null") +
                     ", llmType=" + (currentSession.getLlmType() != null ? currentSession.getLlmType() : "null") +
@@ -455,7 +463,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
             // Get chat session and restore messages
             LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
-                    .getOrCreateSession(currentSession.getDescription());
+                    .getOrCreateSession(currentSession.getId());
 
             // Reset the session to clear any default messages
             chatSession.reset();
@@ -615,7 +623,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                         // Save chat history to session
                         LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
-                                .getOrCreateSession(description);
+                                .getOrCreateSession(currentSession.getId());
                         currentSession.setChatHistory(chatSession.getMessages());
 
                         sessionManager.updateSession(currentSession);
@@ -752,7 +760,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                         // Save chat history to session
                         LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
-                                .getOrCreateSession(currentSession.getDescription());
+                                .getOrCreateSession(currentSession.getId());
                         currentSession.setChatHistory(chatSession.getMessages());
 
                         sessionManager.updateSession(currentSession);
@@ -1395,7 +1403,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         // Enable screenshotting in RenderActivity. Add session ID and iteration count
         // to the intent.
         intent.putExtra(RenderActivity.EXTRA_ENABLE_SCREENSHOTS, true);
-        intent.putExtra(RenderActivity.EXTRA_SESSION_ID, currentSession.getId());
+        intent.putExtra(RenderActivity.EXTRA_SESSION_ID, currentSession.getId().toString());
         intent.putExtra(RenderActivity.EXTRA_ITERATION, currentSession.getIterationCount());
 
         // Add flags to ensure new process
@@ -1410,7 +1418,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             LLMClient llmClient = iterationManager.getLLMClient();
             if (llmClient != null) {
                 String currentDescription = currentSession.getDescription();
-                llmClient.getOrCreateSession(currentDescription).reset();
+                llmClient.getOrCreateSession(currentSession.getId()).reset();
             }
         }
     }
@@ -1683,7 +1691,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         // Reinitialize the session with the current description
                         // This will automatically add the system prompt
                         Log.d(TAG, "Clearing chat history and reinitializing with system prompt");
-                        llmClient.preparePromptForInitialCode(currentDescription);
+                        llmClient.getOrCreateSession(currentSession.getId()).reset();
 
                         Toast.makeText(this, "Chat history cleared", Toast.LENGTH_SHORT).show();
                     } else {

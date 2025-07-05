@@ -18,6 +18,7 @@ import java.io.File;
 import java.util.Map;
 import java.util.HashMap;
 import java.io.IOException;
+import java.util.UUID;
 
 /**
  * Implementation of LLMClient for Anthropic's Claude API.
@@ -150,20 +151,18 @@ public class ClaudeLLMClient extends LLMClient {
     }
 
     @Override
-    public ChatSession getOrCreateSession(String description) {
-        // Use a consistent session ID based on description hash code
-        String sessionId = "claude-app-" + Math.abs(description.hashCode());
-
+    public ChatSession getOrCreateSession(UUID sessionId) {
+        String sessionIdStr = sessionId.toString();
         // Create a new session if one doesn't exist for this ID
-        if (!chatSessions.containsKey(sessionId)) {
-            Log.d(TAG, "Creating new Claude chat session with ID: " + sessionId);
-            chatSessions.put(sessionId, new ClaudeChatSession(sessionId));
-            return chatSessions.get(sessionId);
+        if (!chatSessions.containsKey(sessionIdStr)) {
+            Log.d(TAG, "Creating new Claude chat session with ID: " + sessionIdStr);
+            chatSessions.put(sessionIdStr, new ClaudeChatSession(sessionIdStr));
+            return chatSessions.get(sessionIdStr);
         }
 
         // Use existing session
-        Log.d(TAG, "Reusing existing Claude chat session with ID: " + sessionId);
-        ClaudeChatSession existingSession = (ClaudeChatSession) chatSessions.get(sessionId);
+        Log.d(TAG, "Reusing existing Claude chat session with ID: " + sessionIdStr);
+        ClaudeChatSession existingSession = (ClaudeChatSession) chatSessions.get(sessionIdStr);
 
         // Log session message count for debugging
         Log.d(TAG, "Existing session has " + existingSession.getMessages().size() + " messages");
@@ -172,7 +171,7 @@ public class ClaudeLLMClient extends LLMClient {
     }
 
     @Override
-    public CompletableFuture<String> generateInitialCode(String description) {
+    public CompletableFuture<String> generateInitialCode(UUID sessionId, String description) {
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +
                 "│ CLAUDE STARTING INITIAL CODE GENERATION   │\n" +
@@ -187,7 +186,7 @@ public class ClaudeLLMClient extends LLMClient {
                             ? (description.length() > 50 ? description.substring(0, 50) + "..." : description)
                             : "null"));
 
-            ChatSession session = preparePromptForInitialCode(description);
+            ChatSession session = preparePromptForInitialCode(sessionId, description);
             Log.d(TAG, "DEBUG: Created chat session, about to send messages to Claude API");
 
             return session.sendMessages().handle((response, ex) -> {
@@ -208,7 +207,7 @@ public class ClaudeLLMClient extends LLMClient {
     }
 
     @Override
-    public CompletableFuture<String> generateInitialCode(String description, String initialCode) {
+    public CompletableFuture<String> generateInitialCode(UUID sessionId, String description, String initialCode) {
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +
                 "│         GENERATING INITIAL CODE           │\n" +
@@ -224,7 +223,7 @@ public class ClaudeLLMClient extends LLMClient {
                             ? (description.length() > 50 ? description.substring(0, 50) + "..." : description)
                             : "null"));
 
-            ChatSession session = preparePromptForInitialCode(description, initialCode);
+            ChatSession session = preparePromptForInitialCode(sessionId, description, initialCode);
             Log.d(TAG, "DEBUG: Created chat session with template, about to send messages to Claude API");
 
             return session.sendMessages().handle((response, ex) -> {
@@ -246,6 +245,7 @@ public class ClaudeLLMClient extends LLMClient {
 
     @Override
     public CompletableFuture<String> generateNextIteration(
+            UUID sessionId,
             String description,
             String currentCode,
             String logcat,
@@ -267,7 +267,7 @@ public class ClaudeLLMClient extends LLMClient {
         }
 
         // Get the existing session without resetting it
-        ChatSession session = getOrCreateSession(description);
+        ChatSession session = getOrCreateSession(sessionId);
 
         Log.d(TAG, "Starting generateNextIteration with session containing " +
                 ((ClaudeChatSession) session).getMessages().size() + " messages");

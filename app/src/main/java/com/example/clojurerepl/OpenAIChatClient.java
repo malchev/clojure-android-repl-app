@@ -253,10 +253,10 @@ public class OpenAIChatClient extends LLMClient {
     }
 
     @Override
-    public ChatSession getOrCreateSession(String description) {
-        // Use a consistent session ID based on description hash code
-        String sessionId = "openai-app-" + Math.abs(description.hashCode());
-        return new OpenAIChatSession(sessionId);
+    public ChatSession getOrCreateSession(UUID sessionId) {
+        // Use the UUID as the session ID
+        String sessionIdStr = sessionId.toString();
+        return new OpenAIChatSession(sessionIdStr);
     }
 
     @Override
@@ -275,30 +275,31 @@ public class OpenAIChatClient extends LLMClient {
     }
 
     @Override
-    public CompletableFuture<String> generateInitialCode(String description) {
+    public CompletableFuture<String> generateInitialCode(UUID sessionId, String description) {
         ensureModelIsSet();
         Log.d(TAG, "┌───────────────────────────────────────────┐");
         Log.d(TAG, "│         GENERATING INITIAL CODE           │");
         Log.d(TAG, "└───────────────────────────────────────────┘");
 
-        ChatSession session = preparePromptForInitialCode(description);
+        ChatSession session = preparePromptForInitialCode(sessionId, description);
         return session.sendMessages();
     }
 
     @Override
-    public CompletableFuture<String> generateInitialCode(String description, String initialCode) {
+    public CompletableFuture<String> generateInitialCode(UUID sessionId, String description, String initialCode) {
         ensureModelIsSet();
         Log.d(TAG, "┌───────────────────────────────────────────┐");
         Log.d(TAG, "│         GENERATING INITIAL CODE           │");
         Log.d(TAG, "│       WITH EXISTING CODE AS BASE          │");
         Log.d(TAG, "└───────────────────────────────────────────┘");
 
-        ChatSession session = preparePromptForInitialCode(description, initialCode);
+        ChatSession session = preparePromptForInitialCode(sessionId, description, initialCode);
         return session.sendMessages();
     }
 
     @Override
-    public CompletableFuture<String> generateNextIteration(String description, String currentCode, String logcat,
+    public CompletableFuture<String> generateNextIteration(UUID sessionId, String description, String currentCode,
+            String logcat,
             File screenshot, String feedback, File image) {
         ensureModelIsSet();
         Log.d(TAG, "┌───────────────────────────────────────────┐");
@@ -315,7 +316,7 @@ public class OpenAIChatClient extends LLMClient {
         }
 
         // Get existing session for this app description
-        ChatSession session = getOrCreateSession(description);
+        ChatSession session = getOrCreateSession(sessionId);
 
         // Format the iteration prompt
         String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback);

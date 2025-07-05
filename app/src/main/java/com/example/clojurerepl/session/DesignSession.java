@@ -28,7 +28,7 @@ import java.util.UUID;
 public class DesignSession {
     private static final String TAG = "DesignSession";
 
-    private String id;
+    private UUID id;
     private String description;
     private Date createdAt;
     private Date updatedAt;
@@ -44,7 +44,7 @@ public class DesignSession {
     private String codeWithLineNumbers;
 
     public DesignSession() {
-        this.id = UUID.randomUUID().toString();
+        this.id = UUID.randomUUID();
         this.createdAt = new Date();
         this.updatedAt = new Date();
         this.iterationCount = 0;
@@ -61,11 +61,11 @@ public class DesignSession {
     }
 
     // Getters and setters
-    public String getId() {
+    public UUID getId() {
         return id;
     }
 
-    public void setId(String id) {
+    public void setId(UUID id) {
         this.id = id;
     }
 
@@ -268,7 +268,7 @@ public class DesignSession {
      */
     public JSONObject toJson() throws JSONException {
         JSONObject json = new JSONObject();
-        json.put("id", id);
+        json.put("id", id.toString());
         json.put("description", description);
         json.put("createdAt", createdAt.getTime());
         json.put("updatedAt", updatedAt.getTime());
@@ -338,7 +338,7 @@ public class DesignSession {
      */
     public static DesignSession fromJson(JSONObject json) throws JSONException {
         DesignSession session = new DesignSession();
-        session.id = json.getString("id");
+        session.id = UUID.fromString(json.getString("id"));
         session.description = json.getString("description");
         session.createdAt = new Date(json.getLong("createdAt"));
         session.updatedAt = new Date(json.getLong("updatedAt"));

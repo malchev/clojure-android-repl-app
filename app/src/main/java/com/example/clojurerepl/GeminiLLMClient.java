@@ -595,12 +595,12 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     @Override
-    public ChatSession getOrCreateSession(String description) {
-        String sessionId = "app-" + Math.abs(description.hashCode());
-        if (!chatSessions.containsKey(sessionId)) {
-            chatSessions.put(sessionId, new GeminiChatSession(sessionId));
+    public ChatSession getOrCreateSession(UUID sessionId) {
+        String sessionIdStr = sessionId.toString();
+        if (!chatSessions.containsKey(sessionIdStr)) {
+            chatSessions.put(sessionIdStr, new GeminiChatSession(sessionIdStr));
         }
-        return chatSessions.get(sessionId);
+        return chatSessions.get(sessionIdStr);
     }
 
     @Override
@@ -619,7 +619,7 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     @Override
-    public CompletableFuture<String> generateInitialCode(String description) {
+    public CompletableFuture<String> generateInitialCode(UUID sessionId, String description) {
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +
                 "│         GENERATING INITIAL CODE           │\n" +
@@ -628,7 +628,7 @@ public class GeminiLLMClient extends LLMClient {
 
         Log.d(TAG, "Generating initial code for description: " + description);
 
-        ChatSession chatSession = preparePromptForInitialCode(description);
+        ChatSession chatSession = preparePromptForInitialCode(sessionId, description);
 
         // Send all messages and get the response
         return chatSession.sendMessages()
@@ -639,7 +639,7 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     @Override
-    public CompletableFuture<String> generateInitialCode(String description, String initialCode) {
+    public CompletableFuture<String> generateInitialCode(UUID sessionId, String description, String initialCode) {
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +
                 "│         GENERATING INITIAL CODE           │\n" +
@@ -650,7 +650,7 @@ public class GeminiLLMClient extends LLMClient {
                 ", using initial code: " + (initialCode != null ? "yes" : "no"));
 
         // Use the overloaded method that accepts initial code
-        ChatSession chatSession = preparePromptForInitialCode(description, initialCode);
+        ChatSession chatSession = preparePromptForInitialCode(sessionId, description, initialCode);
 
         // Send all messages and get the response
         return chatSession.sendMessages()
@@ -662,6 +662,7 @@ public class GeminiLLMClient extends LLMClient {
 
     @Override
     public CompletableFuture<String> generateNextIteration(
+            UUID sessionId,
             String description,
             String currentCode,
             String logcat,
@@ -669,7 +670,7 @@ public class GeminiLLMClient extends LLMClient {
             String feedback,
             File image) {
         // Get the iteration number from the chat session
-        ChatSession session = getOrCreateSession(description);
+        ChatSession session = getOrCreateSession(sessionId);
 
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +

@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.UUID;
 
 public class StubLLMClient extends LLMClient {
     private static final String TAG = "StubLLMClient";
@@ -89,12 +90,12 @@ public class StubLLMClient extends LLMClient {
     }
 
     @Override
-    public ChatSession getOrCreateSession(String description) {
-        String sessionId = "stub-" + Math.abs(description.hashCode());
-        if (!chatSessions.containsKey(sessionId)) {
-            chatSessions.put(sessionId, new StubChatSession(sessionId));
+    public ChatSession getOrCreateSession(UUID sessionId) {
+        String sessionIdStr = sessionId.toString();
+        if (!chatSessions.containsKey(sessionIdStr)) {
+            chatSessions.put(sessionIdStr, new StubChatSession(sessionIdStr));
         }
-        return chatSessions.get(sessionId);
+        return chatSessions.get(sessionIdStr);
     }
 
     @Override
@@ -125,23 +126,23 @@ public class StubLLMClient extends LLMClient {
     }
 
     @Override
-    public CompletableFuture<String> generateInitialCode(String description) {
+    public CompletableFuture<String> generateInitialCode(UUID sessionId, String description) {
         Log.d(TAG, "Generating initial code for description: " + description + " using stub client");
 
         // Get or create a session for this app description
-        ChatSession session = preparePromptForInitialCode(description);
+        ChatSession session = preparePromptForInitialCode(sessionId, description);
 
         // Send all messages and get the response
         return session.sendMessages();
     }
 
     @Override
-    public CompletableFuture<String> generateInitialCode(String description, String initialCode) {
+    public CompletableFuture<String> generateInitialCode(UUID sessionId, String description, String initialCode) {
         Log.d(TAG, "Generating initial code for description: " + description +
                 " using stub client, with initial code: " + (initialCode != null ? "yes" : "no"));
 
         // Get or create a session for this app description
-        ChatSession session = preparePromptForInitialCode(description, initialCode);
+        ChatSession session = preparePromptForInitialCode(sessionId, description, initialCode);
 
         // Send all messages and get the response
         return session.sendMessages();
@@ -149,6 +150,7 @@ public class StubLLMClient extends LLMClient {
 
     @Override
     public CompletableFuture<String> generateNextIteration(
+            UUID sessionId,
             String description,
             String currentCode,
             String logcat,
@@ -167,7 +169,7 @@ public class StubLLMClient extends LLMClient {
         }
 
         // Get existing session for this app description
-        ChatSession session = getOrCreateSession(description);
+        ChatSession session = getOrCreateSession(sessionId);
 
         // Format the iteration prompt
         String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback);

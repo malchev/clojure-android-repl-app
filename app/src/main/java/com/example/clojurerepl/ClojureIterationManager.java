@@ -10,6 +10,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.UUID;
 
 public class ClojureIterationManager {
     private static final String TAG = "ClojureIterationManager";
@@ -25,7 +26,7 @@ public class ClojureIterationManager {
     private final LLMClient llmClient;
     private final LogcatMonitor logcatMonitor;
     private final ScreenshotManager screenshotManager;
-    private final String sessionId;
+    private final UUID sessionId;
     private ExtractionErrorCallback extractionErrorCallback;
 
     private CompletableFuture<IterationResult> currentIterationFuture;
@@ -76,7 +77,7 @@ public class ClojureIterationManager {
         }
     }
 
-    public ClojureIterationManager(Context context, LLMClient llmClient, String sessionId) {
+    public ClojureIterationManager(Context context, LLMClient llmClient, UUID sessionId) {
         this.context = context.getApplicationContext();
         this.llmClient = llmClient;
         this.logcatMonitor = new LogcatMonitor();
@@ -118,6 +119,7 @@ public class ClojureIterationManager {
      * @return A CompletableFuture that will be completed with the generated code
      */
     public CompletableFuture<String> generateInitialCode(String description, String initialCode) {
+        // Use sessionId directly as it's already a UUID
         // Cancel any previous generation task that might be running
         if (generationFuture != null && !generationFuture.isDone()) {
             generationFuture.cancel(true);
@@ -135,9 +137,9 @@ public class ClojureIterationManager {
                 // Call the LLM client which returns a CompletableFuture
                 CompletableFuture<String> llmFuture;
                 if (initialCode != null && !initialCode.isEmpty()) {
-                    llmFuture = llmClient.generateInitialCode(description, initialCode);
+                    llmFuture = llmClient.generateInitialCode(sessionId, description, initialCode);
                 } else {
-                    llmFuture = llmClient.generateInitialCode(description);
+                    llmFuture = llmClient.generateInitialCode(sessionId, description);
                 }
 
                 // When the LLM response is ready, complete our future
@@ -243,11 +245,14 @@ public class ClojureIterationManager {
         // Store the result for future reference
         this.lastResult = lastResult;
 
+        // Use sessionId directly as it's already a UUID
+
         // Run in background thread
         executor.execute(() -> {
             try {
                 // Call the LLM client which returns a CompletableFuture - PASS DESCRIPTION HERE
                 CompletableFuture<String> llmFuture = llmClient.generateNextIteration(
+                        sessionId,
                         description, // Pass the original description now
                         lastResult.code,
                         lastResult.logcat,
@@ -326,7 +331,7 @@ public class ClojureIterationManager {
         return llmClient;
     }
 
-    public String getSessionId() {
+    public UUID getSessionId() {
         return sessionId;
     }
 

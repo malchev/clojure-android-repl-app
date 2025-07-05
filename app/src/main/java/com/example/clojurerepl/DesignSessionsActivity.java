@@ -104,7 +104,7 @@ public class DesignSessionsActivity extends AppCompatActivity implements DesignS
     @Override
     public void onOpenSessionClicked(DesignSession session) {
         Intent intent = new Intent(this, ClojureAppDesignActivity.class);
-        intent.putExtra("session_id", session.getId());
+        intent.putExtra("session_id", session.getId().toString());
         startActivity(intent);
     }
 
