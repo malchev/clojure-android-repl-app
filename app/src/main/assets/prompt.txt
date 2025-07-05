@@ -6,23 +6,23 @@ Each Clojure app you write has the following structure:
 
 2. The app has direct access to the entire Android SDK API surface.  It can make API calls directly.
 
-3. The app's entry point is a -main function that takes no arguments. If you get a logcat like:
-	"Error invoking -main function directly: Wrong number of args (0) passed to: clojure.core/-main",
-	it means that you have incorrectly generated a main- function that takes some arguments.
-
-4. The enclosing environment passes the following arguments into the Clojure app:
+3. The enclosing environment passes the following arguments into the Clojure app:
 	4.a. *context* -- the Android Context (an Activity instance);
 	4.b. *content-layout* -- the Layout;
 	4.c. *cache-dir* -- a directory for persistent cache.
 
-5. The app uses Logcat with a tag of "ClojureApp".  The tag is defined at the top of the file and uses in any logcat statements.
+4. The app's entry point is a -main function that takes ZERO arguments. It can access *context*, *content-layout*, and *cache-dir* directly.
 
-7. Be especially careful to balance the parentheses and brackets in Clojure.
+5. If you see in logcat: "Error invoking -main function directly: Wrong number of args (0) passed to: clojure.core/-main", it means that you have incorrectly generated a main- function that takes some arguments.
+
+6. The app ALWAYS uses Logcat with a tag of "ClojureApp".  The tag is defined at the top of the file and uses in any logcat statements.
+
+7. Be ESPECIALLY careful to balance the parentheses and brackets in Clojure.
 	An error on logcat containing "clojure.lang.LispReader$ReaderException:
 	java.lang.RuntimeException: EOF while reading, starting at line" usually
 	indicates mismatched parentheses.
 
-8. Always fully qualify LinearLayout.LayoutParams, like so: android.widget.LinearLayout$LayoutParams.
+8. ALWAYS fully qualify LinearLayout.LayoutParams, like so: android.widget.LinearLayout$LayoutParams.
 
 9. Make sure to import everything you use.
 
