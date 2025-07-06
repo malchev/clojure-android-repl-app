@@ -372,7 +372,13 @@ public class ClaudeLLMClient extends LLMClient {
             // Create Claude API compatible request
             JSONObject requestBody = new JSONObject();
             requestBody.put("model", currentModel);
-            requestBody.put("max_tokens", 64000);
+
+            // Use model-specific output token limit instead of hard-coded value
+            ModelProperties modelProps = getModelProperties(currentModel);
+            int maxTokens = modelProps != null ? modelProps.maxOutputTokens : 4096; // fallback to 4K
+            requestBody.put("max_tokens", maxTokens);
+            Log.d(TAG, "Using max_tokens: " + maxTokens + " for model: " + currentModel);
+
             requestBody.put("temperature", 0.7);
 
             // Convert message history to Claude message format
@@ -982,17 +988,130 @@ public class ClaudeLLMClient extends LLMClient {
      * @return ModelProperties for the model, or null if not found
      */
     public static ModelProperties getModelProperties(String modelName) {
-        // TODO: Implement Claude model properties lookup table
-        return null;
+        if (modelName == null) {
+            return null;
+        }
+
+        // Claude 4 Opus (latest - most powerful)
+        if (modelName.contains("claude-4-opus")) {
+            return new ModelProperties(
+                    200000, // 200K context window (input)
+                    32000, // 32K output limit
+                    true, // multimodal
+                    "Current");
+        }
+
+        // Claude 4 Sonnet
+        if (modelName.contains("claude-sonnet-4") || modelName.contains("claude-4-sonnet")) {
+            return new ModelProperties(
+                    200000, // 200K context window (input)
+                    64000, // 64K output limit
+                    true, // multimodal
+                    "Current");
+        }
+
+        // Claude 3.7 Sonnet (with extended output capability)
+        if (modelName.contains("claude-3-7-sonnet")) {
+            return new ModelProperties(
+                    200000, // 200K context window (input)
+                    8192, // 8K standard output limit (128K extended available)
+                    true, // multimodal
+                    "Current");
+        }
+
+        // Claude 3.5 Sonnet variants (8K output limit since July 2024)
+        if (modelName.contains("claude-3-5-sonnet")) {
+            return new ModelProperties(
+                    200000, // 200K context window (input)
+                    8192, // 8K output limit
+                    true, // multimodal
+                    "Current");
+        }
+
+        // Claude 3.5 Haiku (8K output limit)
+        if (modelName.contains("claude-3-5-haiku")) {
+            return new ModelProperties(
+                    200000, // 200K context window (input)
+                    8192, // 8K output limit
+                    true, // multimodal
+                    "Current");
+        }
+
+        // Claude 3 Opus (legacy - 4K output limit)
+        if (modelName.contains("claude-3-opus")) {
+            return new ModelProperties(
+                    200000, // 200K context window (input)
+                    4096, // 4K output limit
+                    true, // multimodal
+                    "Legacy");
+        }
+
+        // Claude 3 Sonnet (legacy - 4K output limit)
+        if (modelName.contains("claude-3-sonnet")) {
+            return new ModelProperties(
+                    200000, // 200K context window (input)
+                    4096, // 4K output limit
+                    true, // multimodal
+                    "Legacy");
+        }
+
+        // Claude 3 Haiku (legacy - 4K output limit)
+        if (modelName.contains("claude-3-haiku")) {
+            return new ModelProperties(
+                    200000, // 200K context window (input)
+                    4096, // 4K output limit
+                    true, // multimodal
+                    "Legacy");
+        }
+
+        // Claude 2.1 (November 2023)
+        if (modelName.contains("claude-2-1")) {
+            return new ModelProperties(
+                    200000, // 200K context window (input)
+                    4096, // 4K output limit (estimated)
+                    false, // not multimodal
+                    "Legacy");
+        }
+
+        // Claude 2.0 (July 2023)
+        if (modelName.contains("claude-2")) {
+            return new ModelProperties(
+                    100000, // 100K context window (input)
+                    4096, // 4K output limit (estimated)
+                    false, // not multimodal
+                    "Legacy");
+        }
+
+        // Claude Instant (various versions)
+        if (modelName.contains("claude-instant")) {
+            return new ModelProperties(
+                    100000, // 100K context window (input)
+                    4096, // 4K output limit (estimated)
+                    false, // not multimodal
+                    "Legacy");
+        }
+
+        // Default fallback for unknown models
+        Log.w(TAG, "Unknown Claude model: " + modelName + ", using default properties");
+        return new ModelProperties(
+                100000, // Default to 100K context window (input)
+                4096, // Default to 4K output limit
+                false, // Default to not multimodal
+                "Unknown");
     }
 
     private static List<String> getDefaultModels() {
         Log.d(TAG, "Using default Claude models");
         List<String> models = new ArrayList<>();
-        models.add("claude-3-5-sonnet-20240620"); // Add newer models first
-        models.add("claude-3-sonnet-20240229");
-        models.add("claude-3-opus-20240229");
-        models.add("claude-3-haiku-20240307");
+        models.add("claude-4-opus"); // Latest Claude 4 Opus (most powerful)
+        models.add("claude-sonnet-4-20250514"); // Claude 4 Sonnet (efficient)
+        models.add("claude-3-7-sonnet-20250219"); // Claude 3.7 Sonnet (extended output)
+        models.add("claude-3-5-sonnet-20241022"); // Claude 3.5 Sonnet (October 2024)
+        models.add("claude-3-5-haiku-20241022"); // Claude 3.5 Haiku (October 2024)
+        models.add("claude-3-5-sonnet-20240620"); // Claude 3.5 Sonnet (June 2024)
+        models.add("claude-3-opus-20240229"); // Claude 3 Opus (legacy)
+        models.add("claude-3-sonnet-20240229"); // Claude 3 Sonnet (legacy)
+        models.add("claude-3-haiku-20240307"); // Claude 3 Haiku (legacy)
         return models;
     }
 
