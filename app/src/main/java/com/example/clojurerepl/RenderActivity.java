@@ -644,6 +644,11 @@ public class RenderActivity extends AppCompatActivity {
                         }
                     } catch (Exception e) {
                         Log.w(TAG, "Error invoking -main function directly: " + e.getMessage());
+                        // Capture the error and format it for propagation back to parent activity
+                        String fullErrorMessage = "Error invoking -main function directly: "
+                                + formatFullErrorMessage(e);
+                        clojureStatus = fullErrorMessage;
+                        showError(fullErrorMessage);
                     }
                 }
 
