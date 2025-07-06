@@ -696,7 +696,7 @@ public class GeminiLLMClient extends LLMClient {
         Log.d(TAG, "Feedback: " + feedback);
 
         // Format the iteration prompt
-        String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback);
+        String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback, image != null);
 
         // Queue the user message (with image attachment if provided)
         session.queueUserMessageWithImage(prompt, image);

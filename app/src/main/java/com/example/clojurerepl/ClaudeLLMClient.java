@@ -287,7 +287,7 @@ public class ClaudeLLMClient extends LLMClient {
                 userCount + " user, and " + assistantCount + " assistant messages");
 
         // Format the iteration prompt (now includes currentCode)
-        String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback);
+        String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback, image != null);
 
         // Queue the user message (with image attachment if provided)
         session.queueUserMessageWithImage(prompt, image);

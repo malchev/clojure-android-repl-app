@@ -138,14 +138,17 @@ public abstract class LLMClient {
             String currentCode,
             String logcat,
             File screenshot,
-            String feedback) {
+            String feedback, boolean hasImage) {
         Log.d(TAG, "Formatting iteration prompt with description: " + description +
                 ", screenshot: " + (screenshot != null ? screenshot.getPath() : "null") +
-                ", feedback: " + feedback);
+                ", feedback: " + feedback +
+                ", hasImage: " + hasImage);
         return String.format(
-                "The app does not work. Provide an improved version addressing the user feedback and logcat output.\n" +
+                "The app needs work. Provide an improved version addressing the user feedback%s logcat output%s.\n" +
                         "User feedback: %s\n" +
                         "Logcat output:\n```\n%s\n```\n\n",
+                hasImage ? "," : " and",
+                hasImage ? ", and attached image" : "",
                 feedback,
                 logcat);
     }
