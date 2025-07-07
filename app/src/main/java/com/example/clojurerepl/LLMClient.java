@@ -2,13 +2,18 @@ package com.example.clojurerepl;
 
 import android.content.Context;
 import android.util.Log;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.util.concurrent.CompletableFuture;
 import java.util.List;
 import java.util.UUID;
+import java.util.Base64;
 
 public abstract class LLMClient {
     private static final String TAG = "LLMClient";
@@ -274,4 +279,176 @@ public abstract class LLMClient {
      * @return true if key was successfully cleared, false otherwise
      */
     public abstract boolean clearApiKey();
+
+    // ============================================================================
+    // Image Processing Utility Methods
+    // ============================================================================
+
+    /**
+     * Determines the MIME type of an image file based on its extension
+     *
+     * @param imageFile The image file
+     * @return The MIME type string
+     */
+    protected String determineMimeType(File imageFile) {
+        if (imageFile == null) {
+            return "image/png"; // Default fallback
+        }
+
+        String fileName = imageFile.getName().toLowerCase();
+        if (fileName.endsWith(".png")) {
+            return "image/png";
+        } else if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) {
+            return "image/jpeg";
+        } else if (fileName.endsWith(".gif")) {
+            return "image/gif";
+        } else if (fileName.endsWith(".webp")) {
+            return "image/webp";
+        } else if (fileName.endsWith(".bmp")) {
+            return "image/bmp";
+        } else {
+            // Default to PNG if we can't determine the type
+            Log.w(TAG, "Unknown image format for file: " + fileName + ", defaulting to image/png");
+            return "image/png";
+        }
+    }
+
+    /**
+     * Encodes an image file to base64 string, with automatic resizing to meet API
+     * requirements
+     *
+     * @param imageFile The image file to encode
+     * @return Base64 encoded string of the image
+     * @throws IOException If there's an error reading the file
+     */
+    protected String encodeImageToBase64(File imageFile) throws IOException {
+        // First, resize the image if needed to meet API requirements
+        File resizedImage = resizeImageForAPI(imageFile);
+
+        try (FileInputStream fis = new FileInputStream(resizedImage)) {
+            byte[] imageBytes = new byte[(int) resizedImage.length()];
+            fis.read(imageBytes);
+            return Base64.getEncoder().encodeToString(imageBytes);
+        } finally {
+            // Clean up the temporary resized file if it's different from the original
+            if (!resizedImage.equals(imageFile) && resizedImage.exists()) {
+                resizedImage.delete();
+            }
+        }
+    }
+
+    /**
+     * Resizes an image to meet API requirements:
+     * - Maximum 8000x8000 pixels
+     * - Optimal: no more than 1.15 megapixels and within 1568 pixels in both
+     * dimensions
+     * - Maximum file size: 5MB
+     *
+     * @param imageFile The original image file
+     * @return The resized image file (or original if no resizing needed)
+     * @throws IOException If there's an error processing the image
+     */
+    protected File resizeImageForAPI(File imageFile) throws IOException {
+        // Decode image dimensions without loading the full image into memory
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(imageFile.getAbsolutePath(), options);
+
+        int originalWidth = options.outWidth;
+        int originalHeight = options.outHeight;
+
+        Log.d(TAG, "Original image dimensions: " + originalWidth + "x" + originalHeight);
+
+        // Check if resizing is needed
+        boolean needsResizing = false;
+        int targetWidth = originalWidth;
+        int targetHeight = originalHeight;
+
+        // API limits: max 8000x8000, optimal 1568x1568, max 1.15 megapixels
+        final int MAX_DIMENSION = 8000;
+        final int OPTIMAL_DIMENSION = 1568;
+        final int MAX_MEGAPIXELS = 1150000; // 1.15 megapixels
+
+        // Check if image exceeds maximum dimensions
+        if (originalWidth > MAX_DIMENSION || originalHeight > MAX_DIMENSION) {
+            needsResizing = true;
+            if (originalWidth > originalHeight) {
+                targetWidth = MAX_DIMENSION;
+                targetHeight = (int) ((double) originalHeight * MAX_DIMENSION / originalWidth);
+            } else {
+                targetHeight = MAX_DIMENSION;
+                targetWidth = (int) ((double) originalWidth * MAX_DIMENSION / originalHeight);
+            }
+        }
+
+        // Check if image exceeds optimal dimensions
+        if (targetWidth > OPTIMAL_DIMENSION || targetHeight > OPTIMAL_DIMENSION) {
+            needsResizing = true;
+            if (targetWidth > targetHeight) {
+                targetWidth = OPTIMAL_DIMENSION;
+                targetHeight = (int) ((double) targetHeight * OPTIMAL_DIMENSION / targetWidth);
+            } else {
+                targetHeight = OPTIMAL_DIMENSION;
+                targetWidth = (int) ((double) targetWidth * OPTIMAL_DIMENSION / targetHeight);
+            }
+        }
+
+        // Check if image exceeds maximum megapixels
+        if (targetWidth * targetHeight > MAX_MEGAPIXELS) {
+            needsResizing = true;
+            double scale = Math.sqrt((double) MAX_MEGAPIXELS / (targetWidth * targetHeight));
+            targetWidth = (int) (targetWidth * scale);
+            targetHeight = (int) (targetHeight * scale);
+        }
+
+        if (!needsResizing) {
+            Log.d(TAG, "Image does not need resizing");
+            return imageFile;
+        }
+
+        Log.d(TAG, "Resizing image to: " + targetWidth + "x" + targetHeight);
+
+        // Load and resize the image
+        options.inJustDecodeBounds = false;
+        options.inSampleSize = calculateInSampleSize(originalWidth, originalHeight, targetWidth, targetHeight);
+
+        Bitmap originalBitmap = BitmapFactory.decodeFile(imageFile.getAbsolutePath(), options);
+        if (originalBitmap == null) {
+            throw new IOException("Failed to decode image: " + imageFile.getAbsolutePath());
+        }
+
+        // Create resized bitmap
+        Bitmap resizedBitmap = Bitmap.createScaledBitmap(originalBitmap, targetWidth, targetHeight, true);
+        originalBitmap.recycle();
+
+        // Save resized image to temporary file
+        File tempFile = File.createTempFile("llm_resized_", ".png", context.getCacheDir());
+        try (FileOutputStream fos = new FileOutputStream(tempFile)) {
+            resizedBitmap.compress(Bitmap.CompressFormat.PNG, 100, fos);
+        }
+        resizedBitmap.recycle();
+
+        Log.d(TAG, "Resized image saved to: " + tempFile.getAbsolutePath() +
+                ", size: " + tempFile.length() + " bytes");
+
+        return tempFile;
+    }
+
+    /**
+     * Calculates the inSampleSize for efficient bitmap loading
+     */
+    private int calculateInSampleSize(int originalWidth, int originalHeight, int targetWidth, int targetHeight) {
+        int inSampleSize = 1;
+
+        if (originalHeight > targetHeight || originalWidth > targetWidth) {
+            int halfHeight = originalHeight / 2;
+            int halfWidth = originalWidth / 2;
+
+            while ((halfHeight / inSampleSize) >= targetHeight && (halfWidth / inSampleSize) >= targetWidth) {
+                inSampleSize *= 2;
+            }
+        }
+
+        return inSampleSize;
+    }
 }

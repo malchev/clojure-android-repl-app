@@ -17,9 +17,7 @@ import java.util.UUID;
 import org.json.JSONObject;
 import org.json.JSONArray;
 import com.example.clojurerepl.auth.ApiKeyManager;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.util.Base64;
 
 public class GeminiLLMClient extends LLMClient {
     private static final String TAG = "GeminiLLMClient";
@@ -549,35 +547,6 @@ public class GeminiLLMClient extends LLMClient {
             Log.d(TAG, "Reset chat session: " + sessionId);
         }
 
-        /**
-         * Determines the MIME type of an image file based on its extension
-         *
-         * @param imageFile The image file
-         * @return The MIME type string
-         */
-        private String determineMimeType(File imageFile) {
-            if (imageFile == null) {
-                return "image/png"; // Default fallback
-            }
-
-            String fileName = imageFile.getName().toLowerCase();
-            if (fileName.endsWith(".png")) {
-                return "image/png";
-            } else if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) {
-                return "image/jpeg";
-            } else if (fileName.endsWith(".gif")) {
-                return "image/gif";
-            } else if (fileName.endsWith(".webp")) {
-                return "image/webp";
-            } else if (fileName.endsWith(".bmp")) {
-                return "image/bmp";
-            } else {
-                // Default to PNG if we can't determine the type
-                Log.w(TAG, "Unknown image format for file: " + fileName + ", defaulting to image/png");
-                return "image/png";
-            }
-        }
-
         @Override
         public List<Message> getMessages() {
             return new ArrayList<>(messageHistory);
@@ -707,21 +676,6 @@ public class GeminiLLMClient extends LLMClient {
                     Log.d(TAG, "Got response response, length: " + response.length());
                     return response;
                 });
-    }
-
-    /**
-     * Encodes a PNG image file to base64 string
-     *
-     * @param imageFile The PNG image file to encode
-     * @return Base64 encoded string of the image
-     * @throws IOException If there's an error reading the file
-     */
-    private String encodeImageToBase64(File imageFile) throws IOException {
-        try (FileInputStream fis = new FileInputStream(imageFile)) {
-            byte[] imageBytes = new byte[(int) imageFile.length()];
-            fis.read(imageBytes);
-            return Base64.getEncoder().encodeToString(imageBytes);
-        }
     }
 
     // Helper method to call the Gemini API with message history
