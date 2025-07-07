@@ -19,6 +19,12 @@ import java.util.Map;
 import java.util.HashMap;
 import java.io.IOException;
 import java.util.UUID;
+import java.io.FileInputStream;
+import java.util.Base64;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import java.io.ByteArrayOutputStream;
+import java.io.FileOutputStream;
 
 /**
  * Implementation of LLMClient for Anthropic's Claude API.
@@ -94,8 +100,15 @@ public class ClaudeLLMClient extends LLMClient {
         @Override
         public void queueUserMessageWithImage(String content, File imageFile) {
             Log.d(TAG, "Queuing user message with image in session: " + sessionId);
-            // For Claude client, just queue as regular message (ignore image for now)
-            messages.add(new Message("user", content));
+
+            // Determine MIME type based on file extension
+            String mimeType = determineMimeType(imageFile);
+
+            // Create message with image
+            Message message = new Message("user", content, imageFile, mimeType);
+            messages.add(message);
+
+            Log.d(TAG, "Added message with image, MIME type: " + mimeType);
         }
 
         @Override
@@ -414,7 +427,70 @@ public class ClaudeLLMClient extends LLMClient {
             for (Message msg : nonSystemMessages) {
                 JSONObject messageObj = new JSONObject();
                 messageObj.put("role", msg.role);
-                messageObj.put("content", msg.content);
+
+                // For Claude API, we need to handle both text and image content
+                if (msg.hasImage()) {
+                    // Create content array with both text and image
+                    JSONArray contentArray = new JSONArray();
+
+                    // Add text content if present
+                    if (msg.content != null && !msg.content.trim().isEmpty()) {
+                        JSONObject textContent = new JSONObject();
+                        textContent.put("type", "text");
+                        textContent.put("text", msg.content);
+                        contentArray.put(textContent);
+                    }
+
+                    // Add image content
+                    try {
+                        // Verify image file exists and is readable
+                        if (!msg.imageFile.exists()) {
+                            Log.e(TAG, "Image file does not exist: " + msg.imageFile.getAbsolutePath());
+                            throw new IOException("Image file does not exist: " + msg.imageFile.getAbsolutePath());
+                        }
+
+                        if (!msg.imageFile.canRead()) {
+                            Log.e(TAG, "Image file is not readable: " + msg.imageFile.getAbsolutePath());
+                            throw new IOException("Image file is not readable: " + msg.imageFile.getAbsolutePath());
+                        }
+
+                        Log.d(TAG, "Processing image: " + msg.imageFile.getAbsolutePath() +
+                                ", size: " + msg.imageFile.length() + " bytes");
+
+                        String base64Image = encodeImageToBase64(msg.imageFile);
+                        JSONObject imageContent = new JSONObject();
+                        imageContent.put("type", "image");
+                        JSONObject imageSource = new JSONObject();
+                        imageSource.put("type", "base64");
+                        imageSource.put("media_type", msg.mimeType);
+                        imageSource.put("data", base64Image);
+                        imageContent.put("source", imageSource);
+                        contentArray.put(imageContent);
+
+                        Log.d(TAG, "Added message with image, text length: " +
+                                (msg.content != null ? msg.content.length() : 0) +
+                                ", image base64 length: " + base64Image.length() +
+                                ", MIME type: " + msg.mimeType);
+                    } catch (IOException e) {
+                        Log.e(TAG, "Failed to encode image for message: " + msg.imageFile.getAbsolutePath(), e);
+                        // Continue without the image, just add text content
+                        if (msg.content != null && !msg.content.trim().isEmpty()) {
+                            messageObj.put("content", msg.content);
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, "Unexpected error processing image: " + msg.imageFile.getAbsolutePath(), e);
+                        // Continue without the image, just add text content
+                        if (msg.content != null && !msg.content.trim().isEmpty()) {
+                            messageObj.put("content", msg.content);
+                        }
+                    }
+
+                    messageObj.put("content", contentArray);
+                } else {
+                    // Regular text-only message
+                    messageObj.put("content", msg.content);
+                }
+
                 messagesArray.put(messageObj);
             }
 
@@ -1116,6 +1192,174 @@ public class ClaudeLLMClient extends LLMClient {
     }
 
     /**
+     * Determines the MIME type of an image file based on its extension
+     *
+     * @param imageFile The image file
+     * @return The MIME type string
+     */
+    private String determineMimeType(File imageFile) {
+        if (imageFile == null) {
+            return "image/png"; // Default fallback
+        }
+
+        String fileName = imageFile.getName().toLowerCase();
+        if (fileName.endsWith(".png")) {
+            return "image/png";
+        } else if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) {
+            return "image/jpeg";
+        } else if (fileName.endsWith(".gif")) {
+            return "image/gif";
+        } else if (fileName.endsWith(".webp")) {
+            return "image/webp";
+        } else if (fileName.endsWith(".bmp")) {
+            return "image/bmp";
+        } else {
+            // Default to PNG if we can't determine the type
+            Log.w(TAG, "Unknown image format for file: " + fileName + ", defaulting to image/png");
+            return "image/png";
+        }
+    }
+
+    /**
+     * Encodes a image file to base64 string, with automatic resizing to meet
+     * Claude's requirements
+     *
+     * @param imageFile The image file to encode
+     * @return Base64 encoded string of the image
+     * @throws IOException If there's an error reading the file
+     */
+    private String encodeImageToBase64(File imageFile) throws IOException {
+        // First, resize the image if needed to meet Claude's requirements
+        File resizedImage = resizeImageForClaude(imageFile);
+
+        try (FileInputStream fis = new FileInputStream(resizedImage)) {
+            byte[] imageBytes = new byte[(int) resizedImage.length()];
+            fis.read(imageBytes);
+            return Base64.getEncoder().encodeToString(imageBytes);
+        } finally {
+            // Clean up the temporary resized file if it's different from the original
+            if (!resizedImage.equals(imageFile) && resizedImage.exists()) {
+                resizedImage.delete();
+            }
+        }
+    }
+
+    /**
+     * Resizes an image to meet Claude's requirements:
+     * - Maximum 8000x8000 pixels
+     * - Optimal: no more than 1.15 megapixels and within 1568 pixels in both
+     * dimensions
+     * - Maximum file size: 5MB
+     *
+     * @param imageFile The original image file
+     * @return The resized image file (or original if no resizing needed)
+     * @throws IOException If there's an error processing the image
+     */
+    private File resizeImageForClaude(File imageFile) throws IOException {
+        // Decode image dimensions without loading the full image into memory
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(imageFile.getAbsolutePath(), options);
+
+        int originalWidth = options.outWidth;
+        int originalHeight = options.outHeight;
+
+        Log.d(TAG, "Original image dimensions: " + originalWidth + "x" + originalHeight);
+
+        // Check if resizing is needed
+        boolean needsResizing = false;
+        int targetWidth = originalWidth;
+        int targetHeight = originalHeight;
+
+        // Claude's limits: max 8000x8000, optimal 1568x1568, max 1.15 megapixels
+        final int MAX_DIMENSION = 8000;
+        final int OPTIMAL_DIMENSION = 1568;
+        final int MAX_MEGAPIXELS = 1150000; // 1.15 megapixels
+
+        // Check if image exceeds maximum dimensions
+        if (originalWidth > MAX_DIMENSION || originalHeight > MAX_DIMENSION) {
+            needsResizing = true;
+            if (originalWidth > originalHeight) {
+                targetWidth = MAX_DIMENSION;
+                targetHeight = (int) ((double) originalHeight * MAX_DIMENSION / originalWidth);
+            } else {
+                targetHeight = MAX_DIMENSION;
+                targetWidth = (int) ((double) originalWidth * MAX_DIMENSION / originalHeight);
+            }
+        }
+
+        // Check if image exceeds optimal dimensions
+        if (targetWidth > OPTIMAL_DIMENSION || targetHeight > OPTIMAL_DIMENSION) {
+            needsResizing = true;
+            if (targetWidth > targetHeight) {
+                targetWidth = OPTIMAL_DIMENSION;
+                targetHeight = (int) ((double) targetHeight * OPTIMAL_DIMENSION / targetWidth);
+            } else {
+                targetHeight = OPTIMAL_DIMENSION;
+                targetWidth = (int) ((double) targetWidth * OPTIMAL_DIMENSION / targetHeight);
+            }
+        }
+
+        // Check if image exceeds maximum megapixels
+        if (targetWidth * targetHeight > MAX_MEGAPIXELS) {
+            needsResizing = true;
+            double scale = Math.sqrt((double) MAX_MEGAPIXELS / (targetWidth * targetHeight));
+            targetWidth = (int) (targetWidth * scale);
+            targetHeight = (int) (targetHeight * scale);
+        }
+
+        if (!needsResizing) {
+            Log.d(TAG, "Image does not need resizing");
+            return imageFile;
+        }
+
+        Log.d(TAG, "Resizing image to: " + targetWidth + "x" + targetHeight);
+
+        // Load and resize the image
+        options.inJustDecodeBounds = false;
+        options.inSampleSize = calculateInSampleSize(originalWidth, originalHeight, targetWidth, targetHeight);
+
+        Bitmap originalBitmap = BitmapFactory.decodeFile(imageFile.getAbsolutePath(), options);
+        if (originalBitmap == null) {
+            throw new IOException("Failed to decode image: " + imageFile.getAbsolutePath());
+        }
+
+        // Create resized bitmap
+        Bitmap resizedBitmap = Bitmap.createScaledBitmap(originalBitmap, targetWidth, targetHeight, true);
+        originalBitmap.recycle();
+
+        // Save resized image to temporary file
+        File tempFile = File.createTempFile("claude_resized_", ".png", context.getCacheDir());
+        try (FileOutputStream fos = new FileOutputStream(tempFile)) {
+            resizedBitmap.compress(Bitmap.CompressFormat.PNG, 100, fos);
+        }
+        resizedBitmap.recycle();
+
+        Log.d(TAG, "Resized image saved to: " + tempFile.getAbsolutePath() +
+                ", size: " + tempFile.length() + " bytes");
+
+        return tempFile;
+    }
+
+    /**
+     * Calculates the inSampleSize for efficient bitmap loading
+     */
+    private int calculateInSampleSize(int originalWidth, int originalHeight, int targetWidth, int targetHeight) {
+        int inSampleSize = 1;
+
+        if (originalHeight > targetHeight || originalWidth > targetWidth) {
+            int halfHeight = originalHeight / 2;
+            int halfWidth = originalWidth / 2;
+
+            while ((halfHeight / inSampleSize) >= targetHeight && (halfWidth / inSampleSize) >= targetWidth) {
+                inSampleSize *= 2;
+            }
+        }
+
+        return inSampleSize;
+    }
+
+    /**
      * Replace escaped characters like \n, \t, etc. with their actual character
      * representations
      */
@@ -1189,4 +1433,5 @@ public class ClaudeLLMClient extends LLMClient {
             return result;
         }
     }
+
 }
