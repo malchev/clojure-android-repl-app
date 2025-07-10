@@ -58,8 +58,6 @@ public class MainActivity extends AppCompatActivity {
     private StringBuilder timingData = new StringBuilder();
 
     private TextView replInput;
-    private TextView replOutput;
-    private LogcatMonitor logcatMonitor; // logcat goes to replOutput
 
     private TextView statsView;
     private LinearLayout timingsLayout;
@@ -76,6 +74,14 @@ public class MainActivity extends AppCompatActivity {
     private static final String KEY_CURRENT_PROGRAM = "current_program";
     private BytecodeCache bytecodeCache;
 
+    private LogcatMonitor logcatMonitor; // logcat goes to logcatOverlay
+    private String logcatOutput; // extracted from logcatMonitor
+    private Button showLogcatButton;
+    private Button hideLogcatButton;
+    private View logcatOverlay;
+    private TextView fullscreenLogcat;
+    private boolean isLogcatVisible = false;
+
     @Override
     protected void attachBaseContext(Context base) {
         super.attachBaseContext(base);
@@ -88,7 +94,10 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         replInput = findViewById(R.id.repl_input);
-        replOutput = findViewById(R.id.repl_output);
+        showLogcatButton = findViewById(R.id.show_logcat_button);
+        hideLogcatButton = findViewById(R.id.hide_logcat_button);
+        logcatOverlay = findViewById(R.id.logcat_overlay);
+        fullscreenLogcat = findViewById(R.id.fullscreen_logcat);
 
         // Configure replInput for scrolling
         replInput.setMovementMethod(new android.text.method.ScrollingMovementMethod());
@@ -96,6 +105,11 @@ public class MainActivity extends AppCompatActivity {
         replInput.setHorizontalScrollBarEnabled(true);
         replInput.setVerticalScrollBarEnabled(true);
         replInput.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
+
+        // Configure fullscreen logcat for scrolling
+        fullscreenLogcat.setMovementMethod(new android.text.method.ScrollingMovementMethod());
+        fullscreenLogcat.setVerticalScrollBarEnabled(true);
+        fullscreenLogcat.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
 
         // Create and add stats view
         statsView = new TextView(this);
@@ -115,6 +129,12 @@ public class MainActivity extends AppCompatActivity {
         Button launchButton = findViewById(R.id.launch_button);
         launchButton.setOnClickListener(v -> launchRenderActivity());
 
+        // Set up show logcat button
+        showLogcatButton.setOnClickListener(v -> toggleLogcatVisibility());
+
+        // Set up hide logcat button
+        hideLogcatButton.setOnClickListener(v -> toggleLogcatVisibility());
+
         updateStats("Initializing...", null, null);
 
         try {
@@ -127,8 +147,9 @@ public class MainActivity extends AppCompatActivity {
             }
         } catch (Exception e) {
             Log.e(TAG, "Error initializing Clojure", e);
-            replOutput.setText("Error initializing Clojure: " + e.getMessage());
+            logcatOutput = "Error initializing Clojure: " + e.getMessage();
             updateStats("Error", null, null);
+            toggleLogcatVisibility();
         }
 
         // Add this to onCreate in MainActivity
@@ -210,13 +231,12 @@ public class MainActivity extends AppCompatActivity {
         // Save current state before launching
         saveState();
 
-        int pid =
-            RenderActivity.launch(
-                    this, MainActivity.class,
-                    code,
-                    UUID.randomUUID().toString(),
-                    0,
-                    false); // do not collect screenshots
+        int pid = RenderActivity.launch(
+                this, MainActivity.class,
+                code,
+                UUID.randomUUID().toString(),
+                0,
+                false); // do not collect screenshots
         assert pid >= 0;
         logcatMonitor = new LogcatMonitor();
         logcatMonitor.startMonitoring(pid);
@@ -327,10 +347,14 @@ public class MainActivity extends AppCompatActivity {
             Log.d(TAG, "Result code execution: " + (success ? "success" : "failure"));
 
             logcatMonitor.stopMonitoring();
-            String processLogcat = logcatMonitor.getCollectedLogs();
+            logcatOutput = logcatMonitor.getCollectedLogs();
             logcatMonitor.shutdown();
-            Log.d(TAG, "Received process logcat of length: " + processLogcat.length());
-            replOutput.setText(processLogcat);
+            Log.d(TAG, "Received process logcat of length: " + logcatOutput.length());
+
+            // Auto-show logcat when there's content
+            if (!logcatOutput.isEmpty() && !isLogcatVisible) {
+                toggleLogcatVisibility();
+            }
 
             String timings = intent.getStringExtra(RenderActivity.EXTRA_RESULT_TIMINGS);
             if (timings != null && currentProgram != null) {
@@ -1015,6 +1039,34 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception e) {
             Log.e(TAG, "Error saving code to file", e);
             Toast.makeText(this, "Error saving code: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * Toggles the visibility of the logcat output view
+     */
+    private void toggleLogcatVisibility() {
+        isLogcatVisible = !isLogcatVisible;
+
+        if (isLogcatVisible) {
+            // Show full-screen logcat overlay
+            logcatOverlay.setVisibility(View.VISIBLE);
+            showLogcatButton.setText("Hide Logcat");
+            showLogcatButton
+                    .setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#FF5722"))); // Orange/Red
+
+            // Copy content from logcatOutput to fullscreen view
+            if (logcatOutput == null || logcatOutput.isEmpty()) {
+                fullscreenLogcat.setText("No logcat output available");
+            } else {
+                fullscreenLogcat.setText(logcatOutput);
+            }
+        } else {
+            // Hide full-screen logcat overlay
+            logcatOverlay.setVisibility(View.GONE);
+            showLogcatButton.setText("Show Logcat");
+            showLogcatButton
+                    .setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#4CAF50"))); // Green
         }
     }
 
