@@ -10,7 +10,6 @@ import java.util.concurrent.TimeUnit;
 
 public class LogcatMonitor {
     private static final String TAG = "LogcatMonitor";
-    private static final String CLOJURE_APP_TAG = "ClojureApp";
 
     private final StringBuilder logBuffer = new StringBuilder();
     private Process logcatProcess;
@@ -27,18 +26,18 @@ public class LogcatMonitor {
         this.callback = callback;
     }
 
-    public void startMonitoring() {
+    public void startMonitoring(int processId) {
         if (isMonitoring.get()) {
             return;
         }
 
         try {
-            // Clear existing logcat buffer
-            Runtime.getRuntime().exec("logcat -c");
-
-            // Start logcat process for our specific tag
-            logcatProcess = Runtime.getRuntime().exec(
-                    new String[] { "logcat", CLOJURE_APP_TAG + ":D", "*:S" });
+            String [] command = new String[] { "logcat", "--pid=" + processId,
+                        "'*:I'", "'*:E'", "'*:W'", "'*:D'",
+                        "-v", "time",
+                        "-s", "AndroidRuntime", "-s", "ClojureApp", };
+            // Monitor by process ID - include Debug level for application logs
+            logcatProcess = Runtime.getRuntime().exec(command);
 
             isMonitoring.set(true);
 
@@ -58,6 +57,9 @@ public class LogcatMonitor {
                             callback.onNewLog(line);
                         }
                     }
+                } catch (java.io.InterruptedIOException e) {
+                    // This is expected when we kill the logcat process
+                    Log.d(TAG, "Logcat process terminated.");
                 } catch (Exception e) {
                     Log.e(TAG, "Error reading logcat", e);
                 }
@@ -69,18 +71,27 @@ public class LogcatMonitor {
 
     public void stopMonitoring() {
         if (isMonitoring.compareAndSet(true, false)) {
-            // Signal the thread to stop before destroying the process
+            // Kill the logcat process first to unblock the reader
+            if (logcatProcess != null) {
+                logcatProcess.destroy();
+                // Give it a moment to terminate gracefully
+                try {
+                    logcatProcess.waitFor(100, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException e) {
+                    // Ignore timeout
+                }
+                // Force kill if still running
+                if (logcatProcess.isAlive()) {
+                    logcatProcess.destroyForcibly();
+                }
+                logcatProcess = null;
+            }
+
+            // Give the thread a chance to see the flag change and exit gracefully
             try {
-                // Give the thread a chance to see the flag change
                 Thread.sleep(100);
             } catch (InterruptedException e) {
                 // Ignore
-            }
-
-            // Now close the process
-            if (logcatProcess != null) {
-                logcatProcess.destroy();
-                logcatProcess = null;
             }
         }
     }

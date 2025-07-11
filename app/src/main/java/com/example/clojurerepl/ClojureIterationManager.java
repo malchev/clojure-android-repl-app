@@ -24,8 +24,6 @@ public class ClojureIterationManager {
 
     private final Context context;
     private final LLMClient llmClient;
-    private final LogcatMonitor logcatMonitor;
-    private final ScreenshotManager screenshotManager;
     private final UUID sessionId;
     private ExtractionErrorCallback extractionErrorCallback;
 
@@ -80,8 +78,6 @@ public class ClojureIterationManager {
     public ClojureIterationManager(Context context, LLMClient llmClient, UUID sessionId) {
         this.context = context.getApplicationContext();
         this.llmClient = llmClient;
-        this.logcatMonitor = new LogcatMonitor();
-        this.screenshotManager = new ScreenshotManager(context);
         this.sessionId = sessionId;
 
         // Initialize executor for background tasks
@@ -322,9 +318,6 @@ public class ClojureIterationManager {
                 Thread.currentThread().interrupt();
             }
         }
-
-        // Proceed with other cleanup
-        logcatMonitor.shutdown();
     }
 
     public LLMClient getLLMClient() {

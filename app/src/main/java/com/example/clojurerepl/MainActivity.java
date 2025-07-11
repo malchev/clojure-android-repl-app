@@ -212,20 +212,14 @@ public class MainActivity extends AppCompatActivity {
         // Save current state before launching
         saveState();
 
-        // Create intent
-        Intent intent = new Intent(this, RenderActivity.class);
+        int pid =
+            RenderActivity.launch(
+                    this, MainActivity.class,
+                    code,
+                    UUID.randomUUID().toString(),
+                    0,
+                    false); // do not collect screenshots
 
-        // Add the code
-        intent.putExtra(RenderActivity.EXTRA_CODE, code);
-
-        // Add a session UUID
-        intent.putExtra(RenderActivity.EXTRA_SESSION_ID, UUID.randomUUID().toString());
-
-        // Add the launching activity name
-        intent.putExtra(RenderActivity.EXTRA_LAUNCHING_ACTIVITY, MainActivity.class.getName());
-
-        // Launch the activity
-        startActivity(intent);
     }
 
     @Override

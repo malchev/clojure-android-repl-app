@@ -90,6 +90,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     private SessionManager sessionManager;
     private DesignSession currentSession;
 
+    // Add logcat monitoring for launched RenderActivity
+    private LogcatMonitor logcatMonitor;
+
     // Add a flag to track when the models are loaded
     private boolean modelsLoaded = false;
 
@@ -903,8 +906,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         }
 
         // Check if we have process logcat data
-        if (intent.hasExtra(RenderActivity.EXTRA_RESULT_PROCESS_LOGCAT)) {
-            processLogcat = intent.getStringExtra(RenderActivity.EXTRA_RESULT_PROCESS_LOGCAT);
+        if (intent.hasExtra(RenderActivity.EXTRA_RESULT_SUCCESS)) {
+            boolean success = intent.getBooleanExtra(RenderActivity.EXTRA_RESULT_SUCCESS, false);
+            Log.d(TAG, "RenderActivity success: " + success);
+
+            logcatMonitor.stopMonitoring();
+            processLogcat = logcatMonitor.getCollectedLogs();
+            logcatMonitor.shutdown();
             Log.d(TAG, "Received process logcat of length: " + processLogcat.length());
 
             // Update the logcat output view if it exists
@@ -1396,21 +1404,17 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             }
         }
 
-        // Create intent for RenderActivity
-        Intent intent = new Intent(this, RenderActivity.class);
-        intent.putExtra(RenderActivity.EXTRA_CODE, currentCode);
-        intent.putExtra(RenderActivity.EXTRA_LAUNCHING_ACTIVITY, ClojureAppDesignActivity.class.getName());
-        // Enable screenshotting in RenderActivity. Add session ID and iteration count
-        // to the intent.
-        intent.putExtra(RenderActivity.EXTRA_ENABLE_SCREENSHOTS, true);
-        intent.putExtra(RenderActivity.EXTRA_SESSION_ID, currentSession.getId().toString());
-        intent.putExtra(RenderActivity.EXTRA_ITERATION, currentSession.getIterationCount());
-
-        // Add flags to ensure new process
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-
         // Start the activity
-        startActivity(intent);
+        int pid =
+            RenderActivity.launch(this, ClojureAppDesignActivity.class,
+                currentCode,
+                currentSession.getId().toString(),
+                currentSession.getIterationCount(),
+                true);
+        assert pid >= 0;
+        logcatMonitor = new LogcatMonitor();
+        logcatMonitor.startMonitoring(pid);
+
     }
 
     private void clearChatSession() {

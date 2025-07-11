@@ -51,6 +51,7 @@ public class RenderActivity extends AppCompatActivity {
     public static final String EXTRA_SESSION_ID = "session_id";
     public static final String EXTRA_ITERATION = "iteration";
     public static final String EXTRA_ENABLE_SCREENSHOTS = "enable_screenshots";
+    public static final String EXTRA_PID_FILE = "pid_file";
 
     // results
     public static final String EXTRA_RESULT_SCREENSHOT_PATHS = "screenshot_paths";
@@ -93,11 +94,24 @@ public class RenderActivity extends AppCompatActivity {
     private long lastScreenshotTime = 0;
     private static final long MIN_SCREENSHOT_INTERVAL_MS = 500; // Minimum time between screenshots
 
-    // Add this field to RenderActivity
-    private int processId;
-
     // Add this field to track the launching activity
-    private String launchingActivity;
+    private String parentActivity;
+
+    private String pidFilePath;
+
+    private Class<?> getParentActivityClass() {
+        assert parentActivity != null;
+        Log.d(TAG, "RenderActivity launched by: " + parentActivity);
+        Class<?> parentActivityClass = null;
+        try {
+            parentActivityClass = Class.forName(parentActivity);
+            Log.d(TAG, "Sending results to: " + parentActivityClass.getSimpleName());
+        } catch (ClassNotFoundException e) {
+            Log.e(TAG, "Could not find parent activity class: " + parentActivity);
+            assert false;
+        }
+        return parentActivityClass;
+    }
 
     private class UiSafeViewGroup extends LinearLayout {
         private final LinearLayout layoutDelegate;
@@ -202,6 +216,87 @@ public class RenderActivity extends AppCompatActivity {
         return appCacheDir;
     }
 
+    private void sendBackSelfPid() {
+        assert pidFilePath != null;
+        try {
+            int pid = android.os.Process.myPid();
+            Log.d(TAG, "RenderActivity started in process: " + pid);
+            java.io.File pidFile = new java.io.File(pidFilePath);
+            try (java.io.FileWriter writer = new java.io.FileWriter(pidFile)) {
+                writer.write(String.valueOf(pid));
+            }
+            Log.d(TAG, "Wrote PID " + pid + " to file: " + pidFilePath);
+        } catch (Exception e) {
+            Log.e(TAG, "Error writing PID to file", e);
+        }
+    }
+
+    /**
+     * Launches RenderActivity and gets its PID
+     */
+    public static int launch(Context context, Class<?> launchingActivity, String code, String sessionId, int iteration, boolean enableScreenshots) {
+        try {
+            // Create a temporary file to store the PID
+            File pidFile = new File(context.getCacheDir(), "render_pid_" + sessionId + "_" + iteration + ".tmp");
+
+            // Clean up any existing PID file
+            if (pidFile.exists()) {
+                pidFile.delete();
+            }
+
+            Intent launchIntent = new Intent(context, RenderActivity.class);
+            launchIntent.putExtra(RenderActivity.EXTRA_CODE, code);
+            launchIntent.putExtra(RenderActivity.EXTRA_SESSION_ID, sessionId);
+            launchIntent.putExtra(RenderActivity.EXTRA_ITERATION, iteration);
+            launchIntent.putExtra(RenderActivity.EXTRA_PID_FILE, pidFile.getAbsolutePath());
+            launchIntent.putExtra(RenderActivity.EXTRA_ENABLE_SCREENSHOTS, enableScreenshots);
+            launchIntent.putExtra(RenderActivity.EXTRA_LAUNCHING_ACTIVITY, launchingActivity.getName());
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); // Ensure new process
+            context.startActivity(launchIntent);
+
+            // Wait for the PID file to be created with timeout
+            long startTime = System.currentTimeMillis();
+            long timeout = 5000; // 5 seconds timeout
+
+            Log.d(TAG, "Waiting for PID file: " + pidFile.getAbsolutePath());
+
+            while (!pidFile.exists() && (System.currentTimeMillis() - startTime) < timeout) {
+                Log.d(TAG, "PID file not found, waiting... (attempt " + ((System.currentTimeMillis() - startTime) / 100)
+                        + ")");
+                Thread.sleep(100);
+            }
+
+            if (!pidFile.exists()) {
+                Log.e(TAG, "PID file was not created within timeout");
+                return -1;
+            }
+
+            // Read the PID from the file
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.FileReader(pidFile))) {
+                String pidStr = reader.readLine();
+                if (pidStr != null) {
+                    int pid = Integer.parseInt(pidStr.trim());
+                    Log.d(TAG, "Read PID from file: " + pid);
+
+                    // Clean up the PID file
+                    pidFile.delete();
+
+                    return pid;
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error reading PID from file", e);
+                return -1;
+            }
+
+            Log.e(TAG, "Could not read PID from file");
+            return -1;
+        } catch (Exception e) {
+            Log.e(TAG, "Error launching render activity and getting PID", e);
+            return -1;
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         try {
@@ -209,10 +304,6 @@ public class RenderActivity extends AppCompatActivity {
             Log.d(TAG, "RenderActivity onCreate started in process: " + android.os.Process.myPid());
             super.onCreate(savedInstanceState);
             setContentView(R.layout.activity_render);
-
-            // Store the current process ID
-            processId = android.os.Process.myPid();
-            Log.d(TAG, "RenderActivity started in process: " + processId);
 
             // Add timing view at the top
             timingView = new TextView(this);
@@ -232,34 +323,31 @@ public class RenderActivity extends AppCompatActivity {
             Log.d(TAG, "Content layout found: " + (contentLayout != null));
 
             try {
-                // Get the name of the activity that launched this one
                 Intent intent = getIntent();
-                if (intent != null) {
-                    launchingActivity = intent.getStringExtra(EXTRA_LAUNCHING_ACTIVITY);
-                    assert launchingActivity != null;
-                    Log.d(TAG, "RenderActivity launched by: " + launchingActivity);
+                assert intent != null;
 
-                    // Extract session ID and iteration count from intent
-                    sessionId = intent.getStringExtra(EXTRA_SESSION_ID);
-                    assert sessionId != null;
-                    iteration = intent.getIntExtra(EXTRA_ITERATION, 0);
-                    Log.d(TAG, "Session ID: " + sessionId + ", Iteration: " + iteration);
+                // Determine the correct parent activity to return to
+                parentActivity = intent.getStringExtra(EXTRA_LAUNCHING_ACTIVITY);
+                assert parentActivity != null;
+                Log.d(TAG, "RenderActivity launched by: " + parentActivity);
+                Class<?> parentActivityClass = getParentActivityClass();
 
-                    // Extract screenshot flag from intent
-                    screenshotsEnabled = intent.getBooleanExtra(EXTRA_ENABLE_SCREENSHOTS, false);
-                    Log.d(TAG, "Screenshots enabled: " + screenshotsEnabled);
-                }
+                // Extract session ID and iteration count from intent
+                sessionId = intent.getStringExtra(EXTRA_SESSION_ID);
+                assert sessionId != null;
+                iteration = intent.getIntExtra(EXTRA_ITERATION, 0);
+                Log.d(TAG, "Session ID: " + sessionId + ", Iteration: " + iteration);
 
-                // Get the code from the intent
-                Intent intentCode = getIntent();
-                if (intentCode == null) {
-                    Log.e(TAG, "No intent provided");
-                    showError("No intent provided");
-                    return;
-                }
+                // Write PID to file
+                pidFilePath = intent.getStringExtra(EXTRA_PID_FILE);
+                assert pidFilePath != null && !pidFilePath.isEmpty();
+
+                // Extract screenshot flag from intent
+                screenshotsEnabled = intent.getBooleanExtra(EXTRA_ENABLE_SCREENSHOTS, false);
+                Log.d(TAG, "Screenshots enabled: " + screenshotsEnabled);
 
                 // Store code in class member instead of local variable
-                code = intentCode.getStringExtra(EXTRA_CODE);
+                code = intent.getStringExtra(EXTRA_CODE);
                 Log.d(TAG, "Received intent with code: " + (code != null ? "length=" + code.length() : "null"));
 
                 if (code != null && !code.trim().isEmpty()) {
@@ -330,6 +418,9 @@ public class RenderActivity extends AppCompatActivity {
             // After your current touch listener setup, add:
             setupScreenshotForClickableViews(contentLayout);
             observeViewHierarchyChanges(contentLayout);
+
+            sendBackSelfPid();
+
         } catch (Throwable t) {
             Log.e(TAG, "Fatal error in RenderActivity onCreate", t);
             Toast.makeText(this, "Fatal error: " + t.getMessage(), Toast.LENGTH_LONG).show();
@@ -358,27 +449,8 @@ public class RenderActivity extends AppCompatActivity {
 
         // Delay sending screenshots to parent to allow touch events to complete
         new Handler().postDelayed(() -> {
-            // Capture the logcat for this process
-            List<String> processLogs = LogcatReader.getLogsForProcess(processId);
-            String logcatContent = String.join("\n", processLogs);
-            Log.d(TAG, "Captured " + processLogs.size() + " logcat lines");
-            Log.d(TAG, "┌───────────────────────────────────────────┐");
-            Log.d(TAG, "│            BEGIN LOGCAT CONTENT           │");
-            Log.d(TAG, "└───────────────────────────────────────────┘");
-            Log.d(TAG, logcatContent);
-            Log.d(TAG, "┌───────────────────────────────────────────┐");
-            Log.d(TAG, "│             END LOGCAT CONTENT            │");
-            Log.d(TAG, "└───────────────────────────────────────────┘");
-
             // Determine the correct parent activity to return to
-            Class<?> parentActivityClass;
-            try {
-                parentActivityClass = Class.forName(launchingActivity);
-                Log.d(TAG, "Sending results to: " + parentActivityClass.getSimpleName());
-            } catch (ClassNotFoundException e) {
-                Log.e(TAG, "Could not find parent activity class: " + launchingActivity);
-                parentActivityClass = MainActivity.class; // Default to MainActivity if not found
-            }
+            Class<?> parentActivityClass = getParentActivityClass();
 
             Intent parentIntent = new Intent(this, parentActivityClass);
 
@@ -395,9 +467,6 @@ public class RenderActivity extends AppCompatActivity {
                 }
                 parentIntent.putExtra(EXTRA_RESULT_SCREENSHOT_PATHS, screenshotPaths);
             }
-
-            // Add the logcat content to the intent as well
-            parentIntent.putExtra(EXTRA_RESULT_PROCESS_LOGCAT, logcatContent);
 
             // Add the feedback to the intent
             if (clojureStatus != null) {
