@@ -40,6 +40,7 @@ import com.google.gson.reflect.TypeToken;
 import java.lang.reflect.Type;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import android.widget.Toast;
 
 public class MainActivity extends AppCompatActivity {
@@ -49,6 +50,13 @@ public class MainActivity extends AppCompatActivity {
     private static final String KEY_SAVED_TIMINGS = "saved_timings";
     private static final String TIMING_RUN_SEPARATOR = "###RUN###";
     private static final String TIMING_LINE_SEPARATOR = "\n";
+
+    // These intents are for sending base64-encoded code to MainActivity (from
+    // a command-line script). The related RenderActivity.EXTRA_CODE is for
+    // when (non-encoded) code is sent to RenderActivity.
+    public static final String EXTRA_CODE = "code";
+    public static final String EXTRA_ENCODING = "encoding";
+    public static final String EXTRA_DESCRIPTION = "description";
 
     private List<String> timingRuns = new ArrayList<>();
     private StringBuilder timingData = new StringBuilder();
@@ -206,7 +214,12 @@ public class MainActivity extends AppCompatActivity {
 
         // Create intent
         Intent intent = new Intent(this, RenderActivity.class);
+
+        // Add the code
         intent.putExtra(RenderActivity.EXTRA_CODE, code);
+
+        // Add a session UUID
+        intent.putExtra(RenderActivity.EXTRA_SESSION_ID, UUID.randomUUID().toString());
 
         // Add the launching activity name
         intent.putExtra(RenderActivity.EXTRA_LAUNCHING_ACTIVITY, MainActivity.class.getName());
@@ -219,7 +232,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == 1001 && resultCode == RESULT_OK && data != null) {
-            String timings = data.getStringExtra(RenderActivity.EXTRA_TIMINGS);
+            String timings = data.getStringExtra(RenderActivity.EXTRA_RESULT_TIMINGS);
             if (timings != null && currentProgram != null) {
                 runCount++;
                 currentProgram.addTimingRun(timings);
@@ -367,9 +380,9 @@ public class MainActivity extends AppCompatActivity {
 
     private void handleIntent(Intent intent) {
         if (intent != null) {
-            String encodedCode = intent.getStringExtra(RenderActivity.EXTRA_CODE);
-            String encoding = intent.getStringExtra(RenderActivity.EXTRA_ENCODING);
-            String description = intent.getStringExtra(RenderActivity.EXTRA_DESCRIPTION);
+            String encodedCode = intent.getStringExtra(EXTRA_CODE);
+            String encoding = intent.getStringExtra(EXTRA_ENCODING);
+            String description = intent.getStringExtra(EXTRA_DESCRIPTION);
 
             if (encodedCode != null && !encodedCode.isEmpty()) {
                 // Decode if base64 encoded

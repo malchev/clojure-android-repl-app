@@ -45,19 +45,19 @@ public class RenderActivity extends AppCompatActivity {
     // Define EOF object for detecting end of input
     private static final Object EOF = new Object();
 
-    public static final String ACTION_RENDER_COMPLETE = "com.example.clojurerepl.RENDER_COMPLETE";
-    public static final String EXTRA_SUCCESS = "success";
-    public static final String EXTRA_ERROR = "error";
+    // inputs
     public static final String EXTRA_LAUNCHING_ACTIVITY = "launching_activity";
     public static final String EXTRA_CODE = "code";
-    public static final String EXTRA_ENCODING = "encoding";
-    public static final String EXTRA_DESCRIPTION = "description";
-    public static final String EXTRA_SCREENSHOT_PATHS = "screenshot_paths";
-    public static final String EXTRA_PROCESS_LOGCAT = "process_logcat";
-    public static final String EXTRA_TIMINGS = "timings";
     public static final String EXTRA_SESSION_ID = "session_id";
     public static final String EXTRA_ITERATION = "iteration";
     public static final String EXTRA_ENABLE_SCREENSHOTS = "enable_screenshots";
+
+    // results
+    public static final String EXTRA_RESULT_SCREENSHOT_PATHS = "screenshot_paths";
+    public static final String EXTRA_RESULT_SUCCESS = "success";
+    public static final String EXTRA_RESULT_ERROR = "error";
+    public static final String EXTRA_RESULT_TIMINGS = "timings";
+    public static final String EXTRA_RESULT_PROCESS_LOGCAT = "process_logcat";
 
     private LinearLayout contentLayout;
     private Var contextVar;
@@ -236,14 +236,12 @@ public class RenderActivity extends AppCompatActivity {
                 Intent intent = getIntent();
                 if (intent != null) {
                     launchingActivity = intent.getStringExtra(EXTRA_LAUNCHING_ACTIVITY);
-                    if (launchingActivity == null) {
-                        // Default to design activity for backward compatibility
-                        launchingActivity = ClojureAppDesignActivity.class.getName();
-                    }
+                    assert launchingActivity != null;
                     Log.d(TAG, "RenderActivity launched by: " + launchingActivity);
 
                     // Extract session ID and iteration count from intent
                     sessionId = intent.getStringExtra(EXTRA_SESSION_ID);
+                    assert sessionId != null;
                     iteration = intent.getIntExtra(EXTRA_ITERATION, 0);
                     Log.d(TAG, "Session ID: " + sessionId + ", Iteration: " + iteration);
 
@@ -346,7 +344,7 @@ public class RenderActivity extends AppCompatActivity {
 
             // Send timing data back to MainActivity
             Intent resultIntent = new Intent();
-            resultIntent.putExtra(EXTRA_TIMINGS, timingData.toString());
+            resultIntent.putExtra(EXTRA_RESULT_TIMINGS, timingData.toString());
             setResult(RESULT_OK, resultIntent);
         });
     }
@@ -387,7 +385,7 @@ public class RenderActivity extends AppCompatActivity {
             // Use FLAG_ACTIVITY_CLEAR_TOP to ensure we go back to the existing instance
             parentIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
 
-            parentIntent.putExtra(EXTRA_SUCCESS, clojureStatus == null);
+            parentIntent.putExtra(EXTRA_RESULT_SUCCESS, clojureStatus == null);
 
             // Add all screenshot paths to intent
             if (!capturedScreenshots.isEmpty()) {
@@ -395,16 +393,16 @@ public class RenderActivity extends AppCompatActivity {
                 for (int i = 0; i < capturedScreenshots.size(); i++) {
                     screenshotPaths[i] = capturedScreenshots.get(i).getAbsolutePath();
                 }
-                parentIntent.putExtra(EXTRA_SCREENSHOT_PATHS, screenshotPaths);
+                parentIntent.putExtra(EXTRA_RESULT_SCREENSHOT_PATHS, screenshotPaths);
             }
 
             // Add the logcat content to the intent as well
-            parentIntent.putExtra(EXTRA_PROCESS_LOGCAT, logcatContent);
+            parentIntent.putExtra(EXTRA_RESULT_PROCESS_LOGCAT, logcatContent);
 
             // Add the feedback to the intent
             if (clojureStatus != null) {
                 Log.d(TAG, "Adding error to parent intent: " + clojureStatus);
-                parentIntent.putExtra(EXTRA_ERROR, clojureStatus);
+                parentIntent.putExtra(EXTRA_RESULT_ERROR, clojureStatus);
             }
 
             // Set flag to kill process on destroy

@@ -11,9 +11,9 @@ public class ClojureCodeReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (intent != null && intent.hasExtra(RenderActivity.EXTRA_CODE)) {
-            String encodedCode = intent.getStringExtra(RenderActivity.EXTRA_CODE);
-            String encoding = intent.getStringExtra(RenderActivity.EXTRA_ENCODING);
+        if (intent != null && intent.hasExtra(MainActivity.EXTRA_CODE)) {
+            String encodedCode = intent.getStringExtra(MainActivity.EXTRA_CODE);
+            String encoding = intent.getStringExtra(MainActivity.EXTRA_ENCODING);
 
             // Decode the code if it's base64 encoded
             String decodedCode;

@@ -829,9 +829,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         // Send to REPL activity
         Intent intent = new Intent(this, MainActivity.class);
-        intent.putExtra(RenderActivity.EXTRA_CODE, encodedCode);
-        intent.putExtra(RenderActivity.EXTRA_ENCODING, "base64");
-        intent.putExtra(RenderActivity.EXTRA_DESCRIPTION, currentDescription);
+        intent.putExtra(MainActivity.EXTRA_CODE, encodedCode);
+        intent.putExtra(MainActivity.EXTRA_ENCODING, "base64");
+        intent.putExtra(MainActivity.EXTRA_DESCRIPTION, currentDescription);
         startActivity(intent);
 
         // Save this final version
@@ -868,8 +868,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         screenshotsContainer.setVisibility(View.VISIBLE);
 
         // First check for screenshot data (existing functionality)
-        if (intent.hasExtra(RenderActivity.EXTRA_SCREENSHOT_PATHS)) {
-            String[] screenshotPaths = intent.getStringArrayExtra(RenderActivity.EXTRA_SCREENSHOT_PATHS);
+        if (intent.hasExtra(RenderActivity.EXTRA_RESULT_SCREENSHOT_PATHS)) {
+            String[] screenshotPaths = intent.getStringArrayExtra(RenderActivity.EXTRA_RESULT_SCREENSHOT_PATHS);
             Log.d(TAG, "Received " + screenshotPaths.length + " screenshots in onNewIntent");
 
             // Save the screenshots for future reference
@@ -903,8 +903,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         }
 
         // Check if we have process logcat data
-        if (intent.hasExtra(RenderActivity.EXTRA_PROCESS_LOGCAT)) {
-            processLogcat = intent.getStringExtra(RenderActivity.EXTRA_PROCESS_LOGCAT);
+        if (intent.hasExtra(RenderActivity.EXTRA_RESULT_PROCESS_LOGCAT)) {
+            processLogcat = intent.getStringExtra(RenderActivity.EXTRA_RESULT_PROCESS_LOGCAT);
             Log.d(TAG, "Received process logcat of length: " + processLogcat.length());
 
             // Update the logcat output view if it exists
@@ -921,8 +921,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         }
 
         // Check for error feedback from RenderActivity
-        if (intent.hasExtra(RenderActivity.EXTRA_ERROR)) {
-            String errorFeedback = intent.getStringExtra(RenderActivity.EXTRA_ERROR);
+        if (intent.hasExtra(RenderActivity.EXTRA_RESULT_ERROR)) {
+            String errorFeedback = intent.getStringExtra(RenderActivity.EXTRA_RESULT_ERROR);
 
             // Pre-fill the feedback input
             if (feedbackInput != null) {
