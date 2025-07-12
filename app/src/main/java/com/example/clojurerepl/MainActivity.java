@@ -59,6 +59,8 @@ public class MainActivity extends AppCompatActivity {
 
     private TextView replInput;
     private TextView replOutput;
+    private LogcatMonitor logcatMonitor; // logcat goes to replOutput
+
     private TextView statsView;
     private LinearLayout timingsLayout;
     private TextView timingsHeaderView;
@@ -215,7 +217,9 @@ public class MainActivity extends AppCompatActivity {
                     UUID.randomUUID().toString(),
                     0,
                     false); // do not collect screenshots
-
+        assert pid >= 0;
+        logcatMonitor = new LogcatMonitor();
+        logcatMonitor.startMonitoring(pid);
     }
 
     private void updateTimingsTable(String timingsData) {
@@ -321,6 +325,12 @@ public class MainActivity extends AppCompatActivity {
         if (intent.hasExtra(RenderActivity.EXTRA_RESULT_SUCCESS)) {
             boolean success = intent.getBooleanExtra(RenderActivity.EXTRA_RESULT_SUCCESS, false);
             Log.d(TAG, "Result code execution: " + (success ? "success" : "failure"));
+
+            logcatMonitor.stopMonitoring();
+            String processLogcat = logcatMonitor.getCollectedLogs();
+            logcatMonitor.shutdown();
+            Log.d(TAG, "Received process logcat of length: " + processLogcat.length());
+            replOutput.setText(processLogcat);
 
             String timings = intent.getStringExtra(RenderActivity.EXTRA_RESULT_TIMINGS);
             if (timings != null && currentProgram != null) {
