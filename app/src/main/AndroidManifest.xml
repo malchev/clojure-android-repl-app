@@ -98,7 +98,7 @@
 
         <activity
             android:name=".RenderActivity"
-            android:process=":render"
+            android:process=":render_activity"
             android:exported="false"
             android:launchMode="singleTask"
             android:configChanges="orientation|screenSize">
@@ -107,6 +107,12 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".RenderActivityWatchdogService"
+            android:process=":render_activity"
+            android:exported="false"
+        />
 
         <activity
             android:name=".ClojureAppDesignActivity"
