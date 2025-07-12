@@ -46,10 +46,6 @@ import android.widget.Toast;
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "ClojureREPL";
     private static final String PREFS_NAME = "ClojureReplPrefs";
-    private static final String KEY_SAVED_CODE = "saved_code";
-    private static final String KEY_SAVED_TIMINGS = "saved_timings";
-    private static final String TIMING_RUN_SEPARATOR = "###RUN###";
-    private static final String TIMING_LINE_SEPARATOR = "\n";
 
     // These intents are for sending base64-encoded code to MainActivity (from
     // a command-line script). The related RenderActivity.EXTRA_CODE is for
@@ -124,8 +120,8 @@ public class MainActivity extends AppCompatActivity {
 
             // Only handle intent if it's not the initial launch
             Intent intent = getIntent();
-            if (intent != null && intent.hasExtra("code")) {
-                handleIntent(intent);
+            if (intent != null && intent.hasExtra(EXTRA_CODE)) {
+                handleIncomingCode(intent);
             }
         } catch (Exception e) {
             Log.e(TAG, "Error initializing Clojure", e);
@@ -220,25 +216,6 @@ public class MainActivity extends AppCompatActivity {
                     0,
                     false); // do not collect screenshots
 
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == 1001 && resultCode == RESULT_OK && data != null) {
-            String timings = data.getStringExtra(RenderActivity.EXTRA_RESULT_TIMINGS);
-            if (timings != null && currentProgram != null) {
-                runCount++;
-                currentProgram.addTimingRun(timings);
-                updateTimingsTable(timings);
-                saveState();
-
-                // Update stats to show current cache info after compilation
-                String code = currentProgram.getCode();
-                int lineCount = code.split("\n").length;
-                updateStats("Compilation complete", lineCount, null);
-            }
-        }
     }
 
     private void updateTimingsTable(String timingsData) {
@@ -340,7 +317,28 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        handleIntent(intent);
+
+        if (intent.hasExtra(RenderActivity.EXTRA_RESULT_SUCCESS)) {
+            boolean success = intent.getBooleanExtra(RenderActivity.EXTRA_RESULT_SUCCESS, false);
+            Log.d(TAG, "Result code execution: " + (success ? "success" : "failure"));
+
+            String timings = intent.getStringExtra(RenderActivity.EXTRA_RESULT_TIMINGS);
+            if (timings != null && currentProgram != null) {
+                runCount++;
+                currentProgram.addTimingRun(timings);
+                updateTimingsTable(timings);
+                saveState();
+
+                // Update stats to show current cache info after compilation
+                String code = currentProgram.getCode();
+                int lineCount = code.split("\n").length;
+                updateStats("Compilation complete", lineCount, null);
+            }
+        }
+
+        if (intent.hasExtra(EXTRA_CODE)) {
+            handleIncomingCode(intent);
+        }
     }
 
     private void clearTimingsTable() {
@@ -372,8 +370,9 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void handleIntent(Intent intent) {
+    private void handleIncomingCode(Intent intent) {
         if (intent != null) {
+
             String encodedCode = intent.getStringExtra(EXTRA_CODE);
             String encoding = intent.getStringExtra(EXTRA_ENCODING);
             String description = intent.getStringExtra(EXTRA_DESCRIPTION);
