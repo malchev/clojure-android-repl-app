@@ -1,7 +1,10 @@
 package com.example.clojurerepl;
 
+import android.content.ComponentName;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -87,6 +90,27 @@ public class MainActivity extends AppCompatActivity {
         super.attachBaseContext(base);
         MultiDex.install(this);
     }
+
+    private ServiceConnection remoteConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            // empty
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            Log.e(TAG, "RenderActivity exited.");
+            logcatMonitor.stopMonitoring();
+            logcatOutput = logcatMonitor.getCollectedLogs();
+            logcatMonitor.shutdown();
+            Log.d(TAG, "Received process logcat of length: " + logcatOutput.length());
+
+            // Auto-show logcat when there's content
+            if (!logcatOutput.isEmpty() && !isLogcatVisible) {
+                toggleLogcatVisibility();
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -232,7 +256,7 @@ public class MainActivity extends AppCompatActivity {
         saveState();
 
         int pid = RenderActivity.launch(
-                this, MainActivity.class,
+                this, MainActivity.class, remoteConnection,
                 code,
                 UUID.randomUUID().toString(),
                 0,
@@ -345,16 +369,6 @@ public class MainActivity extends AppCompatActivity {
         if (intent.hasExtra(RenderActivity.EXTRA_RESULT_SUCCESS)) {
             boolean success = intent.getBooleanExtra(RenderActivity.EXTRA_RESULT_SUCCESS, false);
             Log.d(TAG, "Result code execution: " + (success ? "success" : "failure"));
-
-            logcatMonitor.stopMonitoring();
-            logcatOutput = logcatMonitor.getCollectedLogs();
-            logcatMonitor.shutdown();
-            Log.d(TAG, "Received process logcat of length: " + logcatOutput.length());
-
-            // Auto-show logcat when there's content
-            if (!logcatOutput.isEmpty() && !isLogcatVisible) {
-                toggleLogcatVisibility();
-            }
 
             String timings = intent.getStringExtra(RenderActivity.EXTRA_RESULT_TIMINGS);
             if (timings != null && currentProgram != null) {

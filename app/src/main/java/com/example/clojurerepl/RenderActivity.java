@@ -10,6 +10,7 @@ import clojure.lang.Var;
 import clojure.lang.DynamicClassLoader;
 import android.util.Log;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import clojure.lang.Symbol;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -234,7 +235,8 @@ public class RenderActivity extends AppCompatActivity {
     /**
      * Launches RenderActivity and gets its PID
      */
-    public static int launch(Context context, Class<?> launchingActivity, String code, String sessionId, int iteration, boolean enableScreenshots) {
+    public static int launch(Context context, Class<?> launchingActivity, ServiceConnection remoteConnection,
+            String code, String sessionId, int iteration, boolean enableScreenshots) {
         try {
             // Create a temporary file to store the PID
             File pidFile = new File(context.getCacheDir(), "render_pid_" + sessionId + "_" + iteration + ".tmp");
@@ -253,6 +255,9 @@ public class RenderActivity extends AppCompatActivity {
             launchIntent.putExtra(RenderActivity.EXTRA_LAUNCHING_ACTIVITY, launchingActivity.getName());
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); // Ensure new process
             context.startActivity(launchIntent);
+
+            Intent serviceIntent = new Intent(context, RenderActivityWatchdogService.class);
+            context.bindService(serviceIntent, remoteConnection, Context.BIND_AUTO_CREATE);
 
             // Wait for the PID file to be created with timeout
             long startTime = System.currentTimeMillis();
