@@ -306,6 +306,37 @@ public class RenderActivity extends AppCompatActivity {
             super.onCreate(savedInstanceState);
             setContentView(R.layout.activity_render);
 
+            // If the activity crashes (typically with an AndroidRuntime
+            // exception), catch it here in the  main thread and send an intent
+            // to the parent activity that execution failed.  Normally result
+            // is communicated via onNewIntent().
+            Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+                Log.e(TAG, "RenderActivity crashed", throwable);
+
+                // Set flag to kill process on destroy
+                shouldKillOnDestroy = true;
+
+                if (parentActivity != null) {
+                    Class<?> parentActivityClass = getParentActivityClass();
+                    if (parentActivityClass != null) {
+                        Intent intent = new Intent(this, parentActivityClass);
+                        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                        intent.putExtra(RenderActivity.EXTRA_RESULT_SUCCESS, false);
+                        startActivity(intent);
+                    }
+                    else {
+                        Log.i(TAG, "Could not get class for " + parentActivity);
+                    }
+                }
+                else {
+                    Log.i(TAG, "ParentActivity is null");
+                }
+
+                Log.d(TAG, "Killing render process: " + android.os.Process.myPid());
+                // Since onDestroy will not be invoked, kill the process
+                android.os.Process.killProcess(android.os.Process.myPid());
+            });
+
             activityStartTime = System.currentTimeMillis();
             int pid = android.os.Process.myPid();
             Log.d(TAG, "RenderActivity onCreate started in process: " + pid);
