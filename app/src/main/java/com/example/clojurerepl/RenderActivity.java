@@ -1,6 +1,10 @@
 package com.example.clojurerepl;
 
+import android.content.ComponentName;
+import android.content.Intent;
+import android.content.ServiceConnection;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.widget.LinearLayout;
 import androidx.appcompat.app.AppCompatActivity;
 import clojure.java.api.Clojure;
@@ -9,8 +13,6 @@ import clojure.lang.RT;
 import clojure.lang.Var;
 import clojure.lang.DynamicClassLoader;
 import android.util.Log;
-import android.content.Intent;
-import android.content.ServiceConnection;
 import clojure.lang.Symbol;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -235,7 +237,12 @@ public class RenderActivity extends AppCompatActivity {
     /**
      * Launches RenderActivity and gets its PID
      */
-    public static int launch(Context context, Class<?> launchingActivity, ServiceConnection remoteConnection,
+
+    public interface ExitCallback {
+        public void onExit(String logcat);
+    };
+    public static boolean launch(Context context, Class<?> launchingActivity,
+            ExitCallback cb,
             String code, String sessionId, int iteration, boolean enableScreenshots) {
         try {
             // Create a temporary file to store the PID
@@ -245,6 +252,26 @@ public class RenderActivity extends AppCompatActivity {
             if (pidFile.exists()) {
                 pidFile.delete();
             }
+
+            LogcatMonitor logcatMonitor = new LogcatMonitor();
+
+            ServiceConnection remoteConnection = new ServiceConnection() {
+                @Override
+                public void onServiceConnected(ComponentName name, IBinder service) {
+                    // empty
+                }
+
+                @Override
+                public void onServiceDisconnected(ComponentName name) {
+                    Log.e(TAG, "RenderActivity exited.");
+                    logcatMonitor.stopMonitoring();
+                    String logcatOutput = logcatMonitor.getCollectedLogs();
+                    logcatMonitor.shutdown();
+                    Log.d(TAG, "Received process logcat of length: " + logcatOutput.length());
+
+                    cb.onExit(logcatOutput);
+                }
+            };
 
             Intent launchIntent = new Intent(context, RenderActivity.class);
             launchIntent.putExtra(RenderActivity.EXTRA_CODE, code);
@@ -273,7 +300,7 @@ public class RenderActivity extends AppCompatActivity {
 
             if (!pidFile.exists()) {
                 Log.e(TAG, "PID file was not created within timeout");
-                return -1;
+                return false;
             }
 
             // Read the PID from the file
@@ -287,18 +314,20 @@ public class RenderActivity extends AppCompatActivity {
                     // Clean up the PID file
                     pidFile.delete();
 
-                    return pid;
+                    logcatMonitor.startMonitoring(pid);
+
+                    return true;
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Error reading PID from file", e);
-                return -1;
+                return false;
             }
 
             Log.e(TAG, "Could not read PID from file");
-            return -1;
+            return false;
         } catch (Exception e) {
             Log.e(TAG, "Error launching render activity and getting PID", e);
-            return -1;
+            return false;
         }
     }
 

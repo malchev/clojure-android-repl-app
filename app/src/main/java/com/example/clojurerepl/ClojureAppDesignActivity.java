@@ -1,13 +1,10 @@
 package com.example.clojurerepl;
 
 import android.app.AlertDialog;
-import android.content.ComponentName;
 import android.content.Intent;
-import android.content.ServiceConnection;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Bundle;
-import android.os.IBinder;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
@@ -92,9 +89,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     // Add session support
     private SessionManager sessionManager;
     private DesignSession currentSession;
-
-    // Add logcat monitoring for launched RenderActivity
-    private LogcatMonitor logcatMonitor;
 
     // Add a flag to track when the models are loaded
     private boolean modelsLoaded = false;
@@ -1366,34 +1360,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         }
     }
 
-    private ServiceConnection remoteConnection = new ServiceConnection() {
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
-            // empty
-        }
-
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
-            Log.e(TAG, "RenderActivity exited.");
-            logcatMonitor.stopMonitoring();
-            processLogcat = logcatMonitor.getCollectedLogs();
-            logcatMonitor.shutdown();
-            Log.d(TAG, "Received process logcat of length: " + processLogcat.length());
-
-            // Update the logcat output view if it exists
-            if (logcatOutput != null) {
-                logcatOutput.setText(processLogcat);
-            }
-
-            // Save logcat to session
-            if (currentSession != null && processLogcat != null && !processLogcat.isEmpty()) {
-                currentSession.setLastLogcat(processLogcat);
-                sessionManager.updateSession(currentSession);
-                Log.d(TAG, "Saved logcat to session");
-            }
-        }
-    };
-
     /**
      * Runs the current code without accepting it
      */
@@ -1419,14 +1385,28 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         }
 
         // Start the activity
-        int pid = RenderActivity.launch(this, ClojureAppDesignActivity.class, remoteConnection,
+        RenderActivity.launch(this, ClojureAppDesignActivity.class,
+                new RenderActivity.ExitCallback() {
+                    @Override
+                    public void onExit(String logcat) {
+                        // Update the logcat output view if it exists
+                        processLogcat = logcat;
+                        if (logcatOutput != null) {
+                            logcatOutput.setText(processLogcat);
+                        }
+
+                        // Save logcat to session
+                        if (currentSession != null && processLogcat != null && !processLogcat.isEmpty()) {
+                            currentSession.setLastLogcat(processLogcat);
+                            sessionManager.updateSession(currentSession);
+                            Log.d(TAG, "Saved logcat to session");
+                        }
+                    }
+                },
                 currentCode,
                 currentSession.getId().toString(),
                 currentSession.getIterationCount(),
                 true);
-        assert pid >= 0;
-        logcatMonitor = new LogcatMonitor();
-        logcatMonitor.startMonitoring(pid);
     }
 
     private void clearChatSession() {

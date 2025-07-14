@@ -1,10 +1,7 @@
 package com.example.clojurerepl;
 
-import android.content.ComponentName;
 import android.content.Intent;
-import android.content.ServiceConnection;
 import android.os.Bundle;
-import android.os.IBinder;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -77,7 +74,6 @@ public class MainActivity extends AppCompatActivity {
     private static final String KEY_CURRENT_PROGRAM = "current_program";
     private BytecodeCache bytecodeCache;
 
-    private LogcatMonitor logcatMonitor; // logcat goes to logcatOverlay
     private String logcatOutput; // extracted from logcatMonitor
     private Button showLogcatButton;
     private Button hideLogcatButton;
@@ -90,27 +86,6 @@ public class MainActivity extends AppCompatActivity {
         super.attachBaseContext(base);
         MultiDex.install(this);
     }
-
-    private ServiceConnection remoteConnection = new ServiceConnection() {
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
-            // empty
-        }
-
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
-            Log.e(TAG, "RenderActivity exited.");
-            logcatMonitor.stopMonitoring();
-            logcatOutput = logcatMonitor.getCollectedLogs();
-            logcatMonitor.shutdown();
-            Log.d(TAG, "Received process logcat of length: " + logcatOutput.length());
-
-            // Auto-show logcat when there's content
-            if (!logcatOutput.isEmpty() && !isLogcatVisible) {
-                toggleLogcatVisibility();
-            }
-        }
-    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -255,15 +230,22 @@ public class MainActivity extends AppCompatActivity {
         // Save current state before launching
         saveState();
 
-        int pid = RenderActivity.launch(
-                this, MainActivity.class, remoteConnection,
+        RenderActivity.launch(
+                this, MainActivity.class,
+                new RenderActivity.ExitCallback() {
+                    @Override
+                    public void onExit(String logcat) {
+                        // Auto-show logcat when there's content
+                         logcatOutput = logcat;
+                        if (!logcatOutput.isEmpty() && !isLogcatVisible) {
+                            toggleLogcatVisibility();
+                        }
+                    }
+                },
                 code,
                 UUID.randomUUID().toString(),
                 0,
                 false); // do not collect screenshots
-        assert pid >= 0;
-        logcatMonitor = new LogcatMonitor();
-        logcatMonitor.startMonitoring(pid);
     }
 
     private void updateTimingsTable(String timingsData) {
