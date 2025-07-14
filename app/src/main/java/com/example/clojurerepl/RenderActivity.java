@@ -256,7 +256,7 @@ public class RenderActivity extends AppCompatActivity {
                             logcatMonitor.stopMonitoring();
                             String logcatOutput = logcatMonitor.getCollectedLogs();
                             logcatMonitor.shutdown();
-                            /*
+
                             // pidReceiver is already unregistered here when the
                             // activity crashes rather than exits gracefully.
                             try {
@@ -264,7 +264,7 @@ public class RenderActivity extends AppCompatActivity {
                             } catch (java.lang.IllegalArgumentException e) {
                                 // ignore
                             }
-                            */
+
                             Log.d(TAG, "Received process logcat of length: " + logcatOutput.length());
                             cb.onExit(logcatOutput);
                         }
@@ -291,7 +291,6 @@ public class RenderActivity extends AppCompatActivity {
             launchIntent.putExtra(RenderActivity.EXTRA_ITERATION, iteration);
             launchIntent.putExtra(RenderActivity.EXTRA_ENABLE_SCREENSHOTS, enableScreenshots);
             launchIntent.putExtra(RenderActivity.EXTRA_LAUNCHING_ACTIVITY, launchingActivity.getName());
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); // Ensure new process
             context.startActivity(launchIntent);
         } catch (Exception e) {
             Log.e(TAG, "Error launching render activity and getting PID", e);

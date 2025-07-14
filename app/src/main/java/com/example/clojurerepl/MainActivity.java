@@ -1098,9 +1098,6 @@ public class MainActivity extends AppCompatActivity {
         intent.putExtra("description", description);
         intent.putExtra("from_main_activity", true);
 
-        // Add flags to ensure proper navigation
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-
         // Show toast to inform user
         Toast.makeText(this, "Sending code to AI for improvement", Toast.LENGTH_SHORT).show();
 
