@@ -1389,18 +1389,20 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 new RenderActivity.ExitCallback() {
                     @Override
                     public void onExit(String logcat) {
-                        // Update the logcat output view if it exists
-                        processLogcat = logcat;
-                        if (logcatOutput != null) {
-                            logcatOutput.setText(processLogcat);
-                        }
+                        runOnUiThread(() -> {
+                            // Update the logcat output view if it exists
+                            processLogcat = logcat;
+                            if (logcatOutput != null) {
+                                logcatOutput.setText(processLogcat);
+                            }
 
-                        // Save logcat to session
-                        if (currentSession != null && processLogcat != null && !processLogcat.isEmpty()) {
-                            currentSession.setLastLogcat(processLogcat);
-                            sessionManager.updateSession(currentSession);
-                            Log.d(TAG, "Saved logcat to session");
-                        }
+                            // Save logcat to session
+                            if (currentSession != null && processLogcat != null && !processLogcat.isEmpty()) {
+                                currentSession.setLastLogcat(processLogcat);
+                                sessionManager.updateSession(currentSession);
+                                Log.d(TAG, "Saved logcat to session");
+                            }
+                        });
                     }
                 },
                 currentCode,

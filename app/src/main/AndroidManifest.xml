@@ -111,6 +111,7 @@
         <service
             android:name=".RenderActivityWatchdogService"
             android:process=":render_activity"
+            android:isolatedProcess="false"
             android:exported="false"
         />
 

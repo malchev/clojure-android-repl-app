@@ -1,10 +1,13 @@
 package com.example.clojurerepl;
 
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.os.RemoteException;
 import android.widget.LinearLayout;
 import androidx.appcompat.app.AppCompatActivity;
 import clojure.java.api.Clojure;
@@ -100,15 +103,12 @@ public class RenderActivity extends AppCompatActivity {
     // Add this field to track the launching activity
     private String parentActivity;
 
-    private String pidFilePath;
-
     private Class<?> getParentActivityClass() {
         assert parentActivity != null;
         Log.d(TAG, "RenderActivity launched by: " + parentActivity);
         Class<?> parentActivityClass = null;
         try {
             parentActivityClass = Class.forName(parentActivity);
-            Log.d(TAG, "Sending results to: " + parentActivityClass.getSimpleName());
         } catch (ClassNotFoundException e) {
             Log.e(TAG, "Could not find parent activity class: " + parentActivity);
             assert false;
@@ -219,21 +219,6 @@ public class RenderActivity extends AppCompatActivity {
         return appCacheDir;
     }
 
-    private void sendBackSelfPid() {
-        assert pidFilePath != null;
-        try {
-            int pid = android.os.Process.myPid();
-            Log.d(TAG, "RenderActivity started in process: " + pid);
-            java.io.File pidFile = new java.io.File(pidFilePath);
-            try (java.io.FileWriter writer = new java.io.FileWriter(pidFile)) {
-                writer.write(String.valueOf(pid));
-            }
-            Log.d(TAG, "Wrote PID " + pid + " to file: " + pidFilePath);
-        } catch (Exception e) {
-            Log.e(TAG, "Error writing PID to file", e);
-        }
-    }
-
     /**
      * Launches RenderActivity and gets its PID
      */
@@ -241,103 +226,94 @@ public class RenderActivity extends AppCompatActivity {
     public interface ExitCallback {
         public void onExit(String logcat);
     };
+
     public static boolean launch(Context context, Class<?> launchingActivity,
             ExitCallback cb,
             String code, String sessionId, int iteration, boolean enableScreenshots) {
         try {
-            // Create a temporary file to store the PID
-            File pidFile = new File(context.getCacheDir(), "render_pid_" + sessionId + "_" + iteration + ".tmp");
-
-            // Clean up any existing PID file
-            if (pidFile.exists()) {
-                pidFile.delete();
-            }
-
             LogcatMonitor logcatMonitor = new LogcatMonitor();
 
+            BroadcastReceiver pidReceiver = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    int pid = intent.getIntExtra("pid", -1);
+                    Log.d(TAG, "Received PID from RenderActivity: " + pid + ", starting LogcatMonitor.");
+                    logcatMonitor.startMonitoring(pid);
+                }
+            };
+
+            context.registerReceiver(pidReceiver,
+                    new IntentFilter("com.example.clojurerepl.ACTION_REMOTE_PID"),
+                    Context.RECEIVER_NOT_EXPORTED);
+
             ServiceConnection remoteConnection = new ServiceConnection() {
+                IBinder.DeathRecipient deathRecipient;
                 @Override
                 public void onServiceConnected(ComponentName name, IBinder service) {
-                    // empty
+                    deathRecipient = new IBinder.DeathRecipient() {
+                        @Override
+                        public void binderDied() {
+                            logcatMonitor.stopMonitoring();
+                            String logcatOutput = logcatMonitor.getCollectedLogs();
+                            logcatMonitor.shutdown();
+                            /*
+                            // pidReceiver is already unregistered here when the
+                            // activity crashes rather than exits gracefully.
+                            try {
+                                context.unregisterReceiver(pidReceiver);
+                            } catch (java.lang.IllegalArgumentException e) {
+                                // ignore
+                            }
+                            */
+                            Log.d(TAG, "Received process logcat of length: " + logcatOutput.length());
+                            cb.onExit(logcatOutput);
+                        }
+                    };
+
+                    try {
+                        service.linkToDeath(deathRecipient, 0);
+                    } catch (RemoteException e) {
+                        Log.e(TAG, "ServiceConnection: failed to link to death.");
+                    }
                 }
 
                 @Override
                 public void onServiceDisconnected(ComponentName name) {
-                    Log.e(TAG, "RenderActivity exited.");
-                    logcatMonitor.stopMonitoring();
-                    String logcatOutput = logcatMonitor.getCollectedLogs();
-                    logcatMonitor.shutdown();
-                    Log.d(TAG, "Received process logcat of length: " + logcatOutput.length());
-
-                    cb.onExit(logcatOutput);
+                    // empty
                 }
             };
+            Intent serviceIntent = new Intent(context, RenderActivityWatchdogService.class);
+            context.bindService(serviceIntent, remoteConnection, Context.BIND_AUTO_CREATE);
 
             Intent launchIntent = new Intent(context, RenderActivity.class);
             launchIntent.putExtra(RenderActivity.EXTRA_CODE, code);
             launchIntent.putExtra(RenderActivity.EXTRA_SESSION_ID, sessionId);
             launchIntent.putExtra(RenderActivity.EXTRA_ITERATION, iteration);
-            launchIntent.putExtra(RenderActivity.EXTRA_PID_FILE, pidFile.getAbsolutePath());
             launchIntent.putExtra(RenderActivity.EXTRA_ENABLE_SCREENSHOTS, enableScreenshots);
             launchIntent.putExtra(RenderActivity.EXTRA_LAUNCHING_ACTIVITY, launchingActivity.getName());
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); // Ensure new process
             context.startActivity(launchIntent);
-
-            Intent serviceIntent = new Intent(context, RenderActivityWatchdogService.class);
-            context.bindService(serviceIntent, remoteConnection, Context.BIND_AUTO_CREATE);
-
-            // Wait for the PID file to be created with timeout
-            long startTime = System.currentTimeMillis();
-            long timeout = 5000; // 5 seconds timeout
-
-            Log.d(TAG, "Waiting for PID file: " + pidFile.getAbsolutePath());
-
-            while (!pidFile.exists() && (System.currentTimeMillis() - startTime) < timeout) {
-                Log.d(TAG, "PID file not found, waiting... (attempt " + ((System.currentTimeMillis() - startTime) / 100)
-                        + ")");
-                Thread.sleep(100);
-            }
-
-            if (!pidFile.exists()) {
-                Log.e(TAG, "PID file was not created within timeout");
-                return false;
-            }
-
-            // Read the PID from the file
-            try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                    new java.io.FileReader(pidFile))) {
-                String pidStr = reader.readLine();
-                if (pidStr != null) {
-                    int pid = Integer.parseInt(pidStr.trim());
-                    Log.d(TAG, "Read PID from file: " + pid);
-
-                    // Clean up the PID file
-                    pidFile.delete();
-
-                    logcatMonitor.startMonitoring(pid);
-
-                    return true;
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Error reading PID from file", e);
-                return false;
-            }
-
-            Log.e(TAG, "Could not read PID from file");
-            return false;
         } catch (Exception e) {
             Log.e(TAG, "Error launching render activity and getting PID", e);
             return false;
         }
+
+        return true;
     }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         try {
-            activityStartTime = System.currentTimeMillis();
-            Log.d(TAG, "RenderActivity onCreate started in process: " + android.os.Process.myPid());
             super.onCreate(savedInstanceState);
             setContentView(R.layout.activity_render);
+
+            activityStartTime = System.currentTimeMillis();
+            int pid = android.os.Process.myPid();
+            Log.d(TAG, "RenderActivity onCreate started in process: " + pid);
+            Intent pidIntent = new Intent("com.example.clojurerepl.ACTION_REMOTE_PID");
+            pidIntent.putExtra("pid", pid);
+            pidIntent.setPackage(getPackageName());
+            sendBroadcast(pidIntent);
 
             // Add timing view at the top
             timingView = new TextView(this);
@@ -363,7 +339,6 @@ public class RenderActivity extends AppCompatActivity {
                 // Determine the correct parent activity to return to
                 parentActivity = intent.getStringExtra(EXTRA_LAUNCHING_ACTIVITY);
                 assert parentActivity != null;
-                Log.d(TAG, "RenderActivity launched by: " + parentActivity);
                 Class<?> parentActivityClass = getParentActivityClass();
 
                 // Extract session ID and iteration count from intent
@@ -371,10 +346,6 @@ public class RenderActivity extends AppCompatActivity {
                 assert sessionId != null;
                 iteration = intent.getIntExtra(EXTRA_ITERATION, 0);
                 Log.d(TAG, "Session ID: " + sessionId + ", Iteration: " + iteration);
-
-                // Write PID to file
-                pidFilePath = intent.getStringExtra(EXTRA_PID_FILE);
-                assert pidFilePath != null && !pidFilePath.isEmpty();
 
                 // Extract screenshot flag from intent
                 screenshotsEnabled = intent.getBooleanExtra(EXTRA_ENABLE_SCREENSHOTS, false);
@@ -452,9 +423,6 @@ public class RenderActivity extends AppCompatActivity {
             // After your current touch listener setup, add:
             setupScreenshotForClickableViews(contentLayout);
             observeViewHierarchyChanges(contentLayout);
-
-            sendBackSelfPid();
-
         } catch (Throwable t) {
             Log.e(TAG, "Fatal error in RenderActivity onCreate", t);
             Toast.makeText(this, "Fatal error: " + t.getMessage(), Toast.LENGTH_LONG).show();

@@ -235,11 +235,13 @@ public class MainActivity extends AppCompatActivity {
                 new RenderActivity.ExitCallback() {
                     @Override
                     public void onExit(String logcat) {
-                        // Auto-show logcat when there's content
-                         logcatOutput = logcat;
-                        if (!logcatOutput.isEmpty() && !isLogcatVisible) {
-                            toggleLogcatVisibility();
-                        }
+                        runOnUiThread(() -> {
+                            // Auto-show logcat when there's content
+                            logcatOutput = logcat;
+                            if (!logcatOutput.isEmpty() && !isLogcatVisible) {
+                                toggleLogcatVisibility();
+                            }
+                        });
                     }
                 },
                 code,
