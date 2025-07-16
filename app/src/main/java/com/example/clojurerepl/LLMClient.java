@@ -29,6 +29,47 @@ public abstract class LLMClient {
     }
 
     /**
+     * Enum representing the different message roles in chat conversations
+     */
+    public enum MessageRole {
+        SYSTEM("system"),
+        USER("user"),
+        ASSISTANT("assistant"),
+        MODEL("model"),
+        DEVELOPER("developer");
+
+        private final String apiValue;
+
+        MessageRole(String apiValue) {
+            this.apiValue = apiValue;
+        }
+
+        /**
+         * Get the string value used by the API
+         * 
+         * @return The API string value
+         */
+        public String getApiValue() {
+            return apiValue;
+        }
+
+        /**
+         * Get the MessageRole enum from an API string value
+         * 
+         * @param apiValue The API string value
+         * @return The corresponding MessageRole enum, or null if not found
+         */
+        public static MessageRole fromApiValue(String apiValue) {
+            for (MessageRole role : values()) {
+                if (role.apiValue.equals(apiValue)) {
+                    return role;
+                }
+            }
+            return null;
+        }
+    }
+
+    /**
      * Gets the LLM type for this client
      * 
      * @return The LLMType enum value
@@ -169,19 +210,19 @@ public abstract class LLMClient {
 
     // Message class for chat history (supports both text and images)
     public static class Message {
-        public final String role;
+        public final MessageRole role;
         public final String content;
         public final File imageFile;
         public final String mimeType;
 
-        public Message(String role, String content) {
+        public Message(MessageRole role, String content) {
             this.role = role;
             this.content = content;
             this.imageFile = null;
             this.mimeType = null;
         }
 
-        public Message(String role, String content, File imageFile, String mimeType) {
+        public Message(MessageRole role, String content, File imageFile, String mimeType) {
             this.role = role;
             this.content = content;
             this.imageFile = imageFile;

@@ -82,13 +82,13 @@ public class ClaudeLLMClient extends LLMClient {
         @Override
         public void queueSystemPrompt(String content) {
             Log.d(TAG, "Queuing system prompt in session: " + sessionId);
-            messages.add(new Message("system", content));
+            messages.add(new Message(MessageRole.SYSTEM, content));
         }
 
         @Override
         public void queueUserMessage(String content) {
             Log.d(TAG, "Queuing user message in session: " + sessionId);
-            messages.add(new Message("user", content));
+            messages.add(new Message(MessageRole.USER, content));
         }
 
         @Override
@@ -99,7 +99,7 @@ public class ClaudeLLMClient extends LLMClient {
             String mimeType = determineMimeType(imageFile);
 
             // Create message with image
-            Message message = new Message("user", content, imageFile, mimeType);
+            Message message = new Message(MessageRole.USER, content, imageFile, mimeType);
             messages.add(message);
 
             Log.d(TAG, "Added message with image, MIME type: " + mimeType);
@@ -108,7 +108,7 @@ public class ClaudeLLMClient extends LLMClient {
         @Override
         public void queueAssistantResponse(String content) {
             Log.d(TAG, "Queuing assistant response in session: " + sessionId);
-            messages.add(new Message("assistant", content));
+            messages.add(new Message(MessageRole.ASSISTANT, content));
         }
 
         @Override
@@ -118,7 +118,18 @@ public class ClaudeLLMClient extends LLMClient {
             // Log message types and short previews for debugging
             for (Message msg : messages) {
                 String preview = msg.content.length() > 50 ? msg.content.substring(0, 50) + "..." : msg.content;
-                Log.d(TAG, "DEBUG: Message type: " + msg.role + ", content: " + preview);
+                // Use the same role mapping as the API call for consistent logging
+                String claudeRole;
+                if (MessageRole.SYSTEM.equals(msg.role)) {
+                    claudeRole = "system";
+                } else if (MessageRole.USER.equals(msg.role)) {
+                    claudeRole = "user";
+                } else if (MessageRole.ASSISTANT.equals(msg.role)) {
+                    claudeRole = "assistant";
+                } else {
+                    claudeRole = msg.role.getApiValue();
+                }
+                Log.d(TAG, "DEBUG: Message type: " + claudeRole + ", content: " + preview);
             }
 
             return CompletableFuture.supplyAsync(() -> {
@@ -283,11 +294,11 @@ public class ClaudeLLMClient extends LLMClient {
         List<Message> messages = ((ClaudeChatSession) session).getMessages();
         int systemCount = 0, userCount = 0, assistantCount = 0;
         for (Message msg : messages) {
-            if ("system".equals(msg.role))
+            if (MessageRole.SYSTEM.equals(msg.role))
                 systemCount++;
-            else if ("user".equals(msg.role))
+            else if (MessageRole.USER.equals(msg.role))
                 userCount++;
-            else if ("assistant".equals(msg.role))
+            else if (MessageRole.ASSISTANT.equals(msg.role))
                 assistantCount++;
         }
         Log.d(TAG, "Current conversation has " + systemCount + " system, " +
@@ -308,8 +319,19 @@ public class ClaudeLLMClient extends LLMClient {
         StringBuilder recentMessages = new StringBuilder("Recent messages in session:\n");
         for (int i = startIdx; i < messages.size(); i++) {
             Message msg = messages.get(i);
+            // Use the same role mapping as the API call for consistent logging
+            String claudeRole;
+            if (MessageRole.SYSTEM.equals(msg.role)) {
+                claudeRole = "system";
+            } else if (MessageRole.USER.equals(msg.role)) {
+                claudeRole = "user";
+            } else if (MessageRole.ASSISTANT.equals(msg.role)) {
+                claudeRole = "assistant";
+            } else {
+                claudeRole = msg.role.getApiValue();
+            }
             recentMessages.append(i).append(": ")
-                    .append(msg.role)
+                    .append(claudeRole)
                     .append(" - ")
                     .append(msg.content.length() > 50 ? msg.content.substring(0, 50) + "..." : msg.content)
                     .append("\n");
@@ -350,8 +372,19 @@ public class ClaudeLLMClient extends LLMClient {
             historyLog.append("Message history summary:\n");
             for (int i = 0; i < history.size(); i++) {
                 Message msg = history.get(i);
+                // Use the same role mapping as the API call for consistent logging
+                String claudeRole;
+                if (MessageRole.SYSTEM.equals(msg.role)) {
+                    claudeRole = "system";
+                } else if (MessageRole.USER.equals(msg.role)) {
+                    claudeRole = "user";
+                } else if (MessageRole.ASSISTANT.equals(msg.role)) {
+                    claudeRole = "assistant";
+                } else {
+                    claudeRole = msg.role.getApiValue();
+                }
                 historyLog.append(i).append(": ")
-                        .append(msg.role)
+                        .append(claudeRole)
                         .append(" - ")
                         .append(msg.content.length() > 30 ? msg.content.substring(0, 30) + "..." : msg.content)
                         .append("\n");
@@ -397,7 +430,7 @@ public class ClaudeLLMClient extends LLMClient {
 
             // Extract system message and collect non-system messages
             for (Message msg : history) {
-                if ("system".equals(msg.role)) {
+                if (MessageRole.SYSTEM.equals(msg.role)) {
                     // Use the first system message if one hasn't been set yet
                     if (systemPrompt == null) {
                         systemPrompt = msg.content;
@@ -420,7 +453,18 @@ public class ClaudeLLMClient extends LLMClient {
             // Add user/assistant messages from our filtered list
             for (Message msg : nonSystemMessages) {
                 JSONObject messageObj = new JSONObject();
-                messageObj.put("role", msg.role);
+                // Claude API expects "user" and "assistant" roles
+                String claudeRole;
+                if (MessageRole.USER.equals(msg.role)) {
+                    claudeRole = "user";
+                } else if (MessageRole.ASSISTANT.equals(msg.role)) {
+                    claudeRole = "assistant";
+                } else {
+                    // Fallback for any other roles
+                    claudeRole = msg.role.getApiValue();
+                    Log.w(TAG, "Unknown role for Claude API: " + msg.role + ", using: " + claudeRole);
+                }
+                messageObj.put("role", claudeRole);
 
                 // For Claude API, we need to handle both text and image content
                 if (msg.hasImage()) {

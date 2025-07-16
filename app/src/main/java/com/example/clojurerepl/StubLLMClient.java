@@ -31,26 +31,26 @@ public class StubLLMClient extends LLMClient {
         @Override
         public void queueSystemPrompt(String content) {
             Log.d(TAG, "Queuing system prompt in stub session: " + sessionId);
-            messages.add(new Message("system", content));
+            messages.add(new Message(MessageRole.SYSTEM, content));
         }
 
         @Override
         public void queueUserMessage(String content) {
             Log.d(TAG, "Queuing user message in stub session: " + sessionId);
-            messages.add(new Message("user", content));
+            messages.add(new Message(MessageRole.USER, content));
         }
 
         @Override
         public void queueUserMessageWithImage(String content, File imageFile) {
             Log.d(TAG, "Queuing user message with image in stub session: " + sessionId);
             // For stub client, just queue as regular message (ignore image)
-            messages.add(new Message("user", content));
+            messages.add(new Message(MessageRole.USER, content));
         }
 
         @Override
         public void queueAssistantResponse(String content) {
             Log.d(TAG, "Queuing assistant response in stub session: " + sessionId);
-            messages.add(new Message("assistant", content));
+            messages.add(new Message(MessageRole.ASSISTANT, content));
         }
 
         @Override
@@ -61,7 +61,7 @@ public class StubLLMClient extends LLMClient {
                 // Find the latest user message
                 String userMessage = "";
                 for (int i = messages.size() - 1; i >= 0; i--) {
-                    if ("user".equals(messages.get(i).role)) {
+                    if (MessageRole.USER.equals(messages.get(i).role)) {
                         userMessage = messages.get(i).content;
                         break;
                     }

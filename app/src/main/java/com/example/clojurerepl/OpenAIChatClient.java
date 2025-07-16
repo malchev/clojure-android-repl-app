@@ -185,11 +185,11 @@ public class OpenAIChatClient extends LLMClient {
                     "gpt-4-vision-preview"
             };
             String model = OpenAIChatClient.this.modelName;
-            String role = "developer";
+            MessageRole role = MessageRole.DEVELOPER;
             if (model != null) {
                 for (String oldModel : oldModels) {
                     if (model.startsWith(oldModel)) {
-                        role = "system";
+                        role = MessageRole.SYSTEM;
                         break;
                     }
                 }
@@ -200,20 +200,20 @@ public class OpenAIChatClient extends LLMClient {
         @Override
         public void queueUserMessage(String content) {
             Log.d(TAG, "Queuing user message in session: " + sessionId);
-            messages.add(new Message("user", content));
+            messages.add(new Message(MessageRole.USER, content));
         }
 
         @Override
         public void queueUserMessageWithImage(String content, File imageFile) {
             Log.d(TAG, "Queuing user message with image in session: " + sessionId);
             // For OpenAI client, just queue as regular message (ignore image for now)
-            messages.add(new Message("user", content));
+            messages.add(new Message(MessageRole.USER, content));
         }
 
         @Override
         public void queueAssistantResponse(String content) {
             Log.d(TAG, "Queuing assistant response in session: " + sessionId);
-            messages.add(new Message("assistant", content));
+            messages.add(new Message(MessageRole.ASSISTANT, content));
         }
 
         @Override
@@ -221,7 +221,20 @@ public class OpenAIChatClient extends LLMClient {
             Log.d(TAG, "Sending " + messages.size() + " messages in session: " + sessionId);
             // Print the message types and the first 50 characters of the content
             for (Message msg : messages) {
-                Log.d(TAG, "Message type: " + msg.role + ", content: " + msg.content.substring(0, 50));
+                // Use the same role mapping as the API call for consistent logging
+                String openaiRole;
+                if (MessageRole.SYSTEM.equals(msg.role)) {
+                    openaiRole = "system";
+                } else if (MessageRole.USER.equals(msg.role)) {
+                    openaiRole = "user";
+                } else if (MessageRole.ASSISTANT.equals(msg.role)) {
+                    openaiRole = "assistant";
+                } else if (MessageRole.DEVELOPER.equals(msg.role)) {
+                    openaiRole = "developer";
+                } else {
+                    openaiRole = msg.role.getApiValue();
+                }
+                Log.d(TAG, "Message type: " + openaiRole + ", content: " + msg.content.substring(0, 50));
             }
 
             return CompletableFuture.supplyAsync(() -> {
@@ -339,7 +352,22 @@ public class OpenAIChatClient extends LLMClient {
             JSONArray messagesArray = new JSONArray();
             for (Message msg : messages) {
                 JSONObject msgObj = new JSONObject();
-                msgObj.put("role", msg.role);
+                // OpenAI API expects "system", "user", "assistant", and "developer" roles
+                String openaiRole;
+                if (MessageRole.SYSTEM.equals(msg.role)) {
+                    openaiRole = "system";
+                } else if (MessageRole.USER.equals(msg.role)) {
+                    openaiRole = "user";
+                } else if (MessageRole.ASSISTANT.equals(msg.role)) {
+                    openaiRole = "assistant";
+                } else if (MessageRole.DEVELOPER.equals(msg.role)) {
+                    openaiRole = "developer";
+                } else {
+                    // Fallback for any other roles
+                    openaiRole = msg.role.getApiValue();
+                    Log.w(TAG, "Unknown role for OpenAI API: " + msg.role + ", using: " + openaiRole);
+                }
+                msgObj.put("role", openaiRole);
                 msgObj.put("content", msg.content);
                 messagesArray.put(msgObj);
             }

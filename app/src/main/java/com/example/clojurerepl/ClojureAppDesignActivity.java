@@ -473,15 +473,15 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             Log.d(TAG, "Restoring " + savedMessages.size() + " messages to chat session");
 
             for (LLMClient.Message message : savedMessages) {
-                if ("system".equals(message.role)) {
+                if (LLMClient.MessageRole.SYSTEM.equals(message.role)) {
                     chatSession.queueSystemPrompt(message.content);
-                } else if ("user".equals(message.role)) {
+                } else if (LLMClient.MessageRole.USER.equals(message.role)) {
                     if (message.hasImage()) {
                         chatSession.queueUserMessageWithImage(message.content, message.imageFile);
                     } else {
                         chatSession.queueUserMessage(message.content);
                     }
-                } else if ("assistant".equals(message.role)) {
+                } else if (LLMClient.MessageRole.ASSISTANT.equals(message.role)) {
                     chatSession.queueAssistantResponse(message.content);
                 }
             }
@@ -1241,19 +1241,17 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         Log.e(TAG, "Error fetching models", e);
                         return new ArrayList<String>();
                     }
-                }).thenAccept(models -> {
-                    runOnUiThread(() -> {
-                        progressDialog.dismiss();
+                }).thenAccept(models -> runOnUiThread(() -> {
+                    progressDialog.dismiss();
 
-                        if (models.isEmpty()) {
-                            Toast.makeText(this, "Failed to fetch models. Using fallback models.", Toast.LENGTH_SHORT)
-                                    .show();
-                        }
+                    if (models.isEmpty()) {
+                        Toast.makeText(this, "Failed to fetch models. Using fallback models.", Toast.LENGTH_SHORT)
+                                .show();
+                    }
 
-                        // Update model spinner with fetched models
-                        updateLlmSpinner(type);
-                    });
-                }).exceptionally(e -> {
+                    // Update model spinner with fetched models
+                    updateLlmSpinner(type);
+                })).exceptionally(e -> {
                     Log.e(TAG, "Error in model fetching", e);
                     runOnUiThread(() -> {
                         progressDialog.dismiss();

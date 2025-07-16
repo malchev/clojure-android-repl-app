@@ -293,7 +293,7 @@ public class DesignSession {
         JSONArray messagesJson = new JSONArray();
         for (LLMClient.Message message : chatHistory) {
             JSONObject messageJson = new JSONObject();
-            messageJson.put("role", message.role);
+            messageJson.put("role", message.role.getApiValue());
             messageJson.put("content", message.content);
 
             // Add image file path and MIME type if the message has an image
@@ -379,8 +379,15 @@ public class DesignSession {
             JSONArray messagesJson = json.getJSONArray("chatHistory");
             for (int i = 0; i < messagesJson.length(); i++) {
                 JSONObject messageJson = messagesJson.getJSONObject(i);
-                String role = messageJson.getString("role");
+                String roleString = messageJson.getString("role");
                 String content = messageJson.getString("content");
+
+                // Convert string role to enum
+                LLMClient.MessageRole role = LLMClient.MessageRole.fromApiValue(roleString);
+                if (role == null) {
+                    Log.w(TAG, "Unknown role in session: " + roleString + ", defaulting to USER");
+                    role = LLMClient.MessageRole.USER;
+                }
 
                 // Check if the message has an image
                 if (messageJson.has("imageFile") && messageJson.has("mimeType")) {

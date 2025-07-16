@@ -488,13 +488,13 @@ public class GeminiLLMClient extends LLMClient {
                     + " characters");
             // Save the system prompt in the message history so that it gets
             // saved and restored with the DesignSession object.
-            messageHistory.add(new Message("system", content));
+            messageHistory.add(new Message(MessageRole.SYSTEM, content));
         }
 
         @Override
         public void queueUserMessage(String content) {
             Log.d(TAG, "Queuing user message in session: " + sessionId);
-            messageHistory.add(new Message("user", content));
+            messageHistory.add(new Message(MessageRole.USER, content));
         }
 
         @Override
@@ -505,7 +505,7 @@ public class GeminiLLMClient extends LLMClient {
             String mimeType = determineMimeType(imageFile);
 
             // Create message with image
-            Message message = new Message("user", content, imageFile, mimeType);
+            Message message = new Message(MessageRole.USER, content, imageFile, mimeType);
             messageHistory.add(message);
 
             Log.d(TAG, "Added message with image, MIME type: " + mimeType);
@@ -514,7 +514,7 @@ public class GeminiLLMClient extends LLMClient {
         @Override
         public void queueAssistantResponse(String content) {
             Log.d(TAG, "Queuing assistant response in session: " + sessionId);
-            messageHistory.add(new Message("model", content));
+            messageHistory.add(new Message(MessageRole.MODEL, content));
         }
 
         @Override
@@ -786,8 +786,19 @@ public class GeminiLLMClient extends LLMClient {
                 Message msg = managedHistory.get(i);
                 String contentPreview = msg.content.length() > 100 ? msg.content.substring(0, 100) + "..."
                         : msg.content;
+                // Use the same role mapping as the API call for consistent logging
+                String geminiRole;
+                if (MessageRole.SYSTEM.equals(msg.role)) {
+                    geminiRole = "system";
+                } else if (MessageRole.USER.equals(msg.role)) {
+                    geminiRole = "user";
+                } else if (MessageRole.MODEL.equals(msg.role)) {
+                    geminiRole = "model";
+                } else {
+                    geminiRole = msg.role.getApiValue();
+                }
                 Log.d(TAG, String.format("Message %d - Role: %s\nContent:\n%s\nImage: %s (MIME: %s)",
-                        i, msg.role, contentPreview,
+                        i, geminiRole, contentPreview,
                         msg.hasImage() ? msg.imageFile.getPath() : "none", msg.mimeType));
             }
 
@@ -828,8 +839,19 @@ public class GeminiLLMClient extends LLMClient {
                 JSONObject messageObj = new JSONObject();
                 // Skip the "system" message since it gets included with the
                 // systemInstruction parameter above.
-                if (message.role.equals("system") == false) {
-                    messageObj.put("role", message.role);
+                if (!MessageRole.SYSTEM.equals(message.role)) {
+                    // Gemini API expects "user" and "model" roles
+                    String geminiRole;
+                    if (MessageRole.USER.equals(message.role)) {
+                        geminiRole = "user";
+                    } else if (MessageRole.MODEL.equals(message.role)) {
+                        geminiRole = "model";
+                    } else {
+                        // Fallback for any other roles
+                        geminiRole = message.role.getApiValue();
+                        Log.w(TAG, "Unknown role for Gemini API: " + message.role + ", using: " + geminiRole);
+                    }
+                    messageObj.put("role", geminiRole);
 
                     JSONArray parts = new JSONArray();
 
