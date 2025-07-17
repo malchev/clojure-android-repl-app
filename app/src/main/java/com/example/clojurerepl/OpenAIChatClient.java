@@ -51,6 +51,38 @@ public class OpenAIChatClient extends LLMClient {
     }
 
     /**
+     * Determines the correct API role for system messages based on the current
+     * model.
+     * Older models use "system" role, newer models use "developer" role.
+     * 
+     * @return "system" for older models, "developer" for newer models
+     */
+    private String getSystemRoleForModel() {
+        // List of old models that require 'system' role
+        String[] oldModels = {
+                "gpt-3.5-turbo",
+                "gpt-3.5-turbo-16k",
+                "gpt-4",
+                "gpt-4-32k",
+                "gpt-4-turbo",
+                "gpt-4-0125-preview",
+                "gpt-4-1106-preview",
+                "gpt-4-vision-preview"
+        };
+
+        if (modelName != null) {
+            for (String oldModel : oldModels) {
+                if (modelName.startsWith(oldModel)) {
+                    return "system";
+                }
+            }
+        }
+
+        // Default to "developer" for newer models
+        return "developer";
+    }
+
+    /**
      * Fetches available OpenAI models from the API with caching
      */
     public static List<String> fetchAvailableModels(Context context) {
@@ -173,28 +205,8 @@ public class OpenAIChatClient extends LLMClient {
         @Override
         public void queueSystemPrompt(String content) {
             Log.d(TAG, "Queuing system prompt in session: " + sessionId);
-            // List of old models that require 'system' role
-            String[] oldModels = {
-                    "gpt-3.5-turbo",
-                    "gpt-3.5-turbo-16k",
-                    "gpt-4",
-                    "gpt-4-32k",
-                    "gpt-4-turbo",
-                    "gpt-4-0125-preview",
-                    "gpt-4-1106-preview",
-                    "gpt-4-vision-preview"
-            };
-            String model = OpenAIChatClient.this.modelName;
-            MessageRole role = MessageRole.DEVELOPER;
-            if (model != null) {
-                for (String oldModel : oldModels) {
-                    if (model.startsWith(oldModel)) {
-                        role = MessageRole.SYSTEM;
-                        break;
-                    }
-                }
-            }
-            messages.add(new Message(role, content));
+            // Always queue system prompts with SYSTEM role
+            messages.add(new Message(MessageRole.SYSTEM, content));
         }
 
         @Override
@@ -224,7 +236,7 @@ public class OpenAIChatClient extends LLMClient {
                 // Use the same role mapping as the API call for consistent logging
                 String openaiRole;
                 if (MessageRole.SYSTEM.equals(msg.role)) {
-                    openaiRole = "system";
+                    openaiRole = getSystemRoleForModel();
                 } else if (MessageRole.USER.equals(msg.role)) {
                     openaiRole = "user";
                 } else if (MessageRole.ASSISTANT.equals(msg.role)) {
@@ -234,7 +246,7 @@ public class OpenAIChatClient extends LLMClient {
                 } else {
                     openaiRole = msg.role.getApiValue();
                 }
-                Log.d(TAG, "Message type: " + openaiRole + ", content: " + msg.content.substring(0, 50));
+                Log.d(TAG, "Message type: " + openaiRole + ", content: " + msg.content);
             }
 
             return CompletableFuture.supplyAsync(() -> {
@@ -355,7 +367,8 @@ public class OpenAIChatClient extends LLMClient {
                 // OpenAI API expects "system", "user", "assistant", and "developer" roles
                 String openaiRole;
                 if (MessageRole.SYSTEM.equals(msg.role)) {
-                    openaiRole = "system";
+                    // For SYSTEM messages, determine the correct API role based on model
+                    openaiRole = getSystemRoleForModel();
                 } else if (MessageRole.USER.equals(msg.role)) {
                     openaiRole = "user";
                 } else if (MessageRole.ASSISTANT.equals(msg.role)) {

@@ -118,12 +118,12 @@ public abstract class LLMClient {
                 ", initial code provided: " + (initialCode != null && !initialCode.isEmpty()));
 
         if (initialCode != null && !initialCode.isEmpty()) {
-            return "Implement the following app:\n" + description +
+            return "Implement the following app: " + description +
                     "\n\nUse the following code as a starting point. Improve and expand upon it to meet all requirements:\n```clojure\n"
                     +
                     initialCode + "\n```";
         } else {
-            return "Implement the following app:\n" + description;
+            return "Implement the following app: " + description;
         }
     }
 
