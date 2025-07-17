@@ -2,7 +2,6 @@ package com.example.clojurerepl;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.os.Environment;
 import android.util.Log;
 
 import java.io.File;

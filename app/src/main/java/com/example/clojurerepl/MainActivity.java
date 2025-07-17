@@ -12,16 +12,9 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.multidex.MultiDex;
 import android.util.Log;
 import android.util.Base64;
-import java.lang.reflect.Field;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import dalvik.system.DexFile;
-import dalvik.system.BaseDexClassLoader;
 import java.io.File;
 import android.content.Context;
-import java.nio.charset.StandardCharsets;
 import android.graphics.Typeface;
-import android.view.Gravity;
 import android.graphics.Color;
 import android.text.SpannableString;
 import android.text.style.StyleSpan;
@@ -31,7 +24,6 @@ import android.content.SharedPreferences;
 import android.view.ViewParent;
 import java.util.List;
 import java.util.ArrayList;
-import java.util.Arrays;
 import android.widget.Spinner;
 import android.widget.ArrayAdapter;
 import android.widget.AdapterView;
@@ -72,7 +64,6 @@ public class MainActivity extends AppCompatActivity {
     private ArrayAdapter<String> spinnerAdapter;
     private static final String KEY_PROGRAMS = "saved_programs";
     private static final String KEY_CURRENT_PROGRAM = "current_program";
-    private BytecodeCache bytecodeCache;
 
     private String logcatOutput; // extracted from logcatMonitor
     private Button showLogcatButton;

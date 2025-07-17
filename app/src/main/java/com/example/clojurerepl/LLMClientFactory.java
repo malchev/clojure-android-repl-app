@@ -5,13 +5,6 @@ import android.util.Log;
 import com.example.clojurerepl.auth.ApiKeyManager;
 import java.util.List;
 import java.util.Arrays;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import org.json.JSONObject;
-import org.json.JSONArray;
-import java.util.ArrayList;
 
 public class LLMClientFactory {
     private static final String TAG = "LLMClientFactory";
