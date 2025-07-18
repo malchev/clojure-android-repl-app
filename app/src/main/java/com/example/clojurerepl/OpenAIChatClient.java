@@ -23,7 +23,6 @@ import java.io.IOException;
 public class OpenAIChatClient extends LLMClient {
     private static final String TAG = "OpenAIChatClient";
     private String modelName = null;
-    private final Map<String, List<Message>> sessionMessages = new HashMap<>();
     private Map<String, ChatSession> chatSessions = new HashMap<>();
 
     // Static cache for available models
@@ -192,21 +191,6 @@ public class OpenAIChatClient extends LLMClient {
         if (!chatSessions.containsKey(sessionIdStr)) {
             Log.d(TAG, "Creating new OpenAI chat session with ID: " + sessionIdStr);
             ChatSession session = new ChatSession(sessionIdStr);
-
-            // Restore existing messages if available
-            if (sessionMessages.containsKey(sessionIdStr)) {
-                List<Message> existingMessages = sessionMessages.get(sessionIdStr);
-                for (Message msg : existingMessages) {
-                    if (MessageRole.SYSTEM.equals(msg.role)) {
-                        session.queueSystemPrompt(msg.content);
-                    } else if (MessageRole.USER.equals(msg.role)) {
-                        session.queueUserMessage(msg.content);
-                    } else if (MessageRole.ASSISTANT.equals(msg.role)) {
-                        session.queueAssistantResponse(msg.content);
-                    }
-                }
-            }
-
             chatSessions.put(sessionIdStr, session);
             return session;
         }
@@ -244,9 +228,6 @@ public class OpenAIChatClient extends LLMClient {
 
                 // Add assistant message to history
                 session.queueAssistantResponse(response);
-
-                // Update the session messages map for persistence
-                sessionMessages.put(session.getSessionId(), session.getMessages());
 
                 return response;
             } catch (Exception e) {
