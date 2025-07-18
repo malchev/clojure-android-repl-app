@@ -5,6 +5,7 @@ import android.util.Log;
 import com.example.clojurerepl.auth.ApiKeyManager;
 import java.util.List;
 import java.util.Arrays;
+import java.util.UUID;
 
 public class LLMClientFactory {
     private static final String TAG = "LLMClientFactory";
@@ -16,36 +17,36 @@ public class LLMClientFactory {
         STUB
     }
 
-    public static LLMClient createClient(Context context, LLMType type, String modelName) {
-        Log.d(TAG, "Creating LLM client of type: " + type);
+    public static LLMClient createClient(Context context, LLMType type, String modelName, UUID sessionId) {
+        Log.d(TAG, "Creating LLM client of type: " + type + " for session: " + sessionId);
+
+        // Create a ChatSession for this client
+        LLMClient.ChatSession chatSession = new LLMClient.ChatSession(sessionId.toString());
+
         switch (type) {
             case GEMINI:
-                GeminiLLMClient geminiClient = new GeminiLLMClient(context);
+                GeminiLLMClient geminiClient = new GeminiLLMClient(context, chatSession);
                 if (modelName != null) {
                     geminiClient.setModel(modelName);
                 }
                 return geminiClient;
             case OPENAI:
-                OpenAIChatClient openaiClient = new OpenAIChatClient(context);
+                OpenAIChatClient openaiClient = new OpenAIChatClient(context, chatSession);
                 if (modelName != null) {
                     openaiClient.setModel(modelName);
                 }
                 return openaiClient;
             case CLAUDE:
-                ClaudeLLMClient claudeClient = new ClaudeLLMClient(context);
+                ClaudeLLMClient claudeClient = new ClaudeLLMClient(context, chatSession);
                 if (modelName != null) {
                     claudeClient.setModel(modelName);
                 }
                 return claudeClient;
             case STUB:
-                return new StubLLMClient(context);
+                return new StubLLMClient(context, chatSession);
             default:
                 throw new IllegalArgumentException("Unknown LLM type: " + type);
         }
-    }
-
-    public static LLMClient createClient(Context context, LLMType type) {
-        return createClient(context, type, null);
     }
 
     public static List<String> getAvailableModels(Context context, LLMType type) {

@@ -249,7 +249,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 } else {
                     llmSpinner.setVisibility(View.GONE);
                     iterationManager = new ClojureIterationManager(ClojureAppDesignActivity.this,
-                            LLMClientFactory.createClient(ClojureAppDesignActivity.this, selectedType),
+                            ClojureIterationManager.createLLMClientWithSession(ClojureAppDesignActivity.this, selectedType, null, currentSession.getId()),
                             currentSession.getId());
                     iterationManager.setExtractionErrorCallback(ClojureAppDesignActivity.this);
                 }
@@ -387,12 +387,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 if (sessionRestoreModel != null) {
                     // Create the client directly with the saved model
                     Log.d(TAG, "Session restore: Creating LLM client with model " + sessionRestoreModel);
-                    LLMClient llmClient = LLMClientFactory.createClient(
-                            this,
-                            currentSession.getLlmType(),
-                            sessionRestoreModel);
                     assert iterationManager == null : "iterationManager should be null before creating new instance";
-                    iterationManager = new ClojureIterationManager(this, llmClient, currentSession.getId());
+                    iterationManager = new ClojureIterationManager(this,
+                            ClojureIterationManager.createLLMClientWithSession(this, currentSession.getLlmType(), sessionRestoreModel, currentSession.getId()),
+                            currentSession.getId());
                     iterationManager.setExtractionErrorCallback(this);
 
                     // We'll wait until llmTypeSpinner's selection listener fires to trigger model
@@ -462,8 +460,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 && iterationManager != null) {
 
             // Get chat session and restore messages
-            LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
-                    .getOrCreateSession(currentSession.getId());
+            LLMClient.ChatSession chatSession = iterationManager.getChatSession();
 
             // Reset the session to clear any default messages
             chatSession.reset();
@@ -573,14 +570,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         generateButton.setEnabled(false);
 
-        // Create LLM client using factory with the selected model
-        LLMClient llmClient = LLMClientFactory.createClient(this, currentType, selectedModel);
         if (iterationManager != null) {
             Log.d(TAG, "Shutting down existing iterationManager before creating a new one");
             iterationManager.shutdown();
             iterationManager = null;
         }
-        iterationManager = new ClojureIterationManager(this, llmClient, currentSession.getId());
+        iterationManager = new ClojureIterationManager(this,
+                ClojureIterationManager.createLLMClientWithSession(this, currentType, selectedModel, currentSession.getId()),
+                currentSession.getId());
         iterationManager.setExtractionErrorCallback(this);
 
         // Mark that generation has started - disable model selection
@@ -622,8 +619,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         displayCurrentCode();
 
                         // Save chat history to session
-                        LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
-                                .getOrCreateSession(currentSession.getId());
+                        LLMClient.ChatSession chatSession = iterationManager.getChatSession();
                         currentSession.setChatHistory(chatSession.getMessages());
 
                         sessionManager.updateSession(currentSession);
@@ -759,8 +755,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         displayCurrentCode();
 
                         // Save chat history to session
-                        LLMClient.ChatSession chatSession = iterationManager.getLLMClient()
-                                .getOrCreateSession(currentSession.getId());
+                        LLMClient.ChatSession chatSession = iterationManager.getChatSession();
                         currentSession.setChatHistory(chatSession.getMessages());
 
                         sessionManager.updateSession(currentSession);
@@ -1160,7 +1155,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                     iterationManager = new ClojureIterationManager(
                             ClojureAppDesignActivity.this,
-                            LLMClientFactory.createClient(ClojureAppDesignActivity.this, currentType, selectedModel),
+                            ClojureIterationManager.createLLMClientWithSession(ClojureAppDesignActivity.this, currentType, selectedModel, currentSession.getId()),
                             currentSession.getId());
                     iterationManager.setExtractionErrorCallback(ClojureAppDesignActivity.this);
 
@@ -1411,10 +1406,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
     private void clearChatSession() {
         if (iterationManager != null) {
-            LLMClient llmClient = iterationManager.getLLMClient();
-            if (llmClient != null) {
-                String currentDescription = currentSession.getDescription();
-                llmClient.getOrCreateSession(currentSession.getId()).reset();
+            LLMClient.ChatSession chatSession = iterationManager.getChatSession();
+            if (chatSession != null) {
+                chatSession.reset();
             }
         }
     }
@@ -1681,13 +1675,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         return;
                     }
 
-                    // Get the LLM client and reset its session
-                    LLMClient llmClient = iterationManager.getLLMClient();
-                    if (llmClient != null) {
-                        // Reinitialize the session with the current description
-                        // This will automatically add the system prompt
-                        Log.d(TAG, "Clearing chat history and reinitializing with system prompt");
-                        llmClient.getOrCreateSession(currentSession.getId()).reset();
+                    // Get the chat session and reset it
+                    LLMClient.ChatSession chatSession = iterationManager.getChatSession();
+                    if (chatSession != null) {
+                        // Reset the session
+                        Log.d(TAG, "Clearing chat history");
+                        chatSession.reset();
 
                         Toast.makeText(this, "Chat history cleared", Toast.LENGTH_SHORT).show();
                     } else {

@@ -22,10 +22,12 @@ public abstract class LLMClient {
 
     protected final Context context;
     private String promptTemplate;
+    public final ChatSession chatSession;
 
-    public LLMClient(Context context) {
+    public LLMClient(Context context, ChatSession chatSession) {
         Log.d(TAG, "Creating new LLMClient");
         this.context = context.getApplicationContext();
+        this.chatSession = chatSession;
         loadPromptTemplate();
     }
 
@@ -149,21 +151,18 @@ public abstract class LLMClient {
      * @return The prepared ChatSession
      */
     public ChatSession preparePromptForInitialCode(UUID sessionId, String description, String initialCode) {
-        // Get or create a session for this app description
-        ChatSession session = getOrCreateSession(sessionId);
-
         // Reset session to start fresh
-        session.reset();
+        chatSession.reset();
 
         // Make sure we have a system message at the beginning
-        session.queueSystemPrompt(getSystemPrompt());
+        chatSession.queueSystemPrompt(getSystemPrompt());
 
         // Format the prompt using the helper from LLMClient with initial code
         String prompt = formatInitialPrompt(description, initialCode);
 
         // Queue the user message and send all messages
-        session.queueUserMessage(prompt);
-        return session;
+        chatSession.queueUserMessage(prompt);
+        return chatSession;
     }
 
     public abstract CompletableFuture<String> generateInitialCode(UUID sessionId, String description);
@@ -258,7 +257,7 @@ public abstract class LLMClient {
     }
 
     // Chat session implementation
-    public class ChatSession {
+    public static class ChatSession {
         private final String sessionId;
         private final List<Message> messages;
         private String systemPrompt = null;
@@ -380,8 +379,6 @@ public abstract class LLMClient {
      */
     protected abstract CompletableFuture<String> sendMessages(ChatSession session);
 
-    public abstract ChatSession getOrCreateSession(UUID sessionId);
-
     /**
      * Clears the API key for this client type
      *
@@ -399,7 +396,7 @@ public abstract class LLMClient {
      * @param imageFile The image file
      * @return The MIME type string
      */
-    protected String determineMimeType(File imageFile) {
+    protected static String determineMimeType(File imageFile) {
         if (imageFile == null) {
             return "image/png"; // Default fallback
         }

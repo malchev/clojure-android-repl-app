@@ -16,20 +16,18 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.io.File;
 import java.util.UUID;
-import java.util.Map;
-import java.util.HashMap;
+
 import java.io.IOException;
 
 public class OpenAIChatClient extends LLMClient {
     private static final String TAG = "OpenAIChatClient";
     private String modelName = null;
-    private Map<String, ChatSession> chatSessions = new HashMap<>();
 
     // Static cache for available models
     private static List<String> cachedModels = null;
 
-    public OpenAIChatClient(Context context) {
-        super(context);
+    public OpenAIChatClient(Context context, ChatSession chatSession) {
+        super(context, chatSession);
         Log.d(TAG, "Creating new OpenAIChatClient");
     }
 
@@ -184,23 +182,6 @@ public class OpenAIChatClient extends LLMClient {
     }
 
     @Override
-    public ChatSession getOrCreateSession(UUID sessionId) {
-        String sessionIdStr = sessionId.toString();
-
-        // Create a new session if one doesn't exist for this ID
-        if (!chatSessions.containsKey(sessionIdStr)) {
-            Log.d(TAG, "Creating new OpenAI chat session with ID: " + sessionIdStr);
-            ChatSession session = new ChatSession(sessionIdStr);
-            chatSessions.put(sessionIdStr, session);
-            return session;
-        }
-
-        // Use existing session
-        Log.d(TAG, "Reusing existing OpenAI chat session with ID: " + sessionIdStr);
-        return chatSessions.get(sessionIdStr);
-    }
-
-    @Override
     protected CompletableFuture<String> sendMessages(ChatSession session) {
         Log.d(TAG, "Sending " + session.getMessages().size() + " messages in session: " + session.getSessionId());
         // Print the message types and the first 50 characters of the content
@@ -259,8 +240,8 @@ public class OpenAIChatClient extends LLMClient {
         Log.d(TAG, "│         GENERATING INITIAL CODE           │");
         Log.d(TAG, "└───────────────────────────────────────────┘");
 
-        ChatSession session = preparePromptForInitialCode(sessionId, description);
-        return sendMessages(session);
+        preparePromptForInitialCode(sessionId, description);
+        return sendMessages(chatSession);
     }
 
     @Override
@@ -271,8 +252,8 @@ public class OpenAIChatClient extends LLMClient {
         Log.d(TAG, "│       WITH EXISTING CODE AS BASE          │");
         Log.d(TAG, "└───────────────────────────────────────────┘");
 
-        ChatSession session = preparePromptForInitialCode(sessionId, description, initialCode);
-        return sendMessages(session);
+        preparePromptForInitialCode(sessionId, description, initialCode);
+        return sendMessages(chatSession);
     }
 
     @Override
@@ -293,15 +274,12 @@ public class OpenAIChatClient extends LLMClient {
             }
         }
 
-        // Get existing session for this app description
-        ChatSession session = getOrCreateSession(sessionId);
-
         // Format the iteration prompt
         String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback, image != null);
 
         // Queue the user message (with image attachment if provided)
-        session.queueUserMessageWithImage(prompt, image);
-        return sendMessages(session);
+        chatSession.queueUserMessageWithImage(prompt, image);
+        return sendMessages(chatSession);
     }
 
     private String callOpenAIAPI(List<Message> messages) {

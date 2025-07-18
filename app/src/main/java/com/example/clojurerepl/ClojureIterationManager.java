@@ -85,6 +85,29 @@ public class ClojureIterationManager {
     }
 
     /**
+     * Creates a new LLMClient with a ChatSession for the given session ID
+     * 
+     * @param context   The application context
+     * @param type      The LLM type
+     * @param modelName The model name (optional)
+     * @param sessionId The session ID
+     * @return A new LLMClient instance with a ChatSession
+     */
+    public static LLMClient createLLMClientWithSession(Context context, LLMClientFactory.LLMType type, String modelName,
+            UUID sessionId) {
+        return LLMClientFactory.createClient(context, type, modelName, sessionId);
+    }
+
+    /**
+     * Gets the ChatSession associated with this iteration manager's LLM client
+     * 
+     * @return The ChatSession instance
+     */
+    public LLMClient.ChatSession getChatSession() {
+        return llmClient.chatSession;
+    }
+
+    /**
      * Sets the callback for handling code extraction errors
      * 
      * @param callback The callback to handle extraction errors

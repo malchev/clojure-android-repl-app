@@ -4,28 +4,17 @@ import android.content.Context;
 import android.util.Log;
 import java.io.File;
 import java.util.concurrent.CompletableFuture;
-import java.util.HashMap;
-import java.util.Map;
+
 import java.util.List;
 import java.util.ArrayList;
 import java.util.UUID;
 
 public class StubLLMClient extends LLMClient {
     private static final String TAG = "StubLLMClient";
-    private Map<String, ChatSession> chatSessions = new HashMap<>();
 
-    public StubLLMClient(Context context) {
-        super(context);
+    public StubLLMClient(Context context, ChatSession chatSession) {
+        super(context, chatSession);
         Log.d(TAG, "Created new StubLLMClient");
-    }
-
-    @Override
-    public ChatSession getOrCreateSession(UUID sessionId) {
-        String sessionIdStr = sessionId.toString();
-        if (!chatSessions.containsKey(sessionIdStr)) {
-            chatSessions.put(sessionIdStr, new ChatSession(sessionIdStr));
-        }
-        return chatSessions.get(sessionIdStr);
     }
 
     @Override
@@ -83,11 +72,11 @@ public class StubLLMClient extends LLMClient {
     public CompletableFuture<String> generateInitialCode(UUID sessionId, String description) {
         Log.d(TAG, "Generating initial code for description: " + description + " using stub client");
 
-        // Get or create a session for this app description
-        ChatSession session = preparePromptForInitialCode(sessionId, description);
+        // Prepare the prompt for initial code generation
+        preparePromptForInitialCode(sessionId, description);
 
         // Send all messages and get the response
-        return sendMessages(session);
+        return sendMessages(chatSession);
     }
 
     @Override
@@ -95,11 +84,11 @@ public class StubLLMClient extends LLMClient {
         Log.d(TAG, "Generating initial code for description: " + description +
                 " using stub client, with initial code: " + (initialCode != null ? "yes" : "no"));
 
-        // Get or create a session for this app description
-        ChatSession session = preparePromptForInitialCode(sessionId, description, initialCode);
+        // Prepare the prompt for initial code generation
+        preparePromptForInitialCode(sessionId, description, initialCode);
 
         // Send all messages and get the response
-        return sendMessages(session);
+        return sendMessages(chatSession);
     }
 
     @Override
@@ -122,17 +111,14 @@ public class StubLLMClient extends LLMClient {
             }
         }
 
-        // Get existing session for this app description
-        ChatSession session = getOrCreateSession(sessionId);
-
         // Format the iteration prompt
         String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback, image != null);
 
         // Queue the user message (with image attachment if provided)
-        session.queueUserMessageWithImage(prompt, image);
+        chatSession.queueUserMessageWithImage(prompt, image);
 
         // Send all messages and get the response
-        return sendMessages(session);
+        return sendMessages(chatSession);
     }
 
     private String generateStubResponse(String message) {

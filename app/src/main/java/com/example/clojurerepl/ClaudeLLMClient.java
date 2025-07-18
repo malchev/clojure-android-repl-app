@@ -15,8 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.io.File;
-import java.util.Map;
-import java.util.HashMap;
+
 import java.io.IOException;
 import java.util.UUID;
 
@@ -31,13 +30,12 @@ public class ClaudeLLMClient extends LLMClient {
     private static final int HTTP_TIMEOUT = 60000; // 60 seconds timeout
 
     private String currentModel = null;
-    private Map<String, ChatSession> chatSessions = new HashMap<>();
 
     // Static cache for available models
     private static List<String> cachedModels = null;
 
-    public ClaudeLLMClient(Context context) {
-        super(context);
+    public ClaudeLLMClient(Context context, ChatSession chatSession) {
+        super(context, chatSession);
         Log.d(TAG, "Creating new ClaudeLLMClient");
     }
 
@@ -59,26 +57,6 @@ public class ClaudeLLMClient extends LLMClient {
     private void ensureModelIsSet() {
         Log.d(TAG, "DEBUG: Checking if Claude model is set");
         assert currentModel != null;
-    }
-
-    @Override
-    public ChatSession getOrCreateSession(UUID sessionId) {
-        String sessionIdStr = sessionId.toString();
-        // Create a new session if one doesn't exist for this ID
-        if (!chatSessions.containsKey(sessionIdStr)) {
-            Log.d(TAG, "Creating new Claude chat session with ID: " + sessionIdStr);
-            chatSessions.put(sessionIdStr, new ChatSession(sessionIdStr));
-            return chatSessions.get(sessionIdStr);
-        }
-
-        // Use existing session
-        Log.d(TAG, "Reusing existing Claude chat session with ID: " + sessionIdStr);
-        ChatSession existingSession = chatSessions.get(sessionIdStr);
-
-        // Log session message count for debugging
-        Log.d(TAG, "Existing session has " + existingSession.getMessages().size() + " messages");
-
-        return existingSession;
     }
 
     @Override
@@ -230,14 +208,11 @@ public class ClaudeLLMClient extends LLMClient {
             }
         }
 
-        // Get the existing session without resetting it
-        ChatSession session = getOrCreateSession(sessionId);
-
         Log.d(TAG, "Starting generateNextIteration with session containing " +
-                session.getMessages().size() + " messages");
+                chatSession.getMessages().size() + " messages");
 
         // Add logging of the current message types
-        List<Message> messages = session.getMessages();
+        List<Message> messages = chatSession.getMessages();
         int systemCount = 0, userCount = 0, assistantCount = 0;
         for (Message msg : messages) {
             if (MessageRole.SYSTEM.equals(msg.role))
@@ -254,13 +229,13 @@ public class ClaudeLLMClient extends LLMClient {
         String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback, image != null);
 
         // Queue the user message (with image attachment if provided)
-        session.queueUserMessageWithImage(prompt, image);
+        chatSession.queueUserMessageWithImage(prompt, image);
 
         Log.d(TAG, "After queueing new user message, session now has " +
-                session.getMessages().size() + " messages");
+                chatSession.getMessages().size() + " messages");
 
         // Print the last few messages of the session for debugging
-        messages = session.getMessages();
+        messages = chatSession.getMessages();
         int startIdx = Math.max(0, messages.size() - 4); // Show last 4 messages or all if fewer
         StringBuilder recentMessages = new StringBuilder("Recent messages in session:\n");
         for (int i = startIdx; i < messages.size(); i++) {
@@ -285,7 +260,7 @@ public class ClaudeLLMClient extends LLMClient {
         Log.d(TAG, recentMessages.toString());
 
         // Send all messages and get the response
-        return sendMessages(session);
+        return sendMessages(chatSession);
     }
 
     @Override

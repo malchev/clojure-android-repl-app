@@ -6,13 +6,14 @@ import java.io.File;
 import java.util.concurrent.CompletableFuture;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
 import java.net.HttpURLConnection;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.URL;
-import java.util.HashMap;
-import java.util.Map;
+
 import java.util.UUID;
 import org.json.JSONObject;
 import org.json.JSONArray;
@@ -24,7 +25,6 @@ public class GeminiLLMClient extends LLMClient {
     private static final String API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
     private String currentModel = null;
     private ApiKeyManager apiKeyManager;
-    private Map<String, ChatSession> chatSessions = new HashMap<>();
 
     private static final int HTTP_TIMEOUT = 120000; // 120 seconds timeout (increased from 30)
     private static final int MAX_RETRIES = 1;
@@ -462,19 +462,10 @@ public class GeminiLLMClient extends LLMClient {
         return props != null ? props.status : "Unknown";
     }
 
-    public GeminiLLMClient(Context context) {
-        super(context);
+    public GeminiLLMClient(Context context, ChatSession chatSession) {
+        super(context, chatSession);
         Log.d(TAG, "Creating new GeminiLLMClient");
         apiKeyManager = ApiKeyManager.getInstance(context);
-    }
-
-    @Override
-    public ChatSession getOrCreateSession(UUID sessionId) {
-        String sessionIdStr = sessionId.toString();
-        if (!chatSessions.containsKey(sessionIdStr)) {
-            chatSessions.put(sessionIdStr, new ChatSession(sessionIdStr));
-        }
-        return chatSessions.get(sessionIdStr);
     }
 
     @Override
@@ -565,8 +556,6 @@ public class GeminiLLMClient extends LLMClient {
             File screenshot,
             String feedback,
             File image) {
-        // Get the iteration number from the chat session
-        ChatSession session = getOrCreateSession(sessionId);
 
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +
@@ -595,10 +584,10 @@ public class GeminiLLMClient extends LLMClient {
         String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback, image != null);
 
         // Queue the user message (with image attachment if provided)
-        session.queueUserMessageWithImage(prompt, image);
+        chatSession.queueUserMessageWithImage(prompt, image);
 
         // Send all messages and get the response
-        return sendMessages(session)
+        return sendMessages(chatSession)
                 .thenApply(response -> {
                     Log.d(TAG, "Got response response, length: " + response.length());
                     return response;
