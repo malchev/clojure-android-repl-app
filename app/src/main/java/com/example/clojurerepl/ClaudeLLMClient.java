@@ -61,131 +61,77 @@ public class ClaudeLLMClient extends LLMClient {
         assert currentModel != null;
     }
 
-    // Message Storage Implementation
-    class ClaudeChatSession implements ChatSession {
-        private final String sessionId;
-        private final List<Message> messages;
-
-        public ClaudeChatSession(String sessionId) {
-            this.sessionId = sessionId;
-            this.messages = new ArrayList<>();
-
-            Log.d(TAG, "New Claude chat session object created with ID: " + sessionId);
-        }
-
-        @Override
-        public void reset() {
-            Log.d(TAG, "Resetting chat session: " + sessionId);
-            messages.clear();
-        }
-
-        @Override
-        public void queueSystemPrompt(String content) {
-            Log.d(TAG, "Queuing system prompt in session: " + sessionId);
-            messages.add(new Message(MessageRole.SYSTEM, content));
-        }
-
-        @Override
-        public void queueUserMessage(String content) {
-            Log.d(TAG, "Queuing user message in session: " + sessionId);
-            messages.add(new Message(MessageRole.USER, content));
-        }
-
-        @Override
-        public void queueUserMessageWithImage(String content, File imageFile) {
-            Log.d(TAG, "Queuing user message with image in session: " + sessionId);
-
-            // Determine MIME type based on file extension
-            String mimeType = determineMimeType(imageFile);
-
-            // Create message with image
-            Message message = new Message(MessageRole.USER, content, imageFile, mimeType);
-            messages.add(message);
-
-            Log.d(TAG, "Added message with image, MIME type: " + mimeType);
-        }
-
-        @Override
-        public void queueAssistantResponse(String content) {
-            Log.d(TAG, "Queuing assistant response in session: " + sessionId);
-            messages.add(new Message(MessageRole.ASSISTANT, content));
-        }
-
-        @Override
-        public CompletableFuture<String> sendMessages() {
-            Log.d(TAG, "DEBUG: ClaudeChatSession.sendMessages called with " + messages.size() + " messages in session: "
-                    + sessionId);
-            // Log message types and short previews for debugging
-            for (Message msg : messages) {
-                String preview = msg.content.length() > 50 ? msg.content.substring(0, 50) + "..." : msg.content;
-                // Use the same role mapping as the API call for consistent logging
-                String claudeRole;
-                if (MessageRole.SYSTEM.equals(msg.role)) {
-                    claudeRole = "system";
-                } else if (MessageRole.USER.equals(msg.role)) {
-                    claudeRole = "user";
-                } else if (MessageRole.ASSISTANT.equals(msg.role)) {
-                    claudeRole = "assistant";
-                } else {
-                    claudeRole = msg.role.getApiValue();
-                }
-                Log.d(TAG, "DEBUG: Message type: " + claudeRole + ", content: " + preview);
-            }
-
-            return CompletableFuture.supplyAsync(() -> {
-                Thread.currentThread().setName("Claude-API-Thread");
-                Log.d(TAG, "DEBUG: Inside CompletableFuture thread: " + Thread.currentThread().getName());
-                try {
-                    Log.d(TAG, "DEBUG: About to call Claude API in thread: " + Thread.currentThread().getName());
-                    String response = null;
-                    try {
-                        response = callClaudeAPI(messages);
-                        Log.d(TAG, "DEBUG: Claude API call completed successfully");
-                    } catch (Exception e) {
-                        Log.e(TAG, "ERROR: callClaudeAPI failed", e);
-                        throw e;
-                    }
-
-                    Log.d(TAG, "=== FULL CLAUDE RESPONSE ===\n" +
-                            (response != null
-                                    ? (response.length() > 1000 ? response.substring(0, 1000) + "..." : response)
-                                    : "NULL RESPONSE"));
-
-                    // Add assistant message to history
-                    queueAssistantResponse(response);
-
-                    return response;
-                } catch (Exception e) {
-                    Log.e(TAG, "ERROR: Exception in sendMessages CompletableFuture", e);
-                    throw new RuntimeException("ERROR: Exception in sendMessages CompletableFuture", e);
-                }
-            });
-        }
-
-        @Override
-        public List<Message> getMessages() {
-            return new ArrayList<>(messages);
-        }
-    }
-
     @Override
     public ChatSession getOrCreateSession(UUID sessionId) {
         String sessionIdStr = sessionId.toString();
         // Create a new session if one doesn't exist for this ID
         if (!chatSessions.containsKey(sessionIdStr)) {
             Log.d(TAG, "Creating new Claude chat session with ID: " + sessionIdStr);
-            chatSessions.put(sessionIdStr, new ClaudeChatSession(sessionIdStr));
+            chatSessions.put(sessionIdStr, new ChatSession(sessionIdStr));
             return chatSessions.get(sessionIdStr);
         }
 
         // Use existing session
         Log.d(TAG, "Reusing existing Claude chat session with ID: " + sessionIdStr);
-        ClaudeChatSession existingSession = (ClaudeChatSession) chatSessions.get(sessionIdStr);
+        ChatSession existingSession = chatSessions.get(sessionIdStr);
 
         // Log session message count for debugging
         Log.d(TAG, "Existing session has " + existingSession.getMessages().size() + " messages");
 
         return existingSession;
+    }
+
+    @Override
+    protected CompletableFuture<String> sendMessages(ChatSession session) {
+        Log.d(TAG,
+                "DEBUG: ClaudeLLMClient.sendMessages called with " + session.getMessages().size()
+                        + " messages in session: "
+                        + session.getSessionId());
+        // Log message types and short previews for debugging
+        for (Message msg : session.getMessages()) {
+            String preview = msg.content.length() > 50 ? msg.content.substring(0, 50) + "..." : msg.content;
+            // Use the same role mapping as the API call for consistent logging
+            String claudeRole;
+            if (MessageRole.SYSTEM.equals(msg.role)) {
+                claudeRole = "system";
+            } else if (MessageRole.USER.equals(msg.role)) {
+                claudeRole = "user";
+            } else if (MessageRole.ASSISTANT.equals(msg.role)) {
+                claudeRole = "assistant";
+            } else {
+                claudeRole = msg.role.getApiValue();
+            }
+            Log.d(TAG, "DEBUG: Message type: " + claudeRole + ", content: " + preview);
+        }
+
+        return CompletableFuture.supplyAsync(() -> {
+            Thread.currentThread().setName("Claude-API-Thread");
+            Log.d(TAG, "DEBUG: Inside CompletableFuture thread: " + Thread.currentThread().getName());
+            try {
+                Log.d(TAG, "DEBUG: About to call Claude API in thread: " + Thread.currentThread().getName());
+                String response = null;
+                try {
+                    response = callClaudeAPI(session.getMessages());
+                    Log.d(TAG, "DEBUG: Claude API call completed successfully");
+                } catch (Exception e) {
+                    Log.e(TAG, "ERROR: callClaudeAPI failed", e);
+                    throw e;
+                }
+
+                Log.d(TAG, "=== FULL CLAUDE RESPONSE ===\n" +
+                        (response != null
+                                ? (response.length() > 1000 ? response.substring(0, 1000) + "..." : response)
+                                : "NULL RESPONSE"));
+
+                // Add assistant message to history
+                session.queueAssistantResponse(response);
+
+                return response;
+            } catch (Exception e) {
+                Log.e(TAG, "ERROR: Exception in sendMessages CompletableFuture", e);
+                throw new RuntimeException("ERROR: Exception in sendMessages CompletableFuture", e);
+            }
+        });
     }
 
     @Override
@@ -207,7 +153,7 @@ public class ClaudeLLMClient extends LLMClient {
             ChatSession session = preparePromptForInitialCode(sessionId, description);
             Log.d(TAG, "DEBUG: Created chat session, about to send messages to Claude API");
 
-            return session.sendMessages().handle((response, ex) -> {
+            return sendMessages(session).handle((response, ex) -> {
                 if (ex != null) {
                     Log.e(TAG, "ERROR: Failed in Claude sendMessages", ex);
                     return "ERROR: " + ex.getMessage();
@@ -244,7 +190,7 @@ public class ClaudeLLMClient extends LLMClient {
             ChatSession session = preparePromptForInitialCode(sessionId, description, initialCode);
             Log.d(TAG, "DEBUG: Created chat session with template, about to send messages to Claude API");
 
-            return session.sendMessages().handle((response, ex) -> {
+            return sendMessages(session).handle((response, ex) -> {
                 if (ex != null) {
                     Log.e(TAG, "ERROR: Failed in Claude sendMessages with template", ex);
                     return "ERROR: " + ex.getMessage();
@@ -288,10 +234,10 @@ public class ClaudeLLMClient extends LLMClient {
         ChatSession session = getOrCreateSession(sessionId);
 
         Log.d(TAG, "Starting generateNextIteration with session containing " +
-                ((ClaudeChatSession) session).getMessages().size() + " messages");
+                session.getMessages().size() + " messages");
 
         // Add logging of the current message types
-        List<Message> messages = ((ClaudeChatSession) session).getMessages();
+        List<Message> messages = session.getMessages();
         int systemCount = 0, userCount = 0, assistantCount = 0;
         for (Message msg : messages) {
             if (MessageRole.SYSTEM.equals(msg.role))
@@ -311,10 +257,10 @@ public class ClaudeLLMClient extends LLMClient {
         session.queueUserMessageWithImage(prompt, image);
 
         Log.d(TAG, "After queueing new user message, session now has " +
-                ((ClaudeChatSession) session).getMessages().size() + " messages");
+                session.getMessages().size() + " messages");
 
         // Print the last few messages of the session for debugging
-        messages = ((ClaudeChatSession) session).getMessages();
+        messages = session.getMessages();
         int startIdx = Math.max(0, messages.size() - 4); // Show last 4 messages or all if fewer
         StringBuilder recentMessages = new StringBuilder("Recent messages in session:\n");
         for (int i = startIdx; i < messages.size(); i++) {
@@ -339,7 +285,7 @@ public class ClaudeLLMClient extends LLMClient {
         Log.d(TAG, recentMessages.toString());
 
         // Send all messages and get the response
-        return session.sendMessages();
+        return sendMessages(session);
     }
 
     @Override

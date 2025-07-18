@@ -14,6 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.List;
 import java.util.UUID;
 import java.util.Base64;
+import java.util.ArrayList;
 
 public abstract class LLMClient {
     private static final String TAG = "LLMClient";
@@ -35,7 +36,6 @@ public abstract class LLMClient {
         SYSTEM("system"),
         USER("user"),
         ASSISTANT("assistant"),
-        MODEL("model"),
         DEVELOPER("developer");
 
         private final String apiValue;
@@ -257,26 +257,44 @@ public abstract class LLMClient {
         }
     }
 
-    // Chat session interface
-    public interface ChatSession {
+    // Chat session implementation
+    public class ChatSession {
+        private final String sessionId;
+        private final List<Message> messages;
+        private String systemPrompt = null;
+
+        public ChatSession(String sessionId) {
+            this.sessionId = sessionId;
+            this.messages = new ArrayList<>();
+            Log.d(TAG, "Created new chat session: " + sessionId);
+        }
+
         /**
          * Resets the chat session by clearing all messages
          */
-        void reset();
+        public void reset() {
+            Log.d(TAG, "Resetting chat session: " + sessionId);
+            messages.clear();
+            systemPrompt = null;
+        }
 
         /**
          * Queues a system prompt message to be sent in the next API call
          *
          * @param content The system prompt content
          */
-        void queueSystemPrompt(String content);
+        public void queueSystemPrompt(String content) {
+            Log.d(TAG, "Queuing system prompt in session: " + sessionId);
+            this.systemPrompt = content;
+            messages.add(new Message(MessageRole.SYSTEM, content));
+        }
 
         /**
          * Queues a user message to be sent in the next API call
          *
          * @param content The user message content
          */
-        default void queueUserMessage(String content) {
+        public void queueUserMessage(String content) {
             queueUserMessageWithImage(content, null);
         }
 
@@ -287,7 +305,23 @@ public abstract class LLMClient {
          * @param imageFile The image file to attach (can be null for text-only
          *                  messages)
          */
-        void queueUserMessageWithImage(String content, File imageFile);
+        public void queueUserMessageWithImage(String content, File imageFile) {
+            Log.d(TAG, "Queuing user message with image in session: " + sessionId);
+
+            if (imageFile != null) {
+                // Determine MIME type based on file extension
+                String mimeType = determineMimeType(imageFile);
+
+                // Create message with image
+                Message message = new Message(MessageRole.USER, content, imageFile, mimeType);
+                messages.add(message);
+
+                Log.d(TAG, "Added message with image, MIME type: " + mimeType);
+            } else {
+                // Regular text-only message
+                messages.add(new Message(MessageRole.USER, content));
+            }
+        }
 
         /**
          * Queues an assistant (model) response to be sent in the next API call
@@ -295,22 +329,56 @@ public abstract class LLMClient {
          *
          * @param content The assistant response content
          */
-        void queueAssistantResponse(String content);
-
-        /**
-         * Sends all queued messages to the API and returns the response
-         *
-         * @return A CompletableFuture containing the extracted code response
-         */
-        CompletableFuture<String> sendMessages();
+        public void queueAssistantResponse(String content) {
+            Log.d(TAG, "Queuing assistant response in session: " + sessionId);
+            messages.add(new Message(MessageRole.ASSISTANT, content));
+        }
 
         /**
          * Retrieves the current list of messages in the chat session
          *
          * @return A list of Message objects representing the chat history
          */
-        List<Message> getMessages();
+        public List<Message> getMessages() {
+            return new ArrayList<>(messages);
+        }
+
+        /**
+         * Get the session ID
+         *
+         * @return The session ID
+         */
+        public String getSessionId() {
+            return sessionId;
+        }
+
+        /**
+         * Get the system prompt
+         *
+         * @return The system prompt, or null if not set
+         */
+        public String getSystemPrompt() {
+            return systemPrompt;
+        }
+
+        /**
+         * Check if system prompt is available
+         *
+         * @return true if system prompt is set and not empty
+         */
+        public boolean hasSystemPrompt() {
+            return systemPrompt != null && !systemPrompt.trim().isEmpty();
+        }
     }
+
+    /**
+     * Sends messages from a chat session to the appropriate API
+     * This method must be implemented by each LLMClient subclass
+     *
+     * @param session The chat session containing messages to send
+     * @return A CompletableFuture containing the API response
+     */
+    protected abstract CompletableFuture<String> sendMessages(ChatSession session);
 
     public abstract ChatSession getOrCreateSession(UUID sessionId);
 

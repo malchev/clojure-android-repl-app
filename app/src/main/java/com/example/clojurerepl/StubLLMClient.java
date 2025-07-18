@@ -19,83 +19,37 @@ public class StubLLMClient extends LLMClient {
         Log.d(TAG, "Created new StubLLMClient");
     }
 
-    private class StubChatSession implements ChatSession {
-        private String sessionId;
-        private List<Message> messages = new ArrayList<>();
-
-        public StubChatSession(String sessionId) {
-            this.sessionId = sessionId;
-            Log.d(TAG, "Created new stub chat session: " + sessionId);
-        }
-
-        @Override
-        public void queueSystemPrompt(String content) {
-            Log.d(TAG, "Queuing system prompt in stub session: " + sessionId);
-            messages.add(new Message(MessageRole.SYSTEM, content));
-        }
-
-        @Override
-        public void queueUserMessage(String content) {
-            Log.d(TAG, "Queuing user message in stub session: " + sessionId);
-            messages.add(new Message(MessageRole.USER, content));
-        }
-
-        @Override
-        public void queueUserMessageWithImage(String content, File imageFile) {
-            Log.d(TAG, "Queuing user message with image in stub session: " + sessionId);
-            // For stub client, just queue as regular message (ignore image)
-            messages.add(new Message(MessageRole.USER, content));
-        }
-
-        @Override
-        public void queueAssistantResponse(String content) {
-            Log.d(TAG, "Queuing assistant response in stub session: " + sessionId);
-            messages.add(new Message(MessageRole.ASSISTANT, content));
-        }
-
-        @Override
-        public CompletableFuture<String> sendMessages() {
-            Log.d(TAG, "Sending " + messages.size() + " messages in stub session: " + sessionId);
-
-            return CompletableFuture.supplyAsync(() -> {
-                // Find the latest user message
-                String userMessage = "";
-                for (int i = messages.size() - 1; i >= 0; i--) {
-                    if (MessageRole.USER.equals(messages.get(i).role)) {
-                        userMessage = messages.get(i).content;
-                        break;
-                    }
-                }
-
-                // Generate stub response
-                String response = generateStubResponse(userMessage);
-
-                // Add assistant message to history
-                queueAssistantResponse(response);
-
-                return response;
-            });
-        }
-
-        @Override
-        public void reset() {
-            messages.clear();
-            Log.d(TAG, "Reset stub chat session: " + sessionId);
-        }
-
-        @Override
-        public List<Message> getMessages() {
-            return new ArrayList<>(messages);
-        }
-    }
-
     @Override
     public ChatSession getOrCreateSession(UUID sessionId) {
         String sessionIdStr = sessionId.toString();
         if (!chatSessions.containsKey(sessionIdStr)) {
-            chatSessions.put(sessionIdStr, new StubChatSession(sessionIdStr));
+            chatSessions.put(sessionIdStr, new ChatSession(sessionIdStr));
         }
         return chatSessions.get(sessionIdStr);
+    }
+
+    @Override
+    protected CompletableFuture<String> sendMessages(ChatSession session) {
+        Log.d(TAG, "Sending " + session.getMessages().size() + " messages in stub session: " + session.getSessionId());
+
+        return CompletableFuture.supplyAsync(() -> {
+            // Find the latest user message
+            String userMessage = "";
+            for (int i = session.getMessages().size() - 1; i >= 0; i--) {
+                if (MessageRole.USER.equals(session.getMessages().get(i).role)) {
+                    userMessage = session.getMessages().get(i).content;
+                    break;
+                }
+            }
+
+            // Generate stub response
+            String response = generateStubResponse(userMessage);
+
+            // Add assistant message to history
+            session.queueAssistantResponse(response);
+
+            return response;
+        });
     }
 
     @Override
@@ -133,7 +87,7 @@ public class StubLLMClient extends LLMClient {
         ChatSession session = preparePromptForInitialCode(sessionId, description);
 
         // Send all messages and get the response
-        return session.sendMessages();
+        return sendMessages(session);
     }
 
     @Override
@@ -145,7 +99,7 @@ public class StubLLMClient extends LLMClient {
         ChatSession session = preparePromptForInitialCode(sessionId, description, initialCode);
 
         // Send all messages and get the response
-        return session.sendMessages();
+        return sendMessages(session);
     }
 
     @Override
@@ -178,7 +132,7 @@ public class StubLLMClient extends LLMClient {
         session.queueUserMessageWithImage(prompt, image);
 
         // Send all messages and get the response
-        return session.sendMessages();
+        return sendMessages(session);
     }
 
     private String generateStubResponse(String message) {

@@ -468,108 +468,35 @@ public class GeminiLLMClient extends LLMClient {
         apiKeyManager = ApiKeyManager.getInstance(context);
     }
 
-    // Class to manage chat session state
-    private class GeminiChatSession implements ChatSession {
-        private String sessionId;
-        private List<Message> messageHistory = new ArrayList<>();
-        private String systemPrompt = null;
-
-        public GeminiChatSession(String sessionId) {
-            this.sessionId = sessionId;
-            Log.d(TAG, "Created new chat session: " + sessionId);
-        }
-
-        @Override
-        public void queueSystemPrompt(String content) {
-            Log.d(TAG, "Setting system prompt in session: " + sessionId);
-            // Store system prompt separately since Gemini now supports it natively
-            this.systemPrompt = content;
-            Log.d(TAG, "System prompt set successfully, length: " + (content != null ? content.length() : 0)
-                    + " characters");
-            // Save the system prompt in the message history so that it gets
-            // saved and restored with the DesignSession object.
-            messageHistory.add(new Message(MessageRole.SYSTEM, content));
-        }
-
-        @Override
-        public void queueUserMessage(String content) {
-            Log.d(TAG, "Queuing user message in session: " + sessionId);
-            messageHistory.add(new Message(MessageRole.USER, content));
-        }
-
-        @Override
-        public void queueUserMessageWithImage(String content, File imageFile) {
-            Log.d(TAG, "Queuing user message with image in session: " + sessionId);
-
-            // Determine MIME type based on file extension
-            String mimeType = determineMimeType(imageFile);
-
-            // Create message with image
-            Message message = new Message(MessageRole.USER, content, imageFile, mimeType);
-            messageHistory.add(message);
-
-            Log.d(TAG, "Added message with image, MIME type: " + mimeType);
-        }
-
-        @Override
-        public void queueAssistantResponse(String content) {
-            Log.d(TAG, "Queuing assistant response in session: " + sessionId);
-            messageHistory.add(new Message(MessageRole.MODEL, content));
-        }
-
-        @Override
-        public CompletableFuture<String> sendMessages() {
-            Log.d(TAG, "Sending " + messageHistory.size() + " messages in session: " + sessionId);
-            Log.d(TAG, "System prompt available: " + (systemPrompt != null ? "yes" : "no"));
-
-            return CompletableFuture.supplyAsync(() -> {
-                try {
-                    // Call the API with the full context including system prompt
-                    String response = callGeminiAPI(messageHistory, systemPrompt);
-
-                    // Save the original response to history
-                    queueAssistantResponse(response);
-
-                    // Return the extracted code
-                    return response;
-                } catch (Exception e) {
-                    Log.e(TAG, "Error in chat session", e);
-                    throw new RuntimeException("Failed to get response from Gemini", e);
-                }
-            });
-        }
-
-        @Override
-        public void reset() {
-            Log.d(TAG, "Resetting chat session: " + sessionId);
-            messageHistory.clear();
-            systemPrompt = null;
-            Log.d(TAG, "Reset chat session: " + sessionId);
-        }
-
-        @Override
-        public List<Message> getMessages() {
-            return new ArrayList<>(messageHistory);
-        }
-
-        // Helper method to check if system prompt is still available
-        public boolean hasSystemPrompt() {
-            return systemPrompt != null && !systemPrompt.trim().isEmpty();
-        }
-
-        // Helper method to get system prompt length for debugging
-        public int getSystemPromptLength() {
-            return systemPrompt != null ? systemPrompt.length() : 0;
-        }
-    }
-
     @Override
     public ChatSession getOrCreateSession(UUID sessionId) {
         String sessionIdStr = sessionId.toString();
         if (!chatSessions.containsKey(sessionIdStr)) {
-            chatSessions.put(sessionIdStr, new GeminiChatSession(sessionIdStr));
+            chatSessions.put(sessionIdStr, new ChatSession(sessionIdStr));
         }
         return chatSessions.get(sessionIdStr);
+    }
+
+    @Override
+    protected CompletableFuture<String> sendMessages(ChatSession session) {
+        Log.d(TAG, "Sending " + session.getMessages().size() + " messages in session: " + session.getSessionId());
+        Log.d(TAG, "System prompt available: " + (session.hasSystemPrompt() ? "yes" : "no"));
+
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                // Call the API with the full context including system prompt
+                String response = callGeminiAPI(session.getMessages(), session.getSystemPrompt());
+
+                // Save the original response to history
+                session.queueAssistantResponse(response);
+
+                // Return the extracted code
+                return response;
+            } catch (Exception e) {
+                Log.e(TAG, "Error in chat session", e);
+                throw new RuntimeException("Failed to get response from Gemini", e);
+            }
+        });
     }
 
     @Override
@@ -600,7 +527,7 @@ public class GeminiLLMClient extends LLMClient {
         ChatSession chatSession = preparePromptForInitialCode(sessionId, description);
 
         // Send all messages and get the response
-        return chatSession.sendMessages()
+        return sendMessages(chatSession)
                 .thenApply(response -> {
                     Log.d(TAG, "Got response, length: " + response.length());
                     return response;
@@ -622,7 +549,7 @@ public class GeminiLLMClient extends LLMClient {
         ChatSession chatSession = preparePromptForInitialCode(sessionId, description, initialCode);
 
         // Send all messages and get the response
-        return chatSession.sendMessages()
+        return sendMessages(chatSession)
                 .thenApply(response -> {
                     Log.d(TAG, "Got response, length: " + response.length());
                     return response;
@@ -671,7 +598,7 @@ public class GeminiLLMClient extends LLMClient {
         session.queueUserMessageWithImage(prompt, image);
 
         // Send all messages and get the response
-        return session.sendMessages()
+        return sendMessages(session)
                 .thenApply(response -> {
                     Log.d(TAG, "Got response response, length: " + response.length());
                     return response;
@@ -792,7 +719,7 @@ public class GeminiLLMClient extends LLMClient {
                     geminiRole = "system";
                 } else if (MessageRole.USER.equals(msg.role)) {
                     geminiRole = "user";
-                } else if (MessageRole.MODEL.equals(msg.role)) {
+                } else if (MessageRole.ASSISTANT.equals(msg.role)) {
                     geminiRole = "model";
                 } else {
                     geminiRole = msg.role.getApiValue();
@@ -844,7 +771,7 @@ public class GeminiLLMClient extends LLMClient {
                     String geminiRole;
                     if (MessageRole.USER.equals(message.role)) {
                         geminiRole = "user";
-                    } else if (MessageRole.MODEL.equals(message.role)) {
+                    } else if (MessageRole.ASSISTANT.equals(message.role)) {
                         geminiRole = "model";
                     } else {
                         // Fallback for any other roles

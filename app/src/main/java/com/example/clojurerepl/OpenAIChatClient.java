@@ -24,6 +24,7 @@ public class OpenAIChatClient extends LLMClient {
     private static final String TAG = "OpenAIChatClient";
     private String modelName = null;
     private final Map<String, List<Message>> sessionMessages = new HashMap<>();
+    private Map<String, ChatSession> chatSessions = new HashMap<>();
 
     // Static cache for available models
     private static List<String> cachedModels = null;
@@ -183,105 +184,76 @@ public class OpenAIChatClient extends LLMClient {
         return null;
     }
 
-    private class OpenAIChatSession implements ChatSession {
-        private final String sessionId;
-        private final List<Message> messages;
+    @Override
+    public ChatSession getOrCreateSession(UUID sessionId) {
+        String sessionIdStr = sessionId.toString();
 
-        public OpenAIChatSession(String sessionId) {
-            this.sessionId = sessionId;
+        // Create a new session if one doesn't exist for this ID
+        if (!chatSessions.containsKey(sessionIdStr)) {
+            Log.d(TAG, "Creating new OpenAI chat session with ID: " + sessionIdStr);
+            ChatSession session = new ChatSession(sessionIdStr);
 
-            // Use existing messages or create new list
-            if (sessionMessages.containsKey(sessionId)) {
-                this.messages = sessionMessages.get(sessionId);
-            } else {
-                this.messages = new ArrayList<>();
-                sessionMessages.put(sessionId, this.messages);
+            // Restore existing messages if available
+            if (sessionMessages.containsKey(sessionIdStr)) {
+                List<Message> existingMessages = sessionMessages.get(sessionIdStr);
+                for (Message msg : existingMessages) {
+                    if (MessageRole.SYSTEM.equals(msg.role)) {
+                        session.queueSystemPrompt(msg.content);
+                    } else if (MessageRole.USER.equals(msg.role)) {
+                        session.queueUserMessage(msg.content);
+                    } else if (MessageRole.ASSISTANT.equals(msg.role)) {
+                        session.queueAssistantResponse(msg.content);
+                    }
+                }
             }
 
-            Log.d(TAG, "OpenAI chat session initialized: " + sessionId +
-                    " with " + messages.size() + " messages");
+            chatSessions.put(sessionIdStr, session);
+            return session;
         }
 
-        @Override
-        public void queueSystemPrompt(String content) {
-            Log.d(TAG, "Queuing system prompt in session: " + sessionId);
-            // Always queue system prompts with SYSTEM role
-            messages.add(new Message(MessageRole.SYSTEM, content));
-        }
-
-        @Override
-        public void queueUserMessage(String content) {
-            Log.d(TAG, "Queuing user message in session: " + sessionId);
-            messages.add(new Message(MessageRole.USER, content));
-        }
-
-        @Override
-        public void queueUserMessageWithImage(String content, File imageFile) {
-            Log.d(TAG, "Queuing user message with image in session: " + sessionId);
-            // For OpenAI client, just queue as regular message (ignore image for now)
-            messages.add(new Message(MessageRole.USER, content));
-        }
-
-        @Override
-        public void queueAssistantResponse(String content) {
-            Log.d(TAG, "Queuing assistant response in session: " + sessionId);
-            messages.add(new Message(MessageRole.ASSISTANT, content));
-        }
-
-        @Override
-        public CompletableFuture<String> sendMessages() {
-            Log.d(TAG, "Sending " + messages.size() + " messages in session: " + sessionId);
-            // Print the message types and the first 50 characters of the content
-            for (Message msg : messages) {
-                // Use the same role mapping as the API call for consistent logging
-                String openaiRole;
-                if (MessageRole.SYSTEM.equals(msg.role)) {
-                    openaiRole = getSystemRoleForModel();
-                } else if (MessageRole.USER.equals(msg.role)) {
-                    openaiRole = "user";
-                } else if (MessageRole.ASSISTANT.equals(msg.role)) {
-                    openaiRole = "assistant";
-                } else if (MessageRole.DEVELOPER.equals(msg.role)) {
-                    openaiRole = "developer";
-                } else {
-                    openaiRole = msg.role.getApiValue();
-                }
-                Log.d(TAG, "Message type: " + openaiRole + ", content: " + msg.content);
-            }
-
-            return CompletableFuture.supplyAsync(() -> {
-                try {
-                    String response = callOpenAIAPI(messages);
-                    Log.d(TAG, "=== FULL OPENAI RESPONSE ===\n" + response);
-
-                    // Add assistant message to history
-                    queueAssistantResponse(response);
-
-                    return response;
-                } catch (Exception e) {
-                    Log.e(TAG, "Error in chat session", e);
-                    throw new RuntimeException("Failed to get response from OpenAI", e);
-                }
-            });
-        }
-
-        @Override
-        public void reset() {
-            Log.d(TAG, "Resetting chat session: " + sessionId);
-            messages.clear();
-        }
-
-        @Override
-        public List<Message> getMessages() {
-            return new ArrayList<>(messages);
-        }
+        // Use existing session
+        Log.d(TAG, "Reusing existing OpenAI chat session with ID: " + sessionIdStr);
+        return chatSessions.get(sessionIdStr);
     }
 
     @Override
-    public ChatSession getOrCreateSession(UUID sessionId) {
-        // Use the UUID as the session ID
-        String sessionIdStr = sessionId.toString();
-        return new OpenAIChatSession(sessionIdStr);
+    protected CompletableFuture<String> sendMessages(ChatSession session) {
+        Log.d(TAG, "Sending " + session.getMessages().size() + " messages in session: " + session.getSessionId());
+        // Print the message types and the first 50 characters of the content
+        for (Message msg : session.getMessages()) {
+            // Use the same role mapping as the API call for consistent logging
+            String openaiRole;
+            if (MessageRole.SYSTEM.equals(msg.role)) {
+                openaiRole = getSystemRoleForModel();
+            } else if (MessageRole.USER.equals(msg.role)) {
+                openaiRole = "user";
+            } else if (MessageRole.ASSISTANT.equals(msg.role)) {
+                openaiRole = "assistant";
+            } else if (MessageRole.DEVELOPER.equals(msg.role)) {
+                openaiRole = "developer";
+            } else {
+                openaiRole = msg.role.getApiValue();
+            }
+            Log.d(TAG, "Message type: " + openaiRole + ", content: " + msg.content);
+        }
+
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                String response = callOpenAIAPI(session.getMessages());
+                Log.d(TAG, "=== FULL OPENAI RESPONSE ===\n" + response);
+
+                // Add assistant message to history
+                session.queueAssistantResponse(response);
+
+                // Update the session messages map for persistence
+                sessionMessages.put(session.getSessionId(), session.getMessages());
+
+                return response;
+            } catch (Exception e) {
+                Log.e(TAG, "Error in chat session", e);
+                throw new RuntimeException("Failed to get response from OpenAI", e);
+            }
+        });
     }
 
     @Override
@@ -307,7 +279,7 @@ public class OpenAIChatClient extends LLMClient {
         Log.d(TAG, "└───────────────────────────────────────────┘");
 
         ChatSession session = preparePromptForInitialCode(sessionId, description);
-        return session.sendMessages();
+        return sendMessages(session);
     }
 
     @Override
@@ -319,7 +291,7 @@ public class OpenAIChatClient extends LLMClient {
         Log.d(TAG, "└───────────────────────────────────────────┘");
 
         ChatSession session = preparePromptForInitialCode(sessionId, description, initialCode);
-        return session.sendMessages();
+        return sendMessages(session);
     }
 
     @Override
@@ -348,7 +320,7 @@ public class OpenAIChatClient extends LLMClient {
 
         // Queue the user message (with image attachment if provided)
         session.queueUserMessageWithImage(prompt, image);
-        return session.sendMessages();
+        return sendMessages(session);
     }
 
     private String callOpenAIAPI(List<Message> messages) {
