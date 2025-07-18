@@ -252,10 +252,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                 if (currentSession.getLlmType() != selectedType) {
                     currentSession.setLlmType(selectedType);
-                    // We can't be allowed to change the model provider if we've already
-                    // started generating code. In this case, the model provider dropdown menu is
-                    // locked.
-                    assert currentSession.getIterationCount() == 0;
                     // We're changing the model provider so clear the model name in the current
                     // session, but do this only if we haven't started generating code yet.
                     currentSession.setLlmModel(null);
@@ -340,33 +336,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                 // Update generate button text for iteration
                 generateButton.setText(R.string.improve_app);
-
-                // Mark that generation has started only if LLM type has been set
-                // This will determine if we lock the model selectors
-                boolean llmTypeIsSet = currentSession.getLlmType() != null &&
-                        currentSession.getLlmModel() != null;
-
-                // Only disable the spinners if LLM type and model are set
-                llmTypeSpinner.setEnabled(!llmTypeIsSet);
-                llmSpinner.setEnabled(!llmTypeIsSet);
-
-                // Show toast message to inform the user if LLM is locked
-                if (llmTypeIsSet && currentSession.getIterationCount() > 0) {
-                    new Handler().postDelayed(() -> {
-                        Toast.makeText(this,
-                                "Model selection is locked for existing session. Start a new session to change models.",
-                                Toast.LENGTH_LONG).show();
-                    }, 1000); // Slight delay for better UX
-                } else {
-                    new Handler().postDelayed(() -> {
-                        Toast.makeText(this,
-                                "Please select an LLM model to continue with this session.",
-                                Toast.LENGTH_LONG).show();
-                    }, 1000); // Slight delay for better UX
-                    Log.d(TAG, "Either LLM type is not set or generation has not started - enabling model selectors");
-                    llmTypeSpinner.setEnabled(true);
-                    llmSpinner.setEnabled(true);
-                }
             }
 
             // Set the LLM type and model in the UI if they exist
@@ -390,10 +359,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     // enumeration
                 }
             } else {
-                Log.d(TAG, "Session restore: LLM type not set - enabling model selectors");
-                // If LLM type is not set, make sure model selectors are enabled
-                llmTypeSpinner.setEnabled(true);
-                llmSpinner.setEnabled(true);
+                Log.d(TAG, "Session restore: LLM type not set");
             }
 
             // Restore logcat output if available
@@ -536,16 +502,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             iterationManager.shutdown();
             iterationManager = null;
         }
-
-        // Mark that generation has started - disable model selection
-        Log.d(TAG, "startNewDesign: Generation started - disabling model selection");
-        llmTypeSpinner.setEnabled(false);
-        llmSpinner.setEnabled(false);
-
-        // Show toast message to inform the user
-        Toast.makeText(this,
-                "Model selection is locked. Start a new session to change models.",
-                Toast.LENGTH_LONG).show();
 
         assert currentSession != null;
 
@@ -1654,11 +1610,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             iterationManager = null;
         }
 
-        // Re-enable spinners when generation is cleared
-        llmTypeSpinner.setEnabled(true);
-        llmSpinner.setEnabled(true);
-
-        Log.d(TAG, "Generation state cleared - model selection unlocked");
+        Log.d(TAG, "Generation state cleared");
     }
 
     @Override
@@ -1732,10 +1684,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
      */
     private void showLLMErrorDialog(String title, String errorMessage) {
         runOnUiThread(() -> {
-            // Re-enable LLM provider and model choice menus when LLM errors occur
-            llmTypeSpinner.setEnabled(true);
-            llmSpinner.setEnabled(true);
-
             // Show popup dialog with error message
             new AlertDialog.Builder(this)
                     .setTitle(title)
@@ -1759,10 +1707,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             generateButton.setEnabled(true);
             thumbsUpButton.setEnabled(true);
             runButton.setEnabled(true);
-
-            // Re-enable LLM provider and model choice menus when extraction fails
-            llmTypeSpinner.setEnabled(true);
-            llmSpinner.setEnabled(true);
 
             // Show popup dialog with error message
             new AlertDialog.Builder(this)
