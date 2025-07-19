@@ -17,11 +17,9 @@ public class LLMClientFactory {
         STUB
     }
 
-    public static LLMClient createClient(Context context, LLMType type, String modelName, UUID sessionId) {
-        Log.d(TAG, "Creating LLM client of type: " + type + " for session: " + sessionId);
-
-        // Create a ChatSession for this client
-        LLMClient.ChatSession chatSession = new LLMClient.ChatSession(sessionId.toString());
+    public static LLMClient createClient(Context context, LLMType type, String modelName,
+            LLMClient.ChatSession chatSession) {
+        Log.d(TAG, "Creating LLM client of type: " + type + " for session: " + chatSession.getSessionId());
 
         switch (type) {
             case GEMINI:

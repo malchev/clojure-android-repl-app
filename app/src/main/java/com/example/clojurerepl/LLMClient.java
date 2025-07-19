@@ -22,7 +22,11 @@ public abstract class LLMClient {
 
     protected final Context context;
     private String promptTemplate;
-    public final ChatSession chatSession;
+    protected final ChatSession chatSession;
+
+    public ChatSession getChatSession() {
+        return chatSession;
+    }
 
     public LLMClient(Context context, ChatSession chatSession) {
         Log.d(TAG, "Creating new LLMClient");

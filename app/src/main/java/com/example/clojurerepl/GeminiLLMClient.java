@@ -464,7 +464,7 @@ public class GeminiLLMClient extends LLMClient {
 
     public GeminiLLMClient(Context context, ChatSession chatSession) {
         super(context, chatSession);
-        Log.d(TAG, "Creating new GeminiLLMClient");
+        Log.d(TAG, "Creating new GeminiLLMClient with " + chatSession.getMessages().size() + " messages.");
         apiKeyManager = ApiKeyManager.getInstance(context);
     }
 

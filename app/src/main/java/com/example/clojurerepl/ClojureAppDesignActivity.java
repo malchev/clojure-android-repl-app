@@ -247,11 +247,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         updateLlmSpinner(LLMClientFactory.LLMType.CLAUDE);
                     }
                 } else {
-                    llmSpinner.setVisibility(View.GONE);
-                    iterationManager = new ClojureIterationManager(ClojureAppDesignActivity.this,
-                            ClojureIterationManager.createLLMClientWithSession(ClojureAppDesignActivity.this, selectedType, null, currentSession.getId()),
-                            currentSession.getId());
-                    iterationManager.setExtractionErrorCallback(ClojureAppDesignActivity.this);
+                    assert false;
                 }
 
                 if (currentSession.getLlmType() != selectedType) {
@@ -262,10 +258,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     assert currentSession.getIterationCount() == 0;
                     // We're changing the model provider so clear the model name in the current
                     // session, but do this only if we haven't started generating code yet.
-                    Log.d(TAG, "Clearing LLM model for new model provider");
                     currentSession.setLlmModel(null);
                     sessionManager.updateSession(currentSession);
-
+                    Log.d(TAG, "Clearing LLM model for new model provider. Session " + currentSession.getId().toString() + " has " + currentSession.getChatHistory().size() + " messages.");
                 }
             }
 
@@ -388,9 +383,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     // Create the client directly with the saved model
                     Log.d(TAG, "Session restore: Creating LLM client with model " + sessionRestoreModel);
                     assert iterationManager == null : "iterationManager should be null before creating new instance";
-                    iterationManager = new ClojureIterationManager(this,
-                            ClojureIterationManager.createLLMClientWithSession(this, currentSession.getLlmType(), sessionRestoreModel, currentSession.getId()),
-                            currentSession.getId());
+                    iterationManager = new ClojureIterationManager(this, currentSession);
                     iterationManager.setExtractionErrorCallback(this);
 
                     // We'll wait until llmTypeSpinner's selection listener fires to trigger model
@@ -452,38 +445,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 feedbackInput.setText(lastErrorFeedback);
                 Log.d(TAG, "Restored error feedback from session");
             }
-        }
-
-        // Now that initialization is complete, restore chat history if available
-        if (currentSession != null && currentSession.getChatHistory() != null
-                && !currentSession.getChatHistory().isEmpty()
-                && iterationManager != null) {
-
-            // Get chat session and restore messages
-            LLMClient.ChatSession chatSession = iterationManager.getChatSession();
-
-            // Reset the session to clear any default messages
-            chatSession.reset();
-
-            // Then add all messages from the saved session
-            List<LLMClient.Message> savedMessages = currentSession.getChatHistory();
-            Log.d(TAG, "Restoring " + savedMessages.size() + " messages to chat session");
-
-            for (LLMClient.Message message : savedMessages) {
-                if (LLMClient.MessageRole.SYSTEM.equals(message.role)) {
-                    chatSession.queueSystemPrompt(message.content);
-                } else if (LLMClient.MessageRole.USER.equals(message.role)) {
-                    if (message.hasImage()) {
-                        chatSession.queueUserMessageWithImage(message.content, message.imageFile);
-                    } else {
-                        chatSession.queueUserMessage(message.content);
-                    }
-                } else if (LLMClient.MessageRole.ASSISTANT.equals(message.role)) {
-                    chatSession.queueAssistantResponse(message.content);
-                }
-            }
-
-            Log.d(TAG, "Chat history restored");
         }
     }
 
@@ -575,10 +536,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             iterationManager.shutdown();
             iterationManager = null;
         }
-        iterationManager = new ClojureIterationManager(this,
-                ClojureIterationManager.createLLMClientWithSession(this, currentType, selectedModel, currentSession.getId()),
-                currentSession.getId());
-        iterationManager.setExtractionErrorCallback(this);
 
         // Mark that generation has started - disable model selection
         Log.d(TAG, "startNewDesign: Generation started - disabling model selection");
@@ -591,6 +548,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 Toast.LENGTH_LONG).show();
 
         assert currentSession != null;
+
+        currentSession.setLlmType(currentType);
+        currentSession.setLlmModel(selectedModel);
+        sessionManager.updateSession(currentSession);
+
+        iterationManager = new ClojureIterationManager(this, currentSession);
+        iterationManager.setExtractionErrorCallback(this);
 
         // Check if we have existing code to use as a starting point
         String currentCode = currentSession.getCurrentCode();
@@ -615,14 +579,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         // Update session with code
                         currentSession.setCurrentCode(code);
                         currentSession.incrementIterationCount();
+                        sessionManager.updateSession(currentSession);
 
                         displayCurrentCode();
-
-                        // Save chat history to session
-                        LLMClient.ChatSession chatSession = iterationManager.getChatSession();
-                        currentSession.setChatHistory(chatSession.getMessages());
-
-                        sessionManager.updateSession(currentSession);
 
                         // Show the feedback buttons
                         feedbackButtonsContainer.setVisibility(View.VISIBLE);
@@ -751,14 +710,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                         currentSession.setCurrentCode(code);
                         currentSession.incrementIterationCount();
+                        sessionManager.updateSession(currentSession);
 
                         displayCurrentCode();
-
-                        // Save chat history to session
-                        LLMClient.ChatSession chatSession = iterationManager.getChatSession();
-                        currentSession.setChatHistory(chatSession.getMessages());
-
-                        sessionManager.updateSession(currentSession);
 
                         // Make sure buttons are enabled after response
                         thumbsUpButton.setEnabled(true);
@@ -1153,18 +1107,18 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         iterationManager = null;
                     }
 
-                    iterationManager = new ClojureIterationManager(
-                            ClojureAppDesignActivity.this,
-                            ClojureIterationManager.createLLMClientWithSession(ClojureAppDesignActivity.this, currentType, selectedModel, currentSession.getId()),
-                            currentSession.getId());
-                    iterationManager.setExtractionErrorCallback(ClojureAppDesignActivity.this);
-
                     // Update session with new model
-                    if (currentSession != null) {
-                        currentSession.setLlmType(currentType);
-                        currentSession.setLlmModel(selectedModel);
-                        sessionManager.updateSession(currentSession);
-                    }
+                    assert currentSession != null;
+                    Log.d(TAG, "Type: " + currentType + ", LLM: " +
+                            selectedModel + ". Session " + currentSession.getId().toString() +
+                            " has " + currentSession.getChatHistory().size() + " messages.");
+                    currentSession.setLlmType(currentType);
+                    currentSession.setLlmModel(selectedModel);
+                    sessionManager.updateSession(currentSession);
+
+                    iterationManager = new ClojureIterationManager(ClojureAppDesignActivity.this,
+                            currentSession);
+                    iterationManager.setExtractionErrorCallback(ClojureAppDesignActivity.this);
                 } else if (sessionRestoreModel != null && selectedModel.equals(sessionRestoreModel)) {
                     Log.d(TAG, "Skipping client creation - already using session model: " + sessionRestoreModel);
                 }
@@ -1406,7 +1360,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
     private void clearChatSession() {
         if (iterationManager != null) {
-            LLMClient.ChatSession chatSession = iterationManager.getChatSession();
+            LLMClient.ChatSession chatSession = currentSession.getChatSession();
             if (chatSession != null) {
                 chatSession.reset();
             }
@@ -1676,7 +1630,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     }
 
                     // Get the chat session and reset it
-                    LLMClient.ChatSession chatSession = iterationManager.getChatSession();
+                    LLMClient.ChatSession chatSession = currentSession.getChatSession();
                     if (chatSession != null) {
                         // Reset the session
                         Log.d(TAG, "Clearing chat history");

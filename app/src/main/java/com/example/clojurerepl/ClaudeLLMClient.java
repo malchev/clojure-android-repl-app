@@ -36,7 +36,7 @@ public class ClaudeLLMClient extends LLMClient {
 
     public ClaudeLLMClient(Context context, ChatSession chatSession) {
         super(context, chatSession);
-        Log.d(TAG, "Creating new ClaudeLLMClient");
+        Log.d(TAG, "Creating new ClaudeLLMClient with " + chatSession.getMessages().size() + " messages.");
     }
 
     @Override

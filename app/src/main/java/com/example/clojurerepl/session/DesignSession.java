@@ -32,7 +32,7 @@ public class DesignSession {
     private int iterationCount;
     private LLMClientFactory.LLMType llmType;
     private String llmModel;
-    private List<LLMClient.Message> chatHistory;
+    private LLMClient.ChatSession chatSession;
     private String lastLogcat;
     private String lastErrorFeedback;
     private boolean hasError;
@@ -44,9 +44,9 @@ public class DesignSession {
         this.createdAt = new Date();
         this.updatedAt = new Date();
         this.iterationCount = 0;
-        this.chatHistory = new ArrayList<>();
         this.screenshotSets = new ArrayList<>();
         this.hasError = false;
+        this.chatSession = new LLMClient.ChatSession(this.id.toString());
     }
 
     public DesignSession(String description, LLMClientFactory.LLMType llmType, String llmModel) {
@@ -127,18 +127,12 @@ public class DesignSession {
         this.updatedAt = new Date();
     }
 
+    public LLMClient.ChatSession getChatSession() {
+        return chatSession;
+    }
+
     public List<LLMClient.Message> getChatHistory() {
-        return chatHistory;
-    }
-
-    public void setChatHistory(List<LLMClient.Message> chatHistory) {
-        this.chatHistory = chatHistory;
-        this.updatedAt = new Date();
-    }
-
-    public void addMessage(LLMClient.Message message) {
-        this.chatHistory.add(message);
-        this.updatedAt = new Date();
+        return chatSession.getMessages();
     }
 
     public String getLastLogcat() {
@@ -287,6 +281,7 @@ public class DesignSession {
         }
 
         JSONArray messagesJson = new JSONArray();
+        List<LLMClient.Message> chatHistory = getChatHistory();
         for (LLMClient.Message message : chatHistory) {
             JSONObject messageJson = new JSONObject();
             messageJson.put("role", message.role.getApiValue());
@@ -370,7 +365,7 @@ public class DesignSession {
             session.llmModel = json.getString("llmModel");
         }
 
-        session.chatHistory = new ArrayList<>();
+        List<LLMClient.Message> chatHistory = new ArrayList<>();
         if (json.has("chatHistory")) {
             JSONArray messagesJson = json.getJSONArray("chatHistory");
             for (int i = 0; i < messagesJson.length(); i++) {
@@ -393,16 +388,33 @@ public class DesignSession {
 
                     // Only create message with image if the file exists
                     if (imageFile.exists()) {
-                        session.chatHistory.add(new LLMClient.Message(role, content, imageFile, mimeType));
+                        chatHistory.add(new LLMClient.Message(role, content, imageFile, mimeType));
                     } else {
                         // File doesn't exist, create regular message
                         Log.w(TAG, "Image file not found during deserialization: " + imagePath);
-                        session.chatHistory.add(new LLMClient.Message(role, content));
+                        chatHistory.add(new LLMClient.Message(role, content));
                     }
                 } else {
                     // Regular message without image
-                    session.chatHistory.add(new LLMClient.Message(role, content));
+                    chatHistory.add(new LLMClient.Message(role, content));
                 }
+            }
+        }
+
+        // Now from the reconstructed chat history, rebuild the
+        // LLMClient.ChatSession object.  Could've done this in the loop above
+        // but I find this easier to read.
+        for (LLMClient.Message message : chatHistory) {
+            if (LLMClient.MessageRole.SYSTEM.equals(message.role)) {
+                session.chatSession.queueSystemPrompt(message.content);
+            } else if (LLMClient.MessageRole.USER.equals(message.role)) {
+                if (message.hasImage()) {
+                    session.chatSession.queueUserMessageWithImage(message.content, message.imageFile);
+                } else {
+                    session.chatSession.queueUserMessage(message.content);
+                }
+            } else if (LLMClient.MessageRole.ASSISTANT.equals(message.role)) {
+                session.chatSession.queueAssistantResponse(message.content);
             }
         }
 

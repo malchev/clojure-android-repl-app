@@ -12,6 +12,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.UUID;
 
+import com.example.clojurerepl.session.DesignSession;
+
 public class ClojureIterationManager {
     private static final String TAG = "ClojureIterationManager";
 
@@ -75,36 +77,14 @@ public class ClojureIterationManager {
         }
     }
 
-    public ClojureIterationManager(Context context, LLMClient llmClient, UUID sessionId) {
+    public ClojureIterationManager(Context context, DesignSession session) {
         this.context = context.getApplicationContext();
-        this.llmClient = llmClient;
-        this.sessionId = sessionId;
+        this.llmClient = LLMClientFactory.createClient(context, session.getLlmType(), session.getLlmModel(),
+                session.getChatSession());
+        this.sessionId = session.getId();
 
         // Initialize executor for background tasks
         this.executor = Executors.newCachedThreadPool();
-    }
-
-    /**
-     * Creates a new LLMClient with a ChatSession for the given session ID
-     * 
-     * @param context   The application context
-     * @param type      The LLM type
-     * @param modelName The model name (optional)
-     * @param sessionId The session ID
-     * @return A new LLMClient instance with a ChatSession
-     */
-    public static LLMClient createLLMClientWithSession(Context context, LLMClientFactory.LLMType type, String modelName,
-            UUID sessionId) {
-        return LLMClientFactory.createClient(context, type, modelName, sessionId);
-    }
-
-    /**
-     * Gets the ChatSession associated with this iteration manager's LLM client
-     * 
-     * @return The ChatSession instance
-     */
-    public LLMClient.ChatSession getChatSession() {
-        return llmClient.chatSession;
     }
 
     /**

@@ -28,7 +28,7 @@ public class OpenAIChatClient extends LLMClient {
 
     public OpenAIChatClient(Context context, ChatSession chatSession) {
         super(context, chatSession);
-        Log.d(TAG, "Creating new OpenAIChatClient");
+        Log.d(TAG, "Creating new OpenAIChatClient with " + chatSession.getMessages().size() + " messages.");
     }
 
     public void setModel(String modelName) {
