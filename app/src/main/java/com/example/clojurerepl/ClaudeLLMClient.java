@@ -598,13 +598,6 @@ public class ClaudeLLMClient extends LLMClient {
                     return extractTextFromObjectResponse(jsonResponse);
                 case MALFORMED:
                 default:
-                    // Try direct markdown extraction as a last resort
-                    String extractedCode = extractCodeFromMarkdown(jsonResponse);
-                    if (extractedCode != null) {
-                        Log.d(TAG, "Extracted code from malformed response using markdown parser");
-                        return extractedCode;
-                    }
-
                     Log.w(TAG, "Could not parse response in any known format");
                     throw new RuntimeException("Could not parse response in any known format");
             }
@@ -698,14 +691,7 @@ public class ClaudeLLMClient extends LLMClient {
                 throw new RuntimeException("No text content found in array response");
             }
 
-            // Extract code blocks from text content
-            String extractedCode = extractCodeFromMarkdown(contentText);
-            if (extractedCode != null) {
-                return extractedCode;
-            }
-
-            // If we have content but no code blocks were found, log this unusual case
-            Log.d(TAG, "No code blocks found in array response content, returning raw text");
+            Log.d(TAG, "Returning raw text");
             return contentText;
         } catch (Exception e) {
             Log.e(TAG, "Error processing array response: " + e.getMessage(), e);
@@ -795,99 +781,12 @@ public class ClaudeLLMClient extends LLMClient {
                 }
             }
 
-            // Extract code from Markdown code blocks as a last resort
-            String markdownExtracted = extractCodeFromMarkdown(jsonResponse);
-            if (markdownExtracted != null) {
-                Log.d(TAG, "Successfully extracted code from markdown in object response");
-                return markdownExtracted;
-            }
-
             Log.w(TAG, "Could not extract content from object response: " +
                     jsonResponse.substring(0, Math.min(jsonResponse.length(), 200)));
             throw new RuntimeException("Could not extract content from object response");
         } catch (Exception e) {
             Log.e(TAG, "Error parsing response as JSON object: " + e.getMessage(), e);
             throw new RuntimeException("Error parsing response as JSON object", e);
-        }
-    }
-
-    /**
-     * Helper method to extract code from a Markdown-formatted response
-     *
-     * @param response The response to parse
-     * @return The extracted code or null if none found
-     */
-    private String extractCodeFromMarkdown(String response) {
-        try {
-            if (response == null || response.isEmpty()) {
-                return null;
-            }
-
-            Log.d(TAG, "Attempting to extract code from markdown content");
-
-            // Look for Clojure code blocks in markdown format
-            int start = response.indexOf("```clojure");
-            if (start >= 0) {
-                start = response.indexOf("\n", start) + 1;
-                int end = response.indexOf("```", start);
-                if (end > start) {
-                    String code = response.substring(start, end).trim();
-                    Log.d(TAG, "Extracted Clojure code block, length: " + code.length());
-                    return code;
-                }
-            }
-
-            // Try with just backticks (no language specifier)
-            start = response.indexOf("```");
-            if (start >= 0) {
-                // Skip the line containing only ```
-                start = response.indexOf("\n", start) + 1;
-                // Find the closing ```
-                int end = response.indexOf("```", start);
-                if (end > start) {
-                    String code = response.substring(start, end).trim();
-                    Log.d(TAG, "Extracted generic code block, length: " + code.length());
-                    return code;
-                }
-            }
-
-            // Look for indented code blocks as a last resort
-            if (response.contains("    ")) {
-                // Find consecutive lines that start with 4 spaces
-                String[] lines = response.split("\n");
-                StringBuilder codeBlock = new StringBuilder();
-                boolean inCodeBlock = false;
-                int codeLines = 0;
-
-                for (String line : lines) {
-                    if (line.startsWith("    ") || line.startsWith("\t")) {
-                        if (!inCodeBlock) {
-                            inCodeBlock = true;
-                        }
-                        // Add the line without the indentation
-                        codeBlock.append(line.substring(line.startsWith("    ") ? 4 : 1)).append("\n");
-                        codeLines++;
-                    } else if (inCodeBlock && line.trim().isEmpty()) {
-                        // Empty lines within a code block are preserved
-                        codeBlock.append("\n");
-                    } else if (inCodeBlock) {
-                        // End of code block
-                        break;
-                    }
-                }
-
-                // Only return if we found a significant code block (at least 3 lines)
-                if (codeLines >= 3) {
-                    String code = codeBlock.toString().trim();
-                    Log.d(TAG, "Extracted indented code block, length: " + code.length());
-                    return code;
-                }
-            }
-
-            return null;
-        } catch (Exception e) {
-            Log.e(TAG, "Error extracting code from markdown", e);
-            return null;
         }
     }
 

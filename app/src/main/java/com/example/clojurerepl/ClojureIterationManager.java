@@ -193,9 +193,12 @@ public class ClojureIterationManager {
         }
 
         // Check if the input contains markdown code block markers
-        int startMarkerPos = input.indexOf("```clojure");
+        // Find the LAST occurrence of ```clojure to ensure we get the final code block
+        // even if the LLM includes multiple code blocks in violation of the system
+        // prompt
+        int startMarkerPos = input.lastIndexOf("```clojure");
         if (startMarkerPos != -1) {
-            Log.d(TAG, "Found starting marker.");
+            Log.d(TAG, "Found starting marker at position: " + startMarkerPos);
             try {
                 // Look for a code block
                 // Find the end of the start marker line
