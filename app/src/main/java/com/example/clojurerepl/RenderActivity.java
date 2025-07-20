@@ -248,6 +248,7 @@ public class RenderActivity extends AppCompatActivity {
 
             ServiceConnection remoteConnection = new ServiceConnection() {
                 IBinder.DeathRecipient deathRecipient;
+
                 @Override
                 public void onServiceConnected(ComponentName name, IBinder service) {
                     deathRecipient = new IBinder.DeathRecipient() {
@@ -307,8 +308,8 @@ public class RenderActivity extends AppCompatActivity {
             setContentView(R.layout.activity_render);
 
             // If the activity crashes (typically with an AndroidRuntime
-            // exception), catch it here in the  main thread and send an intent
-            // to the parent activity that execution failed.  Normally result
+            // exception), catch it here in the main thread and send an intent
+            // to the parent activity that execution failed. Normally result
             // is communicated via onNewIntent().
             Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
                 Log.e(TAG, "RenderActivity crashed", throwable);
@@ -321,14 +322,18 @@ public class RenderActivity extends AppCompatActivity {
                     if (parentActivityClass != null) {
                         Intent intent = new Intent(this, parentActivityClass);
                         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                        clojureStatus = "RenderActivity crashed: " + throwable.getMessage();
+                        // Can't call showError() here since the activity has
+                        // crashed.  Instead, show a toast and return the error
+                        // to the calling activity.
+                        Toast.makeText(this, "RenderActivity crashed", Toast.LENGTH_LONG).show();
+                        intent.putExtra(EXTRA_RESULT_ERROR, clojureStatus);
                         intent.putExtra(RenderActivity.EXTRA_RESULT_SUCCESS, false);
                         startActivity(intent);
-                    }
-                    else {
+                    } else {
                         Log.i(TAG, "Could not get class for " + parentActivity);
                     }
-                }
-                else {
+                } else {
                     Log.i(TAG, "ParentActivity is null");
                 }
 
