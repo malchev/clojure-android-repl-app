@@ -39,12 +39,9 @@ public class DesignSessionAdapter extends ListAdapter<DesignSession, DesignSessi
 
             @Override
             public boolean areContentsTheSame(@NonNull DesignSession oldItem, @NonNull DesignSession newItem) {
-                String oldLlmModel = oldItem.getLlmModel();
-                return oldItem.getDescription().equals(newItem.getDescription()) &&
-                        oldItem.getCreatedAt().equals(newItem.getCreatedAt()) &&
-                        oldItem.getLlmType() == newItem.getLlmType() &&
-                        oldLlmModel != null && oldLlmModel.equals(newItem.getLlmModel()) &&
-                        oldItem.getIterationCount() == newItem.getIterationCount();
+                // Always return false to force UI updates
+                // This ensures the UI always reflects the latest data from storage
+                return false;
             }
         });
         this.context = context;
