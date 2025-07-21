@@ -5,6 +5,7 @@ import android.util.Log;
 
 import com.example.clojurerepl.LLMClient;
 import com.example.clojurerepl.LLMClientFactory;
+import com.example.clojurerepl.ClojureIterationManager;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -28,6 +29,7 @@ public class DesignSession {
     private String description;
     private Date createdAt;
     private Date updatedAt;
+    private String initialCode;
     private String currentCode;
     private int iterationCount;
     private LLMClientFactory.LLMType llmType;
@@ -47,13 +49,6 @@ public class DesignSession {
         this.screenshotSets = new ArrayList<>();
         this.hasError = false;
         this.chatSession = new LLMClient.ChatSession(this.id.toString());
-    }
-
-    public DesignSession(String description, LLMClientFactory.LLMType llmType, String llmModel) {
-        this();
-        this.description = description;
-        this.llmType = llmType;
-        this.llmModel = llmModel;
     }
 
     // Getters and setters
@@ -88,6 +83,14 @@ public class DesignSession {
 
     public void setUpdatedAt(Date updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public void setInitialCode(String initialCode) {
+        this.initialCode = initialCode;
+    }
+
+    public String getInitialCode() {
+        return initialCode;
     }
 
     public String getCurrentCode() {
@@ -262,12 +265,8 @@ public class DesignSession {
         json.put("description", description);
         json.put("createdAt", createdAt.getTime());
         json.put("updatedAt", updatedAt.getTime());
+        json.put("initialCode", initialCode);
         json.put("currentCode", currentCode);
-
-        // Add code with line numbers to JSON
-        if (codeWithLineNumbers != null) {
-            json.put("codeWithLineNumbers", codeWithLineNumbers);
-        }
 
         json.put("iterationCount", iterationCount);
 
@@ -335,20 +334,19 @@ public class DesignSession {
         session.updatedAt = new Date(json.getLong("updatedAt"));
         session.iterationCount = json.getInt("iterationCount");
 
-        if (json.has("currentCode")) {
+        if (json.has("initialCode")) {
             try {
-                session.currentCode = json.getString("currentCode");
+                session.setInitialCode(json.getString("initialCode"));
             } catch (JSONException e) {
-                Log.w(TAG, "Invalid currentCode in session: " + json.getString("currentCode"));
+                Log.w(TAG, "Invalid initialCode in session: " + json.getString("initialCode"));
             }
         }
 
-        // Load code with line numbers
-        if (json.has("codeWithLineNumbers")) {
+        if (json.has("currentCode")) {
             try {
-                session.codeWithLineNumbers = json.getString("codeWithLineNumbers");
+                session.setCurrentCode(json.getString("currentCode"));
             } catch (JSONException e) {
-                Log.w(TAG, "Invalid codeWithLineNumbers in session");
+                Log.w(TAG, "Invalid currentCode in session: " + json.getString("currentCode"));
             }
         }
 
@@ -404,6 +402,7 @@ public class DesignSession {
         // Now from the reconstructed chat history, rebuild the
         // LLMClient.ChatSession object.  Could've done this in the loop above
         // but I find this easier to read.
+        String lastCode = null;
         for (LLMClient.Message message : chatHistory) {
             if (LLMClient.MessageRole.SYSTEM.equals(message.role)) {
                 session.chatSession.queueSystemPrompt(message.content);
@@ -415,8 +414,18 @@ public class DesignSession {
                 }
             } else if (LLMClient.MessageRole.ASSISTANT.equals(message.role)) {
                 session.chatSession.queueAssistantResponse(message.content);
+                ClojureIterationManager.CodeExtractionResult extractionResult =
+                    ClojureIterationManager.extractClojureCode(message.content);
+                if (extractionResult.success) {
+                    lastCode = extractionResult.code;
+                }
+            } else {
+                throw new JSONException("Unknown message type " + message.role);
             }
         }
+
+        assert (lastCode == null && session.currentCode == null) ||
+            (lastCode != null && session.currentCode != null && lastCode.equals(session.currentCode));
 
         // Load new fields
         if (json.has("lastLogcat")) {

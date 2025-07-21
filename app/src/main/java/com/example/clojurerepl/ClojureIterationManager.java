@@ -186,7 +186,7 @@ public class ClojureIterationManager {
      * @return A CodeExtractionResult containing the extracted code or error
      *         information
      */
-    public CodeExtractionResult extractClojureCode(String input) {
+    public static CodeExtractionResult extractClojureCode(String input) {
         if (input == null || input.isEmpty()) {
             Log.d(TAG, "Input is null or empty, returning empty string");
             return CodeExtractionResult.success("");

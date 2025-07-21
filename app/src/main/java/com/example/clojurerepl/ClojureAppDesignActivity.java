@@ -174,7 +174,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         // Update session data
         currentSession.setDescription(description);
-        currentSession.setCurrentCode(initialCode);
+        currentSession.setInitialCode(initialCode);
         currentSession.setLlmType(defaultLLMType);
 
         sessionManager.updateSession(currentSession);
@@ -318,6 +318,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             Log.d(TAG, "Setting up session state: " +
                     "id=" + currentSession.getId().toString() +
                     ", description=" + (currentSession.getDescription() != null ? "present" : "null") +
+                    ", initialCode=" + (currentSession.getInitialCode() != null ? "present" : "null") +
                     ", code=" + (currentSession.getCurrentCode() != null ? "present" : "null") +
                     ", llmType=" + (currentSession.getLlmType() != null ? currentSession.getLlmType() : "null") +
                     ", llmModel=" + (currentSession.getLlmModel() != null ? currentSession.getLlmModel() : "null"));
@@ -432,11 +433,17 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             }
         }
 
+        String initialCode = currentSession.getInitialCode();
         String currentCode = currentSession.getCurrentCode();
 
         // Log the current state for debugging
         Log.d(TAG, "handleGenerateButtonClick: currentCode=" +
-                (currentCode != null ? "present (len=" + currentCode.length() + ")" : "null"));
+                (currentCode != null ? "present (len=" + currentCode.length() + ")" : "null") +
+                ", initialCode=" + (initialCode != null ? "present (len=" + initialCode.length() + ")" : "null"));
+
+        assert currentSession.getIterationCount() >= 0;
+        // If this is the first iteration, you can't have currentCode (though you can have initialCode)
+        assert currentSession.getIterationCount() > 0 || currentCode == null;
 
         // If we already have code generated and generation has started, show the
         // feedback dialog
@@ -448,7 +455,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         // If we have initial code from MainActivity but haven't started generation yet,
         // use it as the base for improvement
-        if (currentCode != null && !currentCode.isEmpty() && currentSession.getIterationCount() == 0) {
+        if (initialCode != null && !initialCode.isEmpty() && currentSession.getIterationCount() == 0) {
             Log.d(TAG, "Using initial code as base for improvement");
             // Get the updated description (user may have edited it)
             String description = appDescriptionInput.getText().toString();
@@ -460,7 +467,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             // Update session with the possibly edited description
             currentSession.setDescription(description);
             // Save the session
-            sessionManager.addSession(currentSession);
+            sessionManager.updateSession(currentSession);
         }
 
         // Start a new design (potentially with initial code).
@@ -513,9 +520,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         iterationManager.setExtractionErrorCallback(this);
 
         // Check if we have existing code to use as a starting point
-        String currentCode = currentSession.getCurrentCode();
-        if (currentCode != null && !currentCode.isEmpty()) {
-            Log.d(TAG, "Using existing code as a starting point. Length: " + currentCode.length());
+        String initialCode = currentSession.getCurrentCode();
+        if (initialCode != null && !initialCode.isEmpty()) {
+            Log.d(TAG, "Using existing code as a starting point. Length: " + initialCode.length());
             Toast.makeText(this, "Using existing code as a starting point", Toast.LENGTH_SHORT).show();
         }
 
@@ -526,7 +533,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         progressDialog.show();
 
         // Get the LLM to generate the code first - using IterationManager now
-        iterationManager.generateInitialCode(description, currentCode)
+        iterationManager.generateInitialCode(description, initialCode)
                 .thenAccept(code -> {
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
@@ -786,12 +793,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             // Display all screenshots
             displayScreenshots(screenshotPaths);
 
-            // Save the current code when returning from RenderActivity
-            String currentCode = currentSession.getCurrentCode();
-            if (currentCode != null && !currentCode.isEmpty()) {
-                saveCodeToFile();
-            }
-
             // Save screenshots to session
             if (currentSession != null && screenshotPaths.length > 0) {
                 List<String> paths = new ArrayList<>(Arrays.asList(screenshotPaths));
@@ -806,6 +807,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 sessionManager.updateSession(currentSession);
             }
         }
+
+        // Save the current code when returning from RenderActivity
+        saveCodeToFile();
 
         // Check if we have process logcat data
         if (intent.hasExtra(RenderActivity.EXTRA_RESULT_SUCCESS)) {
@@ -1248,12 +1252,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             writer = new java.io.FileWriter(latestFile);
             writer.write(currentCode);
             writer.close();
-
-            // Update session with current code
-            if (currentSession != null) {
-                currentSession.setCurrentCode(currentCode);
-                sessionManager.updateSession(currentSession);
-            }
 
             Log.d(TAG, "Code saved to: " + codeFile.getAbsolutePath() + " (Iteration "
                     + currentSession.getIterationCount() + ")");

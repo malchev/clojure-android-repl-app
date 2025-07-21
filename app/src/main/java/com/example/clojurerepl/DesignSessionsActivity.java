@@ -105,6 +105,10 @@ public class DesignSessionsActivity extends AppCompatActivity implements DesignS
     public void onOpenSessionClicked(DesignSession session) {
         Intent intent = new Intent(this, ClojureAppDesignActivity.class);
         intent.putExtra("session_id", session.getId().toString());
+        //This line is useful if we want to commit back to the JSON file any
+        //changes to DesignSession done between loading it from JSON and
+        //launching ClojureAppDesignActivity.
+        //sessionManager.updateSession(sessionManager.getSessionById(session.getId()));
         startActivity(intent);
     }
 
