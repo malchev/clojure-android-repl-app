@@ -541,7 +541,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                         // Update session with code
                         currentSession.setCurrentCode(code);
-                        currentSession.incrementIterationCount();
                         sessionManager.updateSession(currentSession);
 
                         displayCurrentCode();
@@ -672,7 +671,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         assert currentSession != null;
 
                         currentSession.setCurrentCode(code);
-                        currentSession.incrementIterationCount();
                         sessionManager.updateSession(currentSession);
 
                         displayCurrentCode();

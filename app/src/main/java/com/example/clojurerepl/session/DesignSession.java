@@ -28,10 +28,7 @@ public class DesignSession {
     private UUID id;
     private String description;
     private Date createdAt;
-    private Date updatedAt;
     private String initialCode;
-    private String currentCode;
-    private int iterationCount;
     private LLMClientFactory.LLMType llmType;
     private String llmModel;
     private LLMClient.ChatSession chatSession;
@@ -39,13 +36,10 @@ public class DesignSession {
     private String lastErrorFeedback;
     private boolean hasError;
     private List<List<String>> screenshotSets;
-    private String codeWithLineNumbers;
 
     public DesignSession() {
         this.id = UUID.randomUUID();
         this.createdAt = new Date();
-        this.updatedAt = new Date();
-        this.iterationCount = 0;
         this.screenshotSets = new ArrayList<>();
         this.hasError = false;
         this.chatSession = new LLMClient.ChatSession(this.id.toString());
@@ -66,7 +60,6 @@ public class DesignSession {
 
     public void setDescription(String description) {
         this.description = description;
-        this.updatedAt = new Date();
     }
 
     public Date getCreatedAt() {
@@ -77,14 +70,6 @@ public class DesignSession {
         this.createdAt = createdAt;
     }
 
-    public Date getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public void setUpdatedAt(Date updatedAt) {
-        this.updatedAt = updatedAt;
-    }
-
     public void setInitialCode(String initialCode) {
         this.initialCode = initialCode;
     }
@@ -93,23 +78,41 @@ public class DesignSession {
         return initialCode;
     }
 
+    public List<String> getAllCode() {
+        List<String> code = new ArrayList<>();
+        for (LLMClient.Message message : chatSession.getMessages()) {
+            if (LLMClient.MessageRole.ASSISTANT.equals(message.role)) {
+                ClojureIterationManager.CodeExtractionResult extractionResult =
+                    ClojureIterationManager.extractClojureCode(message.content);
+                if (extractionResult.success) {
+                    code.add(extractionResult.code);
+                }
+            }
+        }
+
+        return code;
+    }
+
     public String getCurrentCode() {
-        return currentCode;
+        List<String> code = getAllCode();
+        if (code.size() > 0) {
+            return code.get(code.size() - 1);
+        }
+        return null;
     }
 
     public void setCurrentCode(String currentCode) {
-        this.currentCode = currentCode;
-        this.updatedAt = new Date();
-        updateCodeWithLineNumbers(this::addLineNumbersToCode);
+        String code = getCurrentCode();
+        // They are either both null or contain identical strings.
+        assert code == currentCode || code.equals(currentCode);
     }
 
     public int getIterationCount() {
-        return iterationCount;
-    }
-
-    public void incrementIterationCount() {
-        this.iterationCount++;
-        this.updatedAt = new Date();
+        List<String> code = getAllCode();
+        if (code == null) {
+            return 0;
+        }
+        return code.size();
     }
 
     public LLMClientFactory.LLMType getLlmType() {
@@ -118,7 +121,6 @@ public class DesignSession {
 
     public void setLlmType(LLMClientFactory.LLMType llmType) {
         this.llmType = llmType;
-        this.updatedAt = new Date();
     }
 
     public String getLlmModel() {
@@ -127,7 +129,6 @@ public class DesignSession {
 
     public void setLlmModel(String llmModel) {
         this.llmModel = llmModel;
-        this.updatedAt = new Date();
     }
 
     public LLMClient.ChatSession getChatSession() {
@@ -144,7 +145,6 @@ public class DesignSession {
 
     public void setLastLogcat(String lastLogcat) {
         this.lastLogcat = lastLogcat;
-        this.updatedAt = new Date();
     }
 
     /**
@@ -166,7 +166,6 @@ public class DesignSession {
             this.screenshotSets = new ArrayList<>();
         }
         this.screenshotSets.add(new ArrayList<>(screenshotSet));
-        this.updatedAt = new Date();
     }
 
     /**
@@ -187,7 +186,6 @@ public class DesignSession {
 
     public void setLastErrorFeedback(String lastErrorFeedback) {
         this.lastErrorFeedback = lastErrorFeedback;
-        this.updatedAt = new Date();
     }
 
     public boolean hasError() {
@@ -196,7 +194,6 @@ public class DesignSession {
 
     public void setHasError(boolean hasError) {
         this.hasError = hasError;
-        this.updatedAt = new Date();
     }
 
     /**
@@ -205,7 +202,10 @@ public class DesignSession {
      * @return The code with line numbers
      */
     public String getCodeWithLineNumbers() {
-        return codeWithLineNumbers;
+        String currentCode = getCurrentCode();
+        if (currentCode == null)
+            return null;
+        return addLineNumbersToCode(currentCode);
     }
 
     /**
@@ -239,17 +239,6 @@ public class DesignSession {
     }
 
     /**
-     * Updates the code with line numbers based on the current code
-     *
-     * @param formatter Function to format code with line numbers
-     */
-    private void updateCodeWithLineNumbers(CodeLineNumberFormatter formatter) {
-        if (currentCode != null && !currentCode.isEmpty()) {
-            this.codeWithLineNumbers = formatter.format(currentCode);
-        }
-    }
-
-    /**
      * Interface for code line number formatting
      */
     public interface CodeLineNumberFormatter {
@@ -264,11 +253,7 @@ public class DesignSession {
         json.put("id", id.toString());
         json.put("description", description);
         json.put("createdAt", createdAt.getTime());
-        json.put("updatedAt", updatedAt.getTime());
         json.put("initialCode", initialCode);
-        json.put("currentCode", currentCode);
-
-        json.put("iterationCount", iterationCount);
 
         // Only include LLM type and model if they're not null
         if (llmType != null) {
@@ -331,22 +316,12 @@ public class DesignSession {
         session.id = UUID.fromString(json.getString("id"));
         session.description = json.getString("description");
         session.createdAt = new Date(json.getLong("createdAt"));
-        session.updatedAt = new Date(json.getLong("updatedAt"));
-        session.iterationCount = json.getInt("iterationCount");
 
         if (json.has("initialCode")) {
             try {
                 session.setInitialCode(json.getString("initialCode"));
             } catch (JSONException e) {
                 Log.w(TAG, "Invalid initialCode in session: " + json.getString("initialCode"));
-            }
-        }
-
-        if (json.has("currentCode")) {
-            try {
-                session.setCurrentCode(json.getString("currentCode"));
-            } catch (JSONException e) {
-                Log.w(TAG, "Invalid currentCode in session: " + json.getString("currentCode"));
             }
         }
 
@@ -423,9 +398,6 @@ public class DesignSession {
                 throw new JSONException("Unknown message type " + message.role);
             }
         }
-
-        assert (lastCode == null && session.currentCode == null) ||
-            (lastCode != null && session.currentCode != null && lastCode.equals(session.currentCode));
 
         // Load new fields
         if (json.has("lastLogcat")) {
