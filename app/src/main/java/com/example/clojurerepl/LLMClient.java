@@ -41,8 +41,7 @@ public abstract class LLMClient {
     public enum MessageRole {
         SYSTEM("system"),
         USER("user"),
-        ASSISTANT("assistant"),
-        DEVELOPER("developer");
+        ASSISTANT("assistant");
 
         private final String apiValue;
 

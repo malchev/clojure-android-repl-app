@@ -194,10 +194,10 @@ public class OpenAIChatClient extends LLMClient {
                 openaiRole = "user";
             } else if (MessageRole.ASSISTANT.equals(msg.role)) {
                 openaiRole = "assistant";
-            } else if (MessageRole.DEVELOPER.equals(msg.role)) {
-                openaiRole = "developer";
+            } else if (MessageRole.SYSTEM.equals(msg.role)) {
+                openaiRole = getSystemRoleForModel();
             } else {
-                openaiRole = msg.role.getApiValue();
+                throw new RuntimeException("Unknown role value " + msg.role.getApiValue());
             }
             Log.d(TAG, "Message type: " + openaiRole + ", content: " + msg.content);
         }
@@ -295,7 +295,7 @@ public class OpenAIChatClient extends LLMClient {
             JSONArray messagesArray = new JSONArray();
             for (Message msg : messages) {
                 JSONObject msgObj = new JSONObject();
-                // OpenAI API expects "system", "user", "assistant", and "developer" roles
+                // OpenAI API expects "system"/"developer", "user", and "assistant":
                 String openaiRole;
                 if (MessageRole.SYSTEM.equals(msg.role)) {
                     // For SYSTEM messages, determine the correct API role based on model
@@ -304,12 +304,10 @@ public class OpenAIChatClient extends LLMClient {
                     openaiRole = "user";
                 } else if (MessageRole.ASSISTANT.equals(msg.role)) {
                     openaiRole = "assistant";
-                } else if (MessageRole.DEVELOPER.equals(msg.role)) {
-                    openaiRole = "developer";
                 } else {
                     // Fallback for any other roles
                     openaiRole = msg.role.getApiValue();
-                    Log.w(TAG, "Unknown role for OpenAI API: " + msg.role + ", using: " + openaiRole);
+                    throw new RuntimeException("Unknown role for OpenAI API: " + msg.role + ", using: " + openaiRole);
                 }
                 msgObj.put("role", openaiRole);
                 msgObj.put("content", msg.content);
