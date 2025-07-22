@@ -322,9 +322,9 @@ public class RenderActivity extends AppCompatActivity {
                     if (parentActivityClass != null) {
                         Intent intent = new Intent(this, parentActivityClass);
                         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                        clojureStatus = "RenderActivity crashed: " + throwable.getMessage();
+                        clojureStatus = "RenderActivity crashed: " + formatFullErrorMessage(throwable);
                         // Can't call showError() here since the activity has
-                        // crashed.  Instead, show a toast and return the error
+                        // crashed. Instead, show a toast and return the error
                         // to the calling activity.
                         Toast.makeText(this, "RenderActivity crashed", Toast.LENGTH_LONG).show();
                         intent.putExtra(EXTRA_RESULT_ERROR, clojureStatus);
