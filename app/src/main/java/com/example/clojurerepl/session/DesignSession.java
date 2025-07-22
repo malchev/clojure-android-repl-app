@@ -82,8 +82,8 @@ public class DesignSession {
         List<String> code = new ArrayList<>();
         for (LLMClient.Message message : chatSession.getMessages()) {
             if (LLMClient.MessageRole.ASSISTANT.equals(message.role)) {
-                ClojureIterationManager.CodeExtractionResult extractionResult =
-                    ClojureIterationManager.extractClojureCode(message.content);
+                ClojureIterationManager.CodeExtractionResult extractionResult = ClojureIterationManager
+                        .extractClojureCode(message.content);
                 if (extractionResult.success) {
                     code.add(extractionResult.code);
                 }
@@ -271,6 +271,13 @@ public class DesignSession {
             messageJson.put("role", message.role.getApiValue());
             messageJson.put("content", message.content);
 
+            // Add model information for assistant messages
+            if (message.role == LLMClient.MessageRole.ASSISTANT && message.getModelProvider() != null
+                    && message.getModelName() != null) {
+                messageJson.put("modelProvider", message.getModelProvider().name());
+                messageJson.put("modelName", message.getModelName());
+            }
+
             // Add image file path and MIME type if the message has an image
             if (message.hasImage()) {
                 messageJson.put("imageFile", message.imageFile.getPath());
@@ -353,6 +360,19 @@ public class DesignSession {
                     role = LLMClient.MessageRole.USER;
                 }
 
+                // Get model information for assistant messages
+                LLMClientFactory.LLMType modelProvider = null;
+                String modelName = null;
+                if (role == LLMClient.MessageRole.ASSISTANT && messageJson.has("modelProvider")
+                        && messageJson.has("modelName")) {
+                    try {
+                        modelProvider = LLMClientFactory.LLMType.valueOf(messageJson.getString("modelProvider"));
+                        modelName = messageJson.getString("modelName");
+                    } catch (IllegalArgumentException e) {
+                        Log.w(TAG, "Invalid model provider in session: " + messageJson.getString("modelProvider"));
+                    }
+                }
+
                 // Check if the message has an image
                 if (messageJson.has("imageFile") && messageJson.has("mimeType")) {
                     String imagePath = messageJson.getString("imageFile");
@@ -361,21 +381,34 @@ public class DesignSession {
 
                     // Only create message with image if the file exists
                     if (imageFile.exists()) {
-                        chatHistory.add(new LLMClient.Message(role, content, imageFile, mimeType));
+                        if (modelProvider != null && modelName != null) {
+                            chatHistory.add(new LLMClient.Message(role, content, imageFile, mimeType, modelProvider,
+                                    modelName));
+                        } else {
+                            chatHistory.add(new LLMClient.Message(role, content, imageFile, mimeType));
+                        }
                     } else {
                         // File doesn't exist, create regular message
                         Log.w(TAG, "Image file not found during deserialization: " + imagePath);
-                        chatHistory.add(new LLMClient.Message(role, content));
+                        if (modelProvider != null && modelName != null) {
+                            chatHistory.add(new LLMClient.Message(role, content, modelProvider, modelName));
+                        } else {
+                            chatHistory.add(new LLMClient.Message(role, content));
+                        }
                     }
                 } else {
                     // Regular message without image
-                    chatHistory.add(new LLMClient.Message(role, content));
+                    if (modelProvider != null && modelName != null) {
+                        chatHistory.add(new LLMClient.Message(role, content, modelProvider, modelName));
+                    } else {
+                        chatHistory.add(new LLMClient.Message(role, content));
+                    }
                 }
             }
         }
 
         // Now from the reconstructed chat history, rebuild the
-        // LLMClient.ChatSession object.  Could've done this in the loop above
+        // LLMClient.ChatSession object. Could've done this in the loop above
         // but I find this easier to read.
         String lastCode = null;
         for (LLMClient.Message message : chatHistory) {
@@ -388,9 +421,15 @@ public class DesignSession {
                     session.chatSession.queueUserMessage(message.content);
                 }
             } else if (LLMClient.MessageRole.ASSISTANT.equals(message.role)) {
-                session.chatSession.queueAssistantResponse(message.content);
-                ClojureIterationManager.CodeExtractionResult extractionResult =
-                    ClojureIterationManager.extractClojureCode(message.content);
+                // Use the model information if available, otherwise use the default method
+                if (message.getModelProvider() != null && message.getModelName() != null) {
+                    session.chatSession.queueAssistantResponse(message.content, message.getModelProvider(),
+                            message.getModelName());
+                } else {
+                    session.chatSession.queueAssistantResponse(message.content);
+                }
+                ClojureIterationManager.CodeExtractionResult extractionResult = ClojureIterationManager
+                        .extractClojureCode(message.content);
                 if (extractionResult.success) {
                     lastCode = extractionResult.code;
                 }

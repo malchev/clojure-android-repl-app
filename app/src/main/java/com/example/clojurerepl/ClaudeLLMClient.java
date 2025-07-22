@@ -102,7 +102,7 @@ public class ClaudeLLMClient extends LLMClient {
                                 : "NULL RESPONSE"));
 
                 // Add assistant message to history
-                session.queueAssistantResponse(response);
+                session.queueAssistantResponse(response, getType(), getModel());
 
                 return response;
             } catch (Exception e) {

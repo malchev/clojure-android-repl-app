@@ -479,7 +479,7 @@ public class GeminiLLMClient extends LLMClient {
                 String response = callGeminiAPI(session.getMessages(), session.getSystemPrompt());
 
                 // Save the original response to history
-                session.queueAssistantResponse(response);
+                session.queueAssistantResponse(response, getType(), getModel());
 
                 // Return the extracted code
                 return response;

@@ -35,7 +35,7 @@ public class StubLLMClient extends LLMClient {
             String response = generateStubResponse(userMessage);
 
             // Add assistant message to history
-            session.queueAssistantResponse(response);
+            session.queueAssistantResponse(response, getType(), getModel());
 
             return response;
         });

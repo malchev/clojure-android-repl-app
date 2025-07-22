@@ -216,12 +216,16 @@ public abstract class LLMClient {
         public final String content;
         public final File imageFile;
         public final String mimeType;
+        public final LLMClientFactory.LLMType modelProvider; // Provider (CLAUDE, OPENAI, GEMINI)
+        public final String modelName; // Specific model name
 
         public Message(MessageRole role, String content) {
             this.role = role;
             this.content = content;
             this.imageFile = null;
             this.mimeType = null;
+            this.modelProvider = null;
+            this.modelName = null;
         }
 
         public Message(MessageRole role, String content, File imageFile, String mimeType) {
@@ -229,10 +233,49 @@ public abstract class LLMClient {
             this.content = content;
             this.imageFile = imageFile;
             this.mimeType = mimeType;
+            this.modelProvider = null;
+            this.modelName = null;
+        }
+
+        public Message(MessageRole role, String content, LLMClientFactory.LLMType modelProvider, String modelName) {
+            this.role = role;
+            this.content = content;
+            this.imageFile = null;
+            this.mimeType = null;
+            this.modelProvider = modelProvider;
+            this.modelName = modelName;
+        }
+
+        public Message(MessageRole role, String content, File imageFile, String mimeType,
+                LLMClientFactory.LLMType modelProvider, String modelName) {
+            this.role = role;
+            this.content = content;
+            this.imageFile = imageFile;
+            this.mimeType = mimeType;
+            this.modelProvider = modelProvider;
+            this.modelName = modelName;
         }
 
         public boolean hasImage() {
             return imageFile != null && imageFile.exists() && imageFile.canRead();
+        }
+
+        /**
+         * Get the model provider that generated this message
+         * 
+         * @return The model provider, or null if not applicable
+         */
+        public LLMClientFactory.LLMType getModelProvider() {
+            return modelProvider;
+        }
+
+        /**
+         * Get the model name that generated this message
+         * 
+         * @return The model name, or null if not applicable
+         */
+        public String getModelName() {
+            return modelName;
         }
     }
 
@@ -334,6 +377,19 @@ public abstract class LLMClient {
         public void queueAssistantResponse(String content) {
             Log.d(TAG, "Queuing assistant response in session: " + sessionId);
             messages.add(new Message(MessageRole.ASSISTANT, content));
+        }
+
+        /**
+         * Queues an assistant (model) response with model information
+         *
+         * @param content       The assistant response content
+         * @param modelProvider The model provider (CLAUDE, OPENAI, GEMINI)
+         * @param modelName     The specific model name
+         */
+        public void queueAssistantResponse(String content, LLMClientFactory.LLMType modelProvider, String modelName) {
+            Log.d(TAG, "Queuing assistant response with model: " + modelProvider + "/" + modelName + " in session: "
+                    + sessionId);
+            messages.add(new Message(MessageRole.ASSISTANT, content, modelProvider, modelName));
         }
 
         /**

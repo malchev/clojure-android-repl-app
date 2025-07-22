@@ -208,7 +208,7 @@ public class OpenAIChatClient extends LLMClient {
                 Log.d(TAG, "=== FULL OPENAI RESPONSE ===\n" + response);
 
                 // Add assistant message to history
-                session.queueAssistantResponse(response);
+                session.queueAssistantResponse(response, getType(), getModel());
 
                 return response;
             } catch (Exception e) {
