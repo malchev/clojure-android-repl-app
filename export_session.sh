@@ -109,6 +109,8 @@ echo "" >> "$CHAT_FILE"
 jq -c '.chatHistory[]' "$SESSION_JSON" | while read -r message; do
   ROLE=$(echo "$message" | jq -r '.role')
   CONTENT=$(echo "$message" | jq -r '.content')
+  MODEL_PROVIDER=$(echo "$message" | jq -r '.modelProvider // empty')
+  MODEL_NAME=$(echo "$message" | jq -r '.modelName // empty')
 
   # Format based on role
   case $ROLE in
@@ -119,7 +121,11 @@ jq -c '.chatHistory[]' "$SESSION_JSON" | while read -r message; do
       echo "👤 USER:" >> "$CHAT_FILE"
       ;;
     assistant)
-      echo "🧠 ASSISTANT:" >> "$CHAT_FILE"
+      if [ -n "$MODEL_PROVIDER" ] && [ -n "$MODEL_NAME" ]; then
+        echo "🧠 ASSISTANT ($MODEL_PROVIDER/$MODEL_NAME):" >> "$CHAT_FILE"
+      else
+        echo "🧠 ASSISTANT:" >> "$CHAT_FILE"
+      fi
       ;;
     *)
       echo "[$ROLE]:" >> "$CHAT_FILE"

@@ -64,7 +64,7 @@ NUM_SESSIONS=$(jq '. | length' "$SESSIONS_JSON")
 echo "==================================================================================="
 echo "Available Design Sessions (total: $NUM_SESSIONS)"
 echo "==================================================================================="
-printf "%-5s %-36s %-20s %-15s %s\n" "IDX" "SESSION ID" "CREATED" "MODEL" "DESCRIPTION"
+printf "%-5s %-36s %-20s %-15s %-20s %s\n" "IDX" "SESSION ID" "CREATED" "MODEL" "MODELS USED" "DESCRIPTION"
 echo "-----------------------------------------------------------------------------------"
 
 # Loop through each session and display information
@@ -87,8 +87,31 @@ for i in $(seq 0 $(($NUM_SESSIONS - 1))); do
   # Format model info
   MODEL_INFO="${LLM_TYPE:0:6}"
 
+  # Extract models used from chat history
+  MODELS_USED=""
+  if [ "$(jq -r ".[$i].chatHistory" "$SESSIONS_JSON")" != "null" ]; then
+    # Get unique model providers from assistant messages
+    MODELS_USED=$(jq -r ".[$i].chatHistory[] | select(.role == \"assistant\") | .modelProvider // empty" "$SESSIONS_JSON" | sort | uniq | tr '\n' ',' | sed 's/,$//')
+    
+    # If no model providers found in chat history, use the session's model info
+    if [ -z "$MODELS_USED" ]; then
+      if [ "$LLM_TYPE" != "null" ]; then
+        MODELS_USED="$LLM_TYPE"
+      else
+        MODELS_USED="Unknown"
+      fi
+    fi
+  else
+    MODELS_USED="None"
+  fi
+
+  # Truncate models used if too long
+  if [ ${#MODELS_USED} -gt 18 ]; then
+    MODELS_USED="${MODELS_USED:0:15}..."
+  fi
+
   # Print the information
-  printf "%-5s %-36s %-20s %-15s %s\n" "[$i]" "$SESSION_ID" "$FORMATTED_DATE" "$MODEL_INFO" "$DESCRIPTION"
+  printf "%-5s %-36s %-20s %-15s %-20s %s\n" "[$i]" "$SESSION_ID" "$FORMATTED_DATE" "$MODEL_INFO" "$MODELS_USED" "$DESCRIPTION"
 done
 
 echo "==================================================================================="
