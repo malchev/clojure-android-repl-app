@@ -592,10 +592,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 ", LLM client="
                 + (iterationManager != null && iterationManager.getLLMClient() != null ? "initialized" : "null"));
 
-        // Clear stored error feedback since we're starting a new iteration
-        lastErrorFeedback = null;
-        selectedScreenshot = null; // Clear selected screenshot after use
-
         // Check if models are still loading
         if (!modelsLoaded) {
             Toast.makeText(this, "Models are still loading, please wait a moment and try again", Toast.LENGTH_SHORT)
@@ -817,6 +813,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         // Check for error feedback from RenderActivity
         if (intent.hasExtra(RenderActivity.EXTRA_RESULT_ERROR)) {
+            Log.d(TAG, "RenderActivity returned error status: " + intent.getStringExtra(RenderActivity.EXTRA_RESULT_ERROR));
             String errorFeedback = intent.getStringExtra(RenderActivity.EXTRA_RESULT_ERROR);
 
             // Pre-fill the feedback input
@@ -834,6 +831,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
             // Show the feedback dialog
             showFeedbackDialog(errorFeedback);
+        } else {
+            Log.d(TAG, "RenderActivity returned with no error status");
+            currentSession.setLastErrorFeedback(null);
+            currentSession.setHasError(false);
+            sessionManager.updateSession(currentSession);
         }
     }
 
