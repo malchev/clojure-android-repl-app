@@ -1,0 +1,138 @@
+;; A simple To-Do list application for Android, improved for syntax and event handling.
+(import '(android.util Log)
+        '(android.view View Gravity View$OnClickListener)
+        '(android.widget Button EditText LinearLayout ScrollView TextView)
+        '(android.graphics Color)
+        '(java.io File)
+        '(androidx.lifecycle LifecycleEventObserver Lifecycle$Event))
+
+(defonce TAG "ClojureApp")
+(defonce todos-atom (atom []))
+
+(defn log-debug [message]
+  (Log/d TAG (str message)))
+
+(defn -main []
+  (log-debug "App starting, -main function invoked.")
+  (.setBackgroundColor *content-layout* Color/WHITE)
+
+  (let [main-layout (LinearLayout. *context*)
+        input-layout (LinearLayout. *context*)
+        edit-text (EditText. *context*)
+        add-button (Button. *context*)
+        scroll-view (ScrollView. *context*)
+        todo-list-layout (LinearLayout. *context*)
+        persistence-file (File. *cache-dir* "todos.edn")
+        render-fn (atom nil)]
+
+    ;; --- Persistence ---
+    (defn save-todos []
+      (try
+        (log-debug (str "Saving " (count @todos-atom) " items to " (.getAbsolutePath persistence-file)))
+        (spit persistence-file (pr-str @todos-atom))
+        (catch Exception e
+          (log-debug (str "Failed to save todos: " (.getMessage e))))))
+
+    (defn load-todos []
+      (try
+        (if (.exists persistence-file)
+          (let [data (slurp persistence-file)
+                todos (clojure.edn/read-string data)]
+            (reset! todos-atom (vec todos))
+            (log-debug (str "Loaded " (count @todos-atom) " items from file.")))
+          (log-debug "Persistence file not found. Starting with empty list."))
+        (catch Exception e
+          (log-debug (str "Failed to load todos, starting fresh: " (.getMessage e)))
+          (reset! todos-atom [])))
+      (@render-fn))
+
+    ;; --- UI Handlers ---
+    (defn remove-todo-handler [todo-id]
+      (log-debug (str "Attempting to remove item with id: " todo-id))
+      (swap! todos-atom #(vec (remove (fn [item] (= (:id item) todo-id)) %)))
+      (@render-fn))
+
+    (defn add-todo-handler []
+      (let [text (-> edit-text .getText .toString .trim)]
+        (if (not (.isEmpty text))
+          (do
+            (log-debug (str "Adding new item: " text))
+            (let [new-item {:id (System/currentTimeMillis) :text text}]
+              (swap! todos-atom conj new-item))
+            (.setText edit-text "")
+            (@render-fn))
+          (log-debug "Add button clicked but input was empty."))))
+
+    ;; --- Render Function ---
+    (defn render-todos []
+      (log-debug (str "Rendering " (count @todos-atom) " to-do items."))
+      (.removeAllViews todo-list-layout)
+      (doseq [item @todos-atom]
+        (let [item-layout (LinearLayout. *context*)
+              text-view (TextView. *context*)
+              done-button (Button. *context*)
+              text-params (android.widget.LinearLayout$LayoutParams.
+                            0
+                            android.widget.LinearLayout$LayoutParams/WRAP_CONTENT
+                            1.0)
+              button-params (android.widget.LinearLayout$LayoutParams.
+                              android.widget.LinearLayout$LayoutParams/WRAP_CONTENT
+                              android.widget.LinearLayout$LayoutParams/WRAP_CONTENT)]
+          (.setOrientation item-layout LinearLayout/HORIZONTAL)
+          (.setPadding item-layout 16 8 16 8)
+          (.setText text-view (:text item))
+          (.setTextColor text-view Color/BLACK)
+          (.setTextSize text-view 18.0)
+          (.setLayoutParams text-view text-params)
+          (.setText done-button "Done")
+          (.setLayoutParams done-button button-params)
+          (.setOnClickListener done-button
+            (proxy [View$OnClickListener] []
+              (onClick [v] (remove-todo-handler (:id item)))))
+          (.addView item-layout text-view)
+          (.addView item-layout done-button)
+          (.addView todo-list-layout item-layout))))
+
+    ;; Store render function in atom so handlers can access it
+    (reset! render-fn render-todos)
+
+    ;; --- UI Layout ---
+    (.setOrientation main-layout LinearLayout/VERTICAL)
+    (.setOrientation input-layout LinearLayout/HORIZONTAL)
+    (.setHint edit-text "Enter a new to-do item")
+    (.setTextColor edit-text Color/BLACK)
+    (.setHintTextColor edit-text Color/GRAY)
+    (.setLayoutParams edit-text (android.widget.LinearLayout$LayoutParams.
+                                 0
+                                 android.widget.LinearLayout$LayoutParams/WRAP_CONTENT
+                                 1.0))
+    (.setText add-button "Add")
+    (.setOnClickListener add-button
+      (proxy [View$OnClickListener] []
+        (onClick [v] (add-todo-handler))))
+    (.addView input-layout edit-text)
+    (.addView input-layout add-button)
+    (.setOrientation todo-list-layout LinearLayout/VERTICAL)
+    (.addView scroll-view todo-list-layout)
+    (.addView main-layout input-layout)
+    (.addView main-layout scroll-view)
+    (.addView *content-layout* main-layout)
+
+    ;; --- Lifecycle Observer ---
+    (let [lifecycle-observer
+          (proxy [LifecycleEventObserver] []
+            (onStateChanged [source event]
+              (let [event-name (.name event)]
+                (log-debug (str "Lifecycle event: " event-name))
+                (condp = event-name
+                  "ON_CREATE" (load-todos)
+                  "ON_STOP" (save-todos)
+                  nil))))]
+      (try
+        (let [lifecycle (.. *context* getLifecycle)]
+          (.addObserver lifecycle lifecycle-observer)
+          (log-debug (str "Lifecycle observer successfully added. Current state: " (.. lifecycle getCurrentState name))))
+        (catch Exception e
+          (log-debug (str "ERROR adding lifecycle observer: " e)))))
+
+    (log-debug "Main function setup complete.")))
