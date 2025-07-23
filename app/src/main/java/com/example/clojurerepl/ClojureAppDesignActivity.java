@@ -80,9 +80,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     // Add this field at the top of the class
     private AlertDialog apiKeyDialog;
 
-    // Add a class field to store the prefilled feedback
-    private String lastErrorFeedback = null;
-
     // Add field to track selected screenshot for multimodal feedback
     private File selectedScreenshot = null;
 
@@ -256,7 +253,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     // session, but do this only if we haven't started generating code yet.
                     currentSession.setLlmModel(null);
                     sessionManager.updateSession(currentSession);
-                    Log.d(TAG, "Clearing LLM model for new model provider. Session " + currentSession.getId().toString() + " has " + currentSession.getChatHistory().size() + " messages.");
+                    Log.d(TAG, "Clearing LLM model for new model provider. Session " + currentSession.getId().toString()
+                            + " has " + currentSession.getChatHistory().size() + " messages.");
                 }
             }
 
@@ -408,8 +406,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
             // Restore error feedback if available
             if (currentSession.hasError() && currentSession.getLastErrorFeedback() != null) {
-                lastErrorFeedback = currentSession.getLastErrorFeedback();
-                feedbackInput.setText(lastErrorFeedback);
+                feedbackInput.setText(currentSession.getLastErrorFeedback());
                 Log.d(TAG, "Restored error feedback from session");
             }
         }
@@ -442,14 +439,15 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 ", initialCode=" + (initialCode != null ? "present (len=" + initialCode.length() + ")" : "null"));
 
         assert currentSession.getIterationCount() >= 0;
-        // If this is the first iteration, you can't have currentCode (though you can have initialCode)
+        // If this is the first iteration, you can't have currentCode (though you can
+        // have initialCode)
         assert currentSession.getIterationCount() > 0 || currentCode == null;
 
         // If we already have code generated and generation has started, show the
         // feedback dialog
         if (currentCode != null && !currentCode.isEmpty() && currentSession.getIterationCount() > 0) {
             Log.d(TAG, "Showing feedback dialog for existing code");
-            showFeedbackDialog(null);
+            showFeedbackDialog();
             return;
         }
 
@@ -813,7 +811,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         // Check for error feedback from RenderActivity
         if (intent.hasExtra(RenderActivity.EXTRA_RESULT_ERROR)) {
-            Log.d(TAG, "RenderActivity returned error status: " + intent.getStringExtra(RenderActivity.EXTRA_RESULT_ERROR));
+            Log.d(TAG, "RenderActivity returned error status: "
+                    + intent.getStringExtra(RenderActivity.EXTRA_RESULT_ERROR));
             String errorFeedback = intent.getStringExtra(RenderActivity.EXTRA_RESULT_ERROR);
 
             // Pre-fill the feedback input
@@ -830,7 +829,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             }
 
             // Show the feedback dialog
-            showFeedbackDialog(errorFeedback);
+            showFeedbackDialog();
         } else {
             Log.d(TAG, "RenderActivity returned with no error status");
             currentSession.setLastErrorFeedback(null);
@@ -1367,41 +1366,48 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     /**
      * Shows the feedback dialog, optionally with pre-filled error text
      */
-    private void showFeedbackDialog(String prefilledFeedback) {
+    private void showFeedbackDialog() {
         // Add extra logging to diagnose the issue
-        Log.d(TAG, "showFeedbackDialog called, prefilledFeedback=" +
-                (prefilledFeedback != null ? "present (len=" + prefilledFeedback.length() + ")" : "null") +
-                ", iterationManager=" + (iterationManager != null ? "present" : "null"));
+        Log.d(TAG, "showFeedbackDialog called, iterationManager=" + (iterationManager != null ? "present" : "null"));
 
         // Store in a final variable for lambda usage
-        final String finalFeedback;
-
-        if (prefilledFeedback != null && !prefilledFeedback.isEmpty()) {
-            // Store prefilled feedback for future dialog displays
-            lastErrorFeedback = prefilledFeedback;
-            finalFeedback = prefilledFeedback;
-        } else if (lastErrorFeedback != null) {
-            // Use stored feedback if available
-            finalFeedback = lastErrorFeedback;
-        } else {
-            finalFeedback = null;
-        }
+        final String finalFeedback = currentSession.getLastErrorFeedback();
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Provide Feedback");
 
-        // Create array of feedback options
-        final String[] options = {
-                "There is a Clojure compilation error. Check attached logcat",
-                "There are mismatched parentheses or square brackets. Check attached logcat",
-                "App compiles but fails with a runtime error. Check attached logcat",
-                "Nothing shows up on the screen. Check attached logcat",
-                "Custom feedback...", // Always keep as second-to-last option
-                "Use the error feedback below..." // Always keep as last option when error exists
-        };
+        // Define feedback options with automatic index calculation
+        final String[] standardOptions = {};
+
+        final String customFeedbackOption = "Custom feedback...";
+        final String useErrorFeedbackOption = "Use the error feedback below...";
+
+        // Build the complete options array dynamically
+        final String[] options;
+        final int customFeedbackIndex;
+        final int useErrorFeedbackIndex;
 
         // Determine if we have prefilled feedback to display
         boolean hasFeedback = finalFeedback != null && !finalFeedback.isEmpty();
+
+        if (hasFeedback) {
+            // Include the "Use error feedback" option when there's feedback
+            options = new String[standardOptions.length + 2];
+            System.arraycopy(standardOptions, 0, options, 0, standardOptions.length);
+            options[standardOptions.length] = customFeedbackOption;
+            options[standardOptions.length + 1] = useErrorFeedbackOption;
+
+            customFeedbackIndex = standardOptions.length;
+            useErrorFeedbackIndex = standardOptions.length + 1;
+        } else {
+            // Only include standard options and custom feedback when no error feedback
+            options = new String[standardOptions.length + 1];
+            System.arraycopy(standardOptions, 0, options, 0, standardOptions.length);
+            options[standardOptions.length] = customFeedbackOption;
+
+            customFeedbackIndex = standardOptions.length;
+            useErrorFeedbackIndex = -1; // Not available
+        }
 
         // Create list adapter for dialog
         ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
@@ -1475,21 +1481,18 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 // Save the feedback for later use if the model is not yet selected
                 String selectedFeedback = null;
 
-                if (selectedPosition == options.length - 1 && hasFeedback) {
+                if (selectedPosition == useErrorFeedbackIndex && hasFeedback) {
                     // "Use the error feedback below..." option
                     selectedFeedback = finalFeedback;
-                } else if (selectedPosition == options.length - 2) {
+                } else if (selectedPosition == customFeedbackIndex) {
                     // "Custom feedback..." option
                     dialog.dismiss();
-                    showCustomFeedbackDialog(hasFeedback ? finalFeedback : null);
+                    showCustomFeedbackDialog();
                     return;
                 } else {
                     // Standard options
                     selectedFeedback = options[selectedPosition];
                 }
-
-                // Store this feedback for later use
-                lastErrorFeedback = selectedFeedback;
 
                 dialog.dismiss();
 
@@ -1501,15 +1504,15 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             }
 
             // Normal feedback submission with a valid iterationManager
-            if (selectedPosition == options.length - 1 && hasFeedback) {
+            if (selectedPosition == useErrorFeedbackIndex && hasFeedback) {
                 // "Use the error feedback below..." option (only available when there's
                 // feedback)
                 submitFeedbackWithText(finalFeedback);
                 dialog.dismiss();
-            } else if (selectedPosition == options.length - 2) {
+            } else if (selectedPosition == customFeedbackIndex) {
                 // "Custom feedback..." option
                 dialog.dismiss();
-                showCustomFeedbackDialog(hasFeedback ? finalFeedback : null);
+                showCustomFeedbackDialog();
             } else {
                 // Standard options
                 submitFeedbackWithText(options[selectedPosition]);
@@ -1524,7 +1527,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     /**
      * Shows a dialog for entering custom feedback, optionally with pre-filled text
      */
-    private void showCustomFeedbackDialog(String prefilledFeedback) {
+    private void showCustomFeedbackDialog() {
         AlertDialog.Builder customBuilder = new AlertDialog.Builder(this);
         customBuilder.setTitle("Enter Feedback");
 
@@ -1533,19 +1536,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         input.setMinLines(3);
         input.setMaxLines(5);
 
-        // Pre-fill the input if text is provided
-        if (prefilledFeedback != null && !prefilledFeedback.isEmpty()) {
-            input.setText(prefilledFeedback);
-        }
-
         customBuilder.setView(input);
 
         customBuilder.setPositiveButton("Submit", (dialogInterface, i) -> {
             String feedback = input.getText().toString();
             if (!feedback.isEmpty()) {
                 if (iterationManager == null) {
-                    // Save the feedback for later use
-                    lastErrorFeedback = feedback;
                     Toast.makeText(this,
                             "Feedback saved. Please select an AI model first, then click 'Improve App' again.",
                             Toast.LENGTH_LONG).show();
