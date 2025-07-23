@@ -105,6 +105,13 @@ echo "Model: $LLM_TYPE ($LLM_MODEL)" >> "$CHAT_FILE"
 echo "===============================================================" >> "$CHAT_FILE"
 echo "" >> "$CHAT_FILE"
 
+# Create a directory for code attempts
+CODE_ATTEMPTS_DIR="$EXPORT_DIR/code_attempts"
+mkdir -p "$CODE_ATTEMPTS_DIR"
+
+# Initialize attempt counter
+ATTEMPT_COUNTER=1
+
 # Process chat history messages
 jq -c '.chatHistory[]' "$SESSION_JSON" | while read -r message; do
   ROLE=$(echo "$message" | jq -r '.role')
@@ -125,6 +132,29 @@ jq -c '.chatHistory[]' "$SESSION_JSON" | while read -r message; do
         echo "🧠 ASSISTANT ($MODEL_PROVIDER/$MODEL_NAME):" >> "$CHAT_FILE"
       else
         echo "🧠 ASSISTANT:" >> "$CHAT_FILE"
+      fi
+
+      # Extract code blocks from assistant messages
+      if [ "$ROLE" = "assistant" ]; then
+        # Look for code blocks marked with ```clojure or ``` (generic code blocks)
+        if echo "$CONTENT" | grep -q '```clojure\|```'; then
+          echo "Extracting code from assistant response (attempt $ATTEMPT_COUNTER)..."
+
+          # Extract code block delineated by ```clojure...``` pattern
+          CODE_BLOCKS=$(echo "$CONTENT" | sed -n '/```clojure/,/```/p' | sed '1d;$d' | sed '/^```$/d')
+
+          # Save code if we found any
+          if [ -n "$CODE_BLOCKS" ]; then
+            # Sanitize model provider and name for filename (replace non-alphanumeric with underscore)
+            SANITIZED_PROVIDER=$(echo "$MODEL_PROVIDER" | sed 's/[^a-zA-Z0-9]/_/g')
+            SANITIZED_MODEL=$(echo "$MODEL_NAME" | sed 's/[^a-zA-Z0-9]/_/g')
+
+            ATTEMPT_FILE="$CODE_ATTEMPTS_DIR/attempt-$ATTEMPT_COUNTER-$SANITIZED_PROVIDER-$SANITIZED_MODEL.clj"
+            echo "$CODE_BLOCKS" > "$ATTEMPT_FILE"
+            echo "Saved code attempt $ATTEMPT_COUNTER to $ATTEMPT_FILE"
+            ATTEMPT_COUNTER=$((ATTEMPT_COUNTER + 1))
+          fi
+        fi
       fi
       ;;
     *)
@@ -221,7 +251,8 @@ echo "Session export complete!"
 echo "Exported to: $EXPORT_DIR"
 echo "Chat history: $CHAT_FILE"
 echo "Screenshots: $SCREENSHOTS_DIR"
-echo "Code: $EXPORT_DIR/current_code.clj"
+echo "Code attempts: $CODE_ATTEMPTS_DIR"
+echo "Final code: $EXPORT_DIR/current_code.clj"
 echo "=============================================================="
 
 # Clean up temp directory
