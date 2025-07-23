@@ -227,11 +227,8 @@ public class MainActivity extends AppCompatActivity {
                     @Override
                     public void onExit(String logcat) {
                         runOnUiThread(() -> {
-                            // Auto-show logcat when there's content
+                            // Save the logcat output.
                             logcatOutput = logcat;
-                            if (!logcatOutput.isEmpty() && !isLogcatVisible) {
-                                toggleLogcatVisibility();
-                            }
                         });
                     }
                 },
