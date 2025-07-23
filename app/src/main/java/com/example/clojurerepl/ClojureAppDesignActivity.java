@@ -255,6 +255,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     sessionManager.updateSession(currentSession);
                     Log.d(TAG, "Clearing LLM model for new model provider. Session " + currentSession.getId().toString()
                             + " has " + currentSession.getChatHistory().size() + " messages.");
+
+                    // Check if we need to shut down the existing iterationManager
+                    if (iterationManager != null) {
+                        Log.d(TAG, "Shutting down existing iterationManager before creating a new one");
+                        iterationManager.shutdown();
+                        iterationManager = null;
+                    }
                 }
             }
 
