@@ -468,11 +468,6 @@ public class RenderActivity extends AppCompatActivity {
             String entry = String.format("%s: %dms\n", stage, timeMs);
             timingData.append(entry);
             timingView.setText(timingData.toString());
-
-            // Send timing data back to MainActivity
-            Intent resultIntent = new Intent();
-            resultIntent.putExtra(EXTRA_RESULT_TIMINGS, timingData.toString());
-            setResult(RESULT_OK, resultIntent);
         });
     }
 
@@ -493,7 +488,12 @@ public class RenderActivity extends AppCompatActivity {
             // Use FLAG_ACTIVITY_CLEAR_TOP to ensure we go back to the existing instance
             parentIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
 
-            parentIntent.putExtra(EXTRA_RESULT_SUCCESS, clojureStatus == null);
+            boolean success = clojureStatus == null;
+            parentIntent.putExtra(EXTRA_RESULT_SUCCESS, success);
+
+            if (success) {
+                parentIntent.putExtra(EXTRA_RESULT_TIMINGS, timingData.toString());
+            }
 
             // Add all screenshot paths to intent
             if (!capturedScreenshots.isEmpty()) {
