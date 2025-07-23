@@ -79,7 +79,6 @@ public class RenderActivity extends AppCompatActivity {
     private File appCacheDir;
     private String code;
     private String codeHash;
-    private boolean shouldKillOnDestroy = false;
 
     // Add fields for session ID and iteration count
     private String sessionId;
@@ -314,9 +313,6 @@ public class RenderActivity extends AppCompatActivity {
             Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
                 Log.e(TAG, "RenderActivity crashed", throwable);
 
-                // Set flag to kill process on destroy
-                shouldKillOnDestroy = true;
-
                 if (parentActivity != null) {
                     Class<?> parentActivityClass = getParentActivityClass();
                     if (parentActivityClass != null) {
@@ -337,7 +333,10 @@ public class RenderActivity extends AppCompatActivity {
                     Log.i(TAG, "ParentActivity is null");
                 }
 
-                Log.d(TAG, "Killing render process: " + android.os.Process.myPid());
+                Log.d(TAG, "Invoking finish()");
+                finish();
+
+                Log.d(TAG, "Killing render process in unchaught-exception handler: " + android.os.Process.myPid());
                 // Since onDestroy will not be invoked, kill the process
                 android.os.Process.killProcess(android.os.Process.myPid());
             });
@@ -510,9 +509,6 @@ public class RenderActivity extends AppCompatActivity {
                 Log.d(TAG, "Adding error to parent intent: " + clojureStatus);
                 parentIntent.putExtra(EXTRA_RESULT_ERROR, clojureStatus);
             }
-
-            // Set flag to kill process on destroy
-            shouldKillOnDestroy = true;
 
             startActivity(parentIntent);
 
@@ -936,10 +932,8 @@ public class RenderActivity extends AppCompatActivity {
         Log.d(TAG, "RenderActivity destroyed");
 
         // Only kill if we're coming from back button press
-        if (shouldKillOnDestroy && isInRenderProcess()) {
-            Log.d(TAG, "Killing render process: " + android.os.Process.myPid());
-            android.os.Process.killProcess(android.os.Process.myPid());
-        }
+        Log.d(TAG, "Killing render process: " + android.os.Process.myPid());
+        android.os.Process.killProcess(android.os.Process.myPid());
     }
 
     /**
@@ -951,19 +945,6 @@ public class RenderActivity extends AppCompatActivity {
             cause = cause.getCause();
         }
         return cause;
-    }
-
-    private boolean isInRenderProcess() {
-        int pid = android.os.Process.myPid();
-        ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-        if (am != null) {
-            for (ActivityManager.RunningAppProcessInfo processInfo : am.getRunningAppProcesses()) {
-                if (processInfo.pid == pid) {
-                    return processInfo.processName.contains(":render");
-                }
-            }
-        }
-        return false;
     }
 
     private void setupScreenshotForClickableViews(ViewGroup viewGroup) {
