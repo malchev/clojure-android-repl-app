@@ -67,7 +67,7 @@ public class MainActivity extends AppCompatActivity {
 
     private String logcatOutput; // extracted from logcatMonitor
     private Button showLogcatButton;
-    private Button hideLogcatButton;
+    private Button closeLogcatButton;
     private View logcatOverlay;
     private TextView fullscreenLogcat;
     private boolean isLogcatVisible = false;
@@ -85,7 +85,7 @@ public class MainActivity extends AppCompatActivity {
 
         replInput = findViewById(R.id.repl_input);
         showLogcatButton = findViewById(R.id.show_logcat_button);
-        hideLogcatButton = findViewById(R.id.hide_logcat_button);
+        closeLogcatButton = findViewById(R.id.close_logcat_button);
         logcatOverlay = findViewById(R.id.logcat_overlay);
         fullscreenLogcat = findViewById(R.id.fullscreen_logcat);
 
@@ -122,8 +122,8 @@ public class MainActivity extends AppCompatActivity {
         // Set up show logcat button
         showLogcatButton.setOnClickListener(v -> toggleLogcatVisibility());
 
-        // Set up hide logcat button
-        hideLogcatButton.setOnClickListener(v -> toggleLogcatVisibility());
+        // Set up close logcat button
+        closeLogcatButton.setOnClickListener(v -> toggleLogcatVisibility());
 
         updateStats("Initializing...", null, null);
 
@@ -1037,9 +1037,6 @@ public class MainActivity extends AppCompatActivity {
         if (isLogcatVisible) {
             // Show full-screen logcat overlay
             logcatOverlay.setVisibility(View.VISIBLE);
-            showLogcatButton.setText("Hide Logcat");
-            showLogcatButton
-                    .setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#FF5722"))); // Orange/Red
 
             // Copy content from logcatOutput to fullscreen view
             if (logcatOutput == null || logcatOutput.isEmpty()) {
@@ -1050,9 +1047,6 @@ public class MainActivity extends AppCompatActivity {
         } else {
             // Hide full-screen logcat overlay
             logcatOverlay.setVisibility(View.GONE);
-            showLogcatButton.setText("Show Logcat");
-            showLogcatButton
-                    .setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#4CAF50"))); // Green
         }
     }
 
