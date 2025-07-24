@@ -176,7 +176,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         sessionManager.updateSession(currentSession);
 
-        // generateButton.setText(R.string.improve_app);
+        // Note: The description input will remain enabled until the first code
+        // generation
+        // This allows users to edit the description before starting AI improvement
         Toast.makeText(this,
                 "You can run this code now or click 'Improve App' to enhance it with AI",
                 Toast.LENGTH_LONG).show();
@@ -312,6 +314,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         }
 
         appDescriptionInput.setText(currentSession.getDescription());
+
+        // Enable the description input field for new sessions
+        appDescriptionInput.setEnabled(true);
     }
 
     /**
@@ -342,80 +347,92 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                 // Update generate button text for iteration
                 generateButton.setText(R.string.improve_app);
-            }
 
-            // Set the LLM type and model in the UI if they exist
-            if (currentSession.getLlmType() != null) {
-                int position = Arrays.asList(LLMClientFactory.LLMType.values())
-                        .indexOf(currentSession.getLlmType());
-                if (position >= 0) {
-                    llmTypeSpinner.setSelection(position);
-                }
-
-                String sessionRestoreModel = currentSession.getLlmModel();
-                // Set the model if available
-                if (sessionRestoreModel != null) {
-                    // Create the client directly with the saved model
-                    Log.d(TAG, "Session restore: Creating LLM client with model " + sessionRestoreModel);
-                    assert iterationManager == null : "iterationManager should be null before creating new instance";
-                    iterationManager = new ClojureIterationManager(this, currentSession);
-                    iterationManager.setExtractionErrorCallback(this);
-
-                    // We'll wait until llmTypeSpinner's selection listener fires to trigger model
-                    // enumeration
-                }
+                // Disable the description input field since we already have code
+                appDescriptionInput.setEnabled(false);
             } else {
-                Log.d(TAG, "Session restore: LLM type not set");
+                // We have a session but no current code yet - keep description input enabled
+                // This handles the case where we have initial code from MainActivity but
+                // haven't started generation
+                appDescriptionInput.setEnabled(true);
+            }
+        } else {
+            // No session or no description - keep description input enabled for new
+            // sessions
+            appDescriptionInput.setEnabled(true);
+        }
+
+        // Set the LLM type and model in the UI if they exist
+        if (currentSession != null && currentSession.getLlmType() != null) {
+            int position = Arrays.asList(LLMClientFactory.LLMType.values())
+                    .indexOf(currentSession.getLlmType());
+            if (position >= 0) {
+                llmTypeSpinner.setSelection(position);
             }
 
-            // Restore logcat output if available
-            if (currentSession.getLastLogcat() != null && !currentSession.getLastLogcat().isEmpty()) {
-                processLogcat = currentSession.getLastLogcat();
-                logcatOutput.setText(processLogcat);
-                Log.d(TAG, "Restored logcat output from session");
+            String sessionRestoreModel = currentSession.getLlmModel();
+            // Set the model if available
+            if (sessionRestoreModel != null) {
+                // Create the client directly with the saved model
+                Log.d(TAG, "Session restore: Creating LLM client with model " + sessionRestoreModel);
+                assert iterationManager == null : "iterationManager should be null before creating new instance";
+                iterationManager = new ClojureIterationManager(this, currentSession);
+                iterationManager.setExtractionErrorCallback(this);
+
+                // We'll wait until llmTypeSpinner's selection listener fires to trigger model
+                // enumeration
             }
+        } else {
+            Log.d(TAG, "Session restore: LLM type not set");
+        }
 
-            // Restore latest screenshot set if available
-            List<String> paths = currentSession.getLatestScreenshotSet();
-            if (paths != null && !paths.isEmpty()) {
-                Log.d(TAG, "Restoring " + paths.size() + " screenshots from session");
+        // Restore logcat output if available
+        if (currentSession.getLastLogcat() != null && !currentSession.getLastLogcat().isEmpty()) {
+            processLogcat = currentSession.getLastLogcat();
+            logcatOutput.setText(processLogcat);
+            Log.d(TAG, "Restored logcat output from session");
+        }
 
-                // Convert paths to File objects for currentScreenshots
-                currentScreenshots.clear();
-                List<String> validPaths = new ArrayList<>();
+        // Restore latest screenshot set if available
+        List<String> paths = currentSession.getLatestScreenshotSet();
+        if (paths != null && !paths.isEmpty()) {
+            Log.d(TAG, "Restoring " + paths.size() + " screenshots from session");
 
-                for (String path : paths) {
-                    File screenshotFile = new File(path);
-                    if (screenshotFile.exists()) {
-                        currentScreenshots.add(screenshotFile);
-                        validPaths.add(path);
-                        Log.d(TAG, "Found valid screenshot: " + path);
-                    } else {
-                        Log.w(TAG, "Screenshot file no longer exists: " + path);
-                    }
-                }
+            // Convert paths to File objects for currentScreenshots
+            currentScreenshots.clear();
+            List<String> validPaths = new ArrayList<>();
 
-                // Only display screenshots if we have valid ones
-                if (!currentScreenshots.isEmpty()) {
-                    // Convert to array for display function
-                    String[] pathsArray = validPaths.toArray(new String[0]);
-
-                    // Display both in the main view and in the container
-                    displayScreenshot(currentScreenshots.get(0));
-                    Log.d(TAG, "Displayed first screenshot in main view: " + validPaths.get(0));
-
-                    displayScreenshots(pathsArray);
-                    Log.d(TAG, "Displayed " + pathsArray.length + " screenshots in container");
+            for (String path : paths) {
+                File screenshotFile = new File(path);
+                if (screenshotFile.exists()) {
+                    currentScreenshots.add(screenshotFile);
+                    validPaths.add(path);
+                    Log.d(TAG, "Found valid screenshot: " + path);
                 } else {
-                    Log.w(TAG, "No valid screenshots to display");
+                    Log.w(TAG, "Screenshot file no longer exists: " + path);
                 }
             }
 
-            // Restore error feedback if available
-            if (currentSession.hasError() && currentSession.getLastErrorFeedback() != null) {
-                feedbackInput.setText(currentSession.getLastErrorFeedback());
-                Log.d(TAG, "Restored error feedback from session");
+            // Only display screenshots if we have valid ones
+            if (!currentScreenshots.isEmpty()) {
+                // Convert to array for display function
+                String[] pathsArray = validPaths.toArray(new String[0]);
+
+                // Display both in the main view and in the container
+                displayScreenshot(currentScreenshots.get(0));
+                Log.d(TAG, "Displayed first screenshot in main view: " + validPaths.get(0));
+
+                displayScreenshots(pathsArray);
+                Log.d(TAG, "Displayed " + pathsArray.length + " screenshots in container");
+            } else {
+                Log.w(TAG, "No valid screenshots to display");
             }
+        }
+
+        // Restore error feedback if available
+        if (currentSession.hasError() && currentSession.getLastErrorFeedback() != null) {
+            feedbackInput.setText(currentSession.getLastErrorFeedback());
+            Log.d(TAG, "Restored error feedback from session");
         }
     }
 
@@ -557,6 +574,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                         // Change generate button text to "Improve App" for subsequent clicks
                         generateButton.setText(R.string.improve_app);
+
+                        // Disable the description input field after first generation
+                        appDescriptionInput.setEnabled(false);
 
                         // Only launch RenderActivity after we have the code
                         if (code != null && !code.isEmpty()) {
