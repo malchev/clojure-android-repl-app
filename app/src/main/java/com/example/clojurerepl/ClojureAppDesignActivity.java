@@ -68,9 +68,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     // Add field to store current screenshots
     private List<File> currentScreenshots = new ArrayList<>();
 
-    // Add a field to store the process logcat
-    private String processLogcat = "";
-
     // Add LLM type spinner
     private Spinner llmTypeSpinner;
     private Spinner llmSpinner;
@@ -323,8 +320,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
      * Setup session state based on the current session
      */
     private void setupSessionState() {
+        assert currentSession != null;
         // If we loaded an existing session, update the UI
-        if (currentSession != null && currentSession.getDescription() != null) {
+        if (currentSession.getDescription() != null) {
             Log.d(TAG, "Setting up session state: " +
                     "id=" + currentSession.getId().toString() +
                     ", description=" + (currentSession.getDescription() != null ? "present" : "null") +
@@ -363,7 +361,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         }
 
         // Set the LLM type and model in the UI if they exist
-        if (currentSession != null && currentSession.getLlmType() != null) {
+        if (currentSession.getLlmType() != null) {
             int position = Arrays.asList(LLMClientFactory.LLMType.values())
                     .indexOf(currentSession.getLlmType());
             if (position >= 0) {
@@ -388,8 +386,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         // Restore logcat output if available
         if (currentSession.getLastLogcat() != null && !currentSession.getLastLogcat().isEmpty()) {
-            processLogcat = currentSession.getLastLogcat();
-            logcatOutput.setText(processLogcat);
+            logcatOutput.setText(currentSession.getLastLogcat());
             Log.d(TAG, "Restored logcat output from session");
         }
 
@@ -448,10 +445,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         if (!currentDescriptionText.isEmpty() && !currentDescriptionText.equals(currentDescription)) {
             Log.d(TAG, "Description updated from: '" + currentDescription + "' to: '" + currentDescriptionText + "'");
             // Update the session if it exists
-            if (currentSession != null) {
-                currentSession.setDescription(currentDescriptionText);
-                sessionManager.updateSession(currentSession);
-            }
+            assert currentSession != null;
+            currentSession.setDescription(currentDescriptionText);
+            sessionManager.updateSession(currentSession);
         }
 
         String initialCode = currentSession.getInitialCode();
@@ -462,6 +458,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 (currentCode != null ? "present (len=" + currentCode.length() + ")" : "null") +
                 ", initialCode=" + (initialCode != null ? "present (len=" + initialCode.length() + ")" : "null"));
 
+        assert currentSession != null;
         assert currentSession.getIterationCount() >= 0;
         // If this is the first iteration, you can't have currentCode (though you can
         // have initialCode)
@@ -473,23 +470,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             Log.d(TAG, "Showing feedback dialog for existing code");
             showFeedbackDialog();
             return;
-        }
-
-        // If we have initial code from MainActivity but haven't started generation yet,
-        // use it as the base for improvement
-        if (initialCode != null && !initialCode.isEmpty() && currentSession.getIterationCount() == 0) {
-            Log.d(TAG, "Using initial code as base for improvement");
-            // Get the updated description (user may have edited it)
-            String description = appDescriptionInput.getText().toString();
-            if (description.isEmpty()) {
-                Toast.makeText(this, "Please enter a description", Toast.LENGTH_SHORT).show();
-                return;
-            }
-
-            // Update session with the possibly edited description
-            currentSession.setDescription(description);
-            // Save the session
-            sessionManager.updateSession(currentSession);
         }
 
         // Start a new design (potentially with initial code).
@@ -531,12 +511,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             iterationManager.shutdown();
             iterationManager = null;
         }
-
-        assert currentSession != null;
-
-        currentSession.setLlmType(currentType);
-        currentSession.setLlmModel(selectedModel);
-        sessionManager.updateSession(currentSession);
 
         iterationManager = new ClojureIterationManager(this, currentSession);
         iterationManager.setExtractionErrorCallback(this);
@@ -637,9 +611,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 Toast.makeText(this, "Please enter a description", Toast.LENGTH_SHORT).show();
                 return;
             }
+            currentSession.setDescription(currentDescription);
+            sessionManager.updateSession(currentSession);
         }
-        currentSession.setDescription(currentDescription);
-        sessionManager.updateSession(currentSession);
 
         assert iterationManager != null : "iterationManager should not be null";
 
@@ -733,20 +707,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             return;
         }
 
-        // Save any description updates before accepting the app
-        String currentDescriptionText = appDescriptionInput.getText().toString().trim();
-        String currentDescription = currentSession.getDescription();
-        if (!currentDescriptionText.isEmpty() && !currentDescriptionText.equals(currentDescription)) {
-            Log.d(TAG, "Description updated before accepting app: '" + currentDescriptionText + "'");
-            currentDescription = currentDescriptionText;
-
-            // Update the session if it exists
-            if (currentSession != null) {
-                currentSession.setDescription(currentDescription);
-                sessionManager.updateSession(currentSession);
-            }
-        }
-
         // Base64 encode the code
         String encodedCode;
         try {
@@ -762,7 +722,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         Intent intent = new Intent(this, MainActivity.class);
         intent.putExtra(MainActivity.EXTRA_CODE, encodedCode);
         intent.putExtra(MainActivity.EXTRA_ENCODING, "base64");
-        intent.putExtra(MainActivity.EXTRA_DESCRIPTION, currentDescription);
+        intent.putExtra(MainActivity.EXTRA_DESCRIPTION, currentSession.getDescription());
         startActivity(intent);
 
         // Save this final version
@@ -798,6 +758,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         screenshotView.setVisibility(View.VISIBLE);
         screenshotsContainer.setVisibility(View.VISIBLE);
 
+        boolean doUpdateSession = false;
         // First check for screenshot data (existing functionality)
         if (intent.hasExtra(RenderActivity.EXTRA_RESULT_SCREENSHOT_PATHS)) {
             String[] screenshotPaths = intent.getStringArrayExtra(RenderActivity.EXTRA_RESULT_SCREENSHOT_PATHS);
@@ -818,12 +779,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                 // Use the new API to add the screenshot set
                 currentSession.addScreenshotSet(paths);
+                doUpdateSession = true;
 
                 // Log the addition of the new screenshot set
                 Log.d(TAG, "Added a new set of " + paths.size() + " screenshots to session");
-
-                // Update session in manager
-                sessionManager.updateSession(currentSession);
             }
         }
 
@@ -851,7 +810,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             if (currentSession != null) {
                 currentSession.setLastErrorFeedback(errorFeedback);
                 currentSession.setHasError(true);
-                sessionManager.updateSession(currentSession);
+                doUpdateSession = true;
                 Log.d(TAG, "Saved error feedback to session");
             }
 
@@ -861,6 +820,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             Log.d(TAG, "RenderActivity returned with no error status");
             currentSession.setLastErrorFeedback(null);
             currentSession.setHasError(false);
+            doUpdateSession = true;
+        }
+
+        if (doUpdateSession) {
             sessionManager.updateSession(currentSession);
         }
     }
@@ -1078,7 +1041,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 String selectedModel = (String) parent.getItemAtPosition(position);
                 Log.d(TAG, "User selected model: " + selectedModel);
                 LLMClientFactory.LLMType currentType = (LLMClientFactory.LLMType) llmTypeSpinner.getSelectedItem();
-
                 // Only recreate the iteration manager if models are loaded (avoids initial
                 // selection issues)
                 // AND if this is not the session model we already created a client for
@@ -1098,7 +1060,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     Log.d(TAG, "Type: " + currentType + ", LLM: " +
                             selectedModel + ". Session " + currentSession.getId().toString() +
                             " has " + currentSession.getChatHistory().size() + " messages.");
-                    currentSession.setLlmType(currentType);
+                    assert currentSession.getLlmType() == currentType;
                     currentSession.setLlmModel(selectedModel);
                     sessionManager.updateSession(currentSession);
 
@@ -1297,20 +1259,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             return;
         }
 
-        // Save any description updates before running the code
-        String currentDescriptionText = appDescriptionInput.getText().toString().trim();
-        String currentDescription = currentSession.getDescription();
-        if (!currentDescriptionText.isEmpty() && !currentDescriptionText.equals(currentDescription)) {
-            Log.d(TAG, "Description updated before running code: '" + currentDescriptionText + "'");
-            currentDescription = currentDescriptionText;
-
-            // Update the session if it exists
-            if (currentSession != null) {
-                currentSession.setDescription(currentDescription);
-                sessionManager.updateSession(currentSession);
-            }
-        }
-
         // Start the activity
         RenderActivity.launch(this, ClojureAppDesignActivity.class,
                 new RenderActivity.ExitCallback() {
@@ -1318,14 +1266,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     public void onExit(String logcat) {
                         runOnUiThread(() -> {
                             // Update the logcat output view if it exists
-                            processLogcat = logcat;
                             if (logcatOutput != null) {
-                                logcatOutput.setText(processLogcat);
+                                logcatOutput.setText(logcat);
                             }
 
                             // Save logcat to session
-                            if (currentSession != null && processLogcat != null && !processLogcat.isEmpty()) {
-                                currentSession.setLastLogcat(processLogcat);
+                            if (currentSession != null && logcat != null && !logcat.isEmpty()) {
+                                currentSession.setLastLogcat(logcat);
                                 sessionManager.updateSession(currentSession);
                                 Log.d(TAG, "Saved logcat to session");
                             }
