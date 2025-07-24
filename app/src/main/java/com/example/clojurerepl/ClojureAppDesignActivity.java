@@ -542,7 +542,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         iterationManager.setExtractionErrorCallback(this);
 
         // Check if we have existing code to use as a starting point
-        String initialCode = currentSession.getCurrentCode();
+        String initialCode = currentSession.getInitialCode();
         if (initialCode != null && !initialCode.isEmpty()) {
             Log.d(TAG, "Using existing code as a starting point. Length: " + initialCode.length());
             Toast.makeText(this, "Using existing code as a starting point", Toast.LENGTH_SHORT).show();
