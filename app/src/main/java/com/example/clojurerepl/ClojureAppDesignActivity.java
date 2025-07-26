@@ -1210,12 +1210,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.main_menu, menu);
-        menu.add(0, R.id.action_clear_history, 0, "Clear Chat History")
-                .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
-        menu.add(0, R.id.action_clear_api_key, 0, "Clear API Key")
-                .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
-        menu.add(0, R.id.action_toggle_line_numbers, 0, "Toggle Line Numbers")
-                .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         return super.onCreateOptionsMenu(menu);
     }
 
