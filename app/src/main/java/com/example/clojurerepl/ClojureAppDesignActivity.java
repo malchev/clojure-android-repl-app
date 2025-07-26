@@ -65,6 +65,21 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     // Add a field for the screenshots container
     private LinearLayout screenshotsContainer;
 
+    // Toggle buttons for expandable sections
+    private Button codeToggleButton;
+    private Button screenshotsToggleButton;
+    private Button logcatToggleButton;
+
+    // Container views for expandable sections
+    private LinearLayout codeContainer;
+    private LinearLayout screenshotsContainerWrapper;
+    private LinearLayout logcatContainer;
+
+    // Track expansion state
+    private boolean codeExpanded = false;
+    private boolean screenshotsExpanded = false;
+    private boolean logcatExpanded = false;
+
     // Add field to store current screenshots
     private List<File> currentScreenshots = new ArrayList<>();
 
@@ -202,6 +217,15 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         submitFeedbackButton = findViewById(R.id.submit_feedback_button);
         confirmSuccessButton = findViewById(R.id.confirm_success_button);
 
+        // Initialize toggle buttons and containers
+        codeToggleButton = findViewById(R.id.code_toggle_button);
+        screenshotsToggleButton = findViewById(R.id.screenshots_toggle_button);
+        logcatToggleButton = findViewById(R.id.logcat_toggle_button);
+
+        codeContainer = findViewById(R.id.code_container);
+        screenshotsContainerWrapper = findViewById(R.id.screenshots_container_wrapper);
+        logcatContainer = findViewById(R.id.logcat_container);
+
         // Add LLM type spinner
         llmTypeSpinner = findViewById(R.id.llm_type_spinner);
         ArrayAdapter<LLMClientFactory.LLMType> llmAdapter = new ArrayAdapter<>(
@@ -281,6 +305,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         generateButton.setOnClickListener(v -> handleGenerateButtonClick());
         thumbsUpButton.setOnClickListener(v -> acceptApp());
         runButton.setOnClickListener(v -> runCurrentCode());
+
+        // Set up toggle button listeners
+        codeToggleButton.setOnClickListener(v -> toggleCodeSection());
+        screenshotsToggleButton.setOnClickListener(v -> toggleScreenshotsSection());
+        logcatToggleButton.setOnClickListener(v -> toggleLogcatSection());
 
         // Legacy button listeners
         submitFeedbackButton.setOnClickListener(v -> {
@@ -388,6 +417,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         if (currentSession.getLastLogcat() != null && !currentSession.getLastLogcat().isEmpty()) {
             logcatOutput.setText(currentSession.getLastLogcat());
             Log.d(TAG, "Restored logcat output from session");
+
+            // Don't auto-expand the logcat section - let user choose when to view it
         }
 
         // Restore latest screenshot set if available
@@ -906,6 +937,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 Log.e(TAG, "Screenshot file doesn't exist: " + path);
             }
         }
+
+        // Don't auto-expand the screenshots section - let user choose when to view it
     }
 
     // Helper method to convert dp to pixels
@@ -1275,6 +1308,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                                 currentSession.setLastLogcat(logcat);
                                 sessionManager.updateSession(currentSession);
                                 Log.d(TAG, "Saved logcat to session");
+
+                                // Don't auto-expand the logcat section - let user choose when to view it
                             }
                         });
                     }
@@ -1633,6 +1668,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             currentCodeView.setText(currentSession.getCurrentCode());
             Toast.makeText(this, "Showing code without line numbers", Toast.LENGTH_SHORT).show();
         }
+
+        // Don't auto-expand the code section - let user choose when to view it
     }
 
     /**
@@ -1755,5 +1792,47 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         });
 
         dialogRef[0] = builder.show();
+    }
+
+    /**
+     * Toggles the visibility of the source code section
+     */
+    private void toggleCodeSection() {
+        codeExpanded = !codeExpanded;
+        if (codeExpanded) {
+            codeContainer.setVisibility(View.VISIBLE);
+            codeToggleButton.setText(R.string.hide_source_code);
+        } else {
+            codeContainer.setVisibility(View.GONE);
+            codeToggleButton.setText(R.string.show_source_code);
+        }
+    }
+
+    /**
+     * Toggles the visibility of the screenshots section
+     */
+    private void toggleScreenshotsSection() {
+        screenshotsExpanded = !screenshotsExpanded;
+        if (screenshotsExpanded) {
+            screenshotsContainerWrapper.setVisibility(View.VISIBLE);
+            screenshotsToggleButton.setText(R.string.hide_app_preview);
+        } else {
+            screenshotsContainerWrapper.setVisibility(View.GONE);
+            screenshotsToggleButton.setText(R.string.show_app_preview);
+        }
+    }
+
+    /**
+     * Toggles the visibility of the logcat section
+     */
+    private void toggleLogcatSection() {
+        logcatExpanded = !logcatExpanded;
+        if (logcatExpanded) {
+            logcatContainer.setVisibility(View.VISIBLE);
+            logcatToggleButton.setText(R.string.hide_logcat_output);
+        } else {
+            logcatContainer.setVisibility(View.GONE);
+            logcatToggleButton.setText(R.string.show_logcat_output);
+        }
     }
 }

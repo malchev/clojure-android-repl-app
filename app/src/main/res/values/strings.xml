@@ -6,4 +6,12 @@
     <string name="run_code">Run Code</string>
     <string name="accept_app">Accept App</string>
     <string name="improve_with_ai">Improve with AI</string>
-</resources> 
+
+    <!-- Toggle button strings -->
+    <string name="show_source_code">▼ Show Source Code</string>
+    <string name="hide_source_code">▲ Hide Source Code</string>
+    <string name="show_app_preview">▼ Show App Preview</string>
+    <string name="hide_app_preview">▲ Hide App Preview</string>
+    <string name="show_logcat_output">▼ Show Logcat Output</string>
+    <string name="hide_logcat_output">▲ Hide Logcat Output</string>
+</resources>

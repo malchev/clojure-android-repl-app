@@ -32,65 +32,103 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/current_code_label"
+            <!-- Source Code Section -->
+            <Button
+                android:id="@+id/code_toggle_button"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Current Code:"
-                android:textColor="#000000"
-                android:textStyle="bold"
-                android:layout_marginTop="16dp" />
+                android:text="@string/show_source_code"
+                android:textAlignment="textStart"
+                android:background="@android:color/transparent"
+                android:textColor="#2196F3"
+                android:layout_marginTop="16dp"
+                android:padding="12dp" />
 
-            <TextView
-                android:id="@+id/current_code_view"
+            <LinearLayout
+                android:id="@+id/code_container"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:fontFamily="monospace"
-                android:textSize="12sp"
-                android:textColor="#000000"
-                android:background="#f5f5f5"
-                android:padding="8dp" />
+                android:orientation="vertical"
+                android:visibility="gone">
 
-            <TextView
-                android:id="@+id/screenshot_label"
+                <TextView
+                    android:id="@+id/current_code_view"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textSize="12sp"
+                    android:textColor="#000000"
+                    android:background="#f5f5f5"
+                    android:padding="8dp" />
+
+            </LinearLayout>
+
+            <!-- Screenshots Section -->
+            <Button
+                android:id="@+id/screenshots_toggle_button"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="App Preview:"
-                android:textColor="#000000"
-                android:textStyle="bold"
-                android:layout_marginTop="16dp" />
+                android:text="@string/show_app_preview"
+                android:textAlignment="textStart"
+                android:background="@android:color/transparent"
+                android:textColor="#2196F3"
+                android:layout_marginTop="16dp"
+                android:padding="12dp" />
 
-            <HorizontalScrollView
-                android:layout_width="match_parent"
-                android:layout_height="200dp"
-                android:background="#eaeaea">
-
-                <LinearLayout
-                    android:id="@+id/screenshots_container"
-                    android:layout_width="wrap_content"
-                    android:layout_height="match_parent"
-                    android:orientation="horizontal"
-                    android:padding="2dp"/>
-            </HorizontalScrollView>
-
-            <TextView
-                android:id="@+id/logcat_label"
+            <LinearLayout
+                android:id="@+id/screenshots_container_wrapper"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Logcat Output:"
-                android:textColor="#000000"
-                android:textStyle="bold"
-                android:layout_marginTop="16dp" />
+                android:orientation="vertical"
+                android:visibility="gone">
 
-            <TextView
-                android:id="@+id/logcat_output"
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="200dp"
+                    android:background="#eaeaea">
+
+                    <LinearLayout
+                        android:id="@+id/screenshots_container"
+                        android:layout_width="wrap_content"
+                        android:layout_height="match_parent"
+                        android:orientation="horizontal"
+                        android:padding="2dp"/>
+
+                </HorizontalScrollView>
+
+            </LinearLayout>
+
+            <!-- Logcat Section -->
+            <Button
+                android:id="@+id/logcat_toggle_button"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:fontFamily="monospace"
-                android:textSize="10sp"
-                android:textColor="#000000"
-                android:background="#f5f5f5"
-                android:padding="8dp" />
+                android:text="@string/show_logcat_output"
+                android:textAlignment="textStart"
+                android:background="@android:color/transparent"
+                android:textColor="#2196F3"
+                android:layout_marginTop="16dp"
+                android:padding="12dp" />
+
+            <LinearLayout
+                android:id="@+id/logcat_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/logcat_output"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textSize="10sp"
+                    android:textColor="#000000"
+                    android:background="#f5f5f5"
+                    android:padding="8dp" />
+
+            </LinearLayout>
+
         </LinearLayout>
     </ScrollView>
 
