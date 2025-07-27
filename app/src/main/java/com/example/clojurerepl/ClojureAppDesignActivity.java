@@ -1724,9 +1724,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                             .extractClojureCode(message.content);
 
                     if (result.success && result.code != null && !result.code.isEmpty()) {
-                        // Show text without code
-                        if (result.textWithoutCode != null && !result.textWithoutCode.isEmpty()) {
-                            chatText.append(result.textWithoutCode).append("\n");
+                        // Show text before code
+                        if (result.textBeforeCode != null && !result.textBeforeCode.isEmpty()) {
+                            chatText.append(result.textBeforeCode).append("\n");
                         }
 
                         // Add clickable code indicator
@@ -1735,6 +1735,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                             chatText.append("```clojure\n").append(result.code).append("\n```\n");
                         } else {
                             chatText.append("📄 [Click to show Clojure code]\n");
+                        }
+
+                        // Show text after code
+                        if (result.textAfterCode != null && !result.textAfterCode.isEmpty()) {
+                            chatText.append(result.textAfterCode).append("\n");
                         }
                     } else {
                         // No code found, show full message
