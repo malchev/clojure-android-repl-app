@@ -20,6 +20,8 @@ import android.util.Log;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import java.util.Arrays;
@@ -46,6 +48,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     private EditText appDescriptionInput;
     private Button generateButton;
     private TextView currentCodeView;
+    private ScrollView chatHistoryContainer;
+    private TextView chatHistoryView;
     private EditText feedbackInput;
     private ImageView screenshotView;
     private TextView logcatOutput;
@@ -104,6 +108,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
     // Add field to track whether line numbers are showing
     private boolean showingLineNumbers = true;
+
+    // Track expanded code sections
+    private Set<Integer> expandedCodeSections = new HashSet<>();
 
     private void createNewSession() {
         // Create a new session
@@ -204,6 +211,15 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         appDescriptionInput = findViewById(R.id.app_description_input);
         generateButton = findViewById(R.id.generate_button);
         currentCodeView = findViewById(R.id.current_code_view);
+        chatHistoryContainer = findViewById(R.id.chat_history_container);
+        chatHistoryView = findViewById(R.id.chat_history_view);
+
+        // Make chat history view clickable
+        chatHistoryView.setClickable(true);
+        chatHistoryView.setFocusable(true);
+
+        // Add click listener for code expansion
+        chatHistoryView.setOnClickListener(v -> handleChatHistoryClick());
         feedbackInput = findViewById(R.id.feedback_input);
         screenshotView = findViewById(R.id.screenshot_view);
         logcatOutput = findViewById(R.id.logcat_output);
@@ -377,6 +393,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                 // Disable the description input field since we already have code
                 appDescriptionInput.setEnabled(false);
+
+                // Show chat history
+                appDescriptionInput.setVisibility(View.GONE);
+                chatHistoryContainer.setVisibility(View.VISIBLE);
+                updateChatHistoryDisplay();
             } else {
                 // We have a session but no current code yet - keep description input enabled
                 // This handles the case where we have initial code from MainActivity but
@@ -583,6 +604,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         // Disable the description input field after first generation
                         appDescriptionInput.setEnabled(false);
 
+                        // Show chat history
+                        appDescriptionInput.setVisibility(View.GONE);
+                        chatHistoryContainer.setVisibility(View.VISIBLE);
+                        updateChatHistoryDisplay();
+
                         // Only launch RenderActivity after we have the code
                         if (code != null && !code.isEmpty()) {
                             runCurrentCode();
@@ -705,6 +731,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         thumbsUpButton.setEnabled(true);
                         runButton.setEnabled(true);
                         generateButton.setEnabled(true); // Re-enable the generate button
+
+                        // Update chat history
+                        updateChatHistoryDisplay();
 
                         runCurrentCode();
                     });
@@ -1644,6 +1673,83 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     }
 
     /**
+     * Handles clicks on the chat history view to expand/collapse code sections
+     */
+    private void handleChatHistoryClick() {
+        if (currentSession != null) {
+            List<LLMClient.Message> messages = currentSession.getChatHistory();
+            if (messages != null && !messages.isEmpty()) {
+                // Find which message was clicked by checking if it contains code
+                int messageIndex = 0;
+                for (LLMClient.Message message : messages) {
+                    ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
+                            .extractClojureCode(message.content);
+
+                    if (result.success && result.code != null && !result.code.isEmpty()) {
+                        if (expandedCodeSections.contains(messageIndex)) {
+                            expandedCodeSections.remove(messageIndex);
+                        } else {
+                            expandedCodeSections.add(messageIndex);
+                        }
+                        break; // Only handle the first code section for now
+                    }
+                    messageIndex++;
+                }
+                updateChatHistoryDisplay();
+            }
+        }
+    }
+
+    /**
+     * Updates the chat history display
+     */
+    private void updateChatHistoryDisplay() {
+        if (currentSession != null) {
+            List<LLMClient.Message> messages = currentSession.getChatHistory();
+            if (messages != null && !messages.isEmpty()) {
+                StringBuilder chatText = new StringBuilder();
+                int messageIndex = 0;
+
+                for (LLMClient.Message message : messages) {
+                    if (message.role == LLMClient.MessageRole.USER) {
+                        chatText.append("👤 You:\n");
+                    } else if (message.role == LLMClient.MessageRole.ASSISTANT) {
+                        chatText.append("🤖 AI:\n");
+                    } else {
+                        chatText.append("⚙️  System:\n");
+                    }
+
+                    // Use the extraction function to get code and text separately
+                    ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
+                            .extractClojureCode(message.content);
+
+                    if (result.success && result.code != null && !result.code.isEmpty()) {
+                        // Show text without code
+                        if (result.textWithoutCode != null && !result.textWithoutCode.isEmpty()) {
+                            chatText.append(result.textWithoutCode).append("\n");
+                        }
+
+                        // Add clickable code indicator
+                        if (expandedCodeSections.contains(messageIndex)) {
+                            chatText.append("📄 [Click to hide Clojure code]\n");
+                            chatText.append("```clojure\n").append(result.code).append("\n```\n");
+                        } else {
+                            chatText.append("📄 [Click to show Clojure code]\n");
+                        }
+                    } else {
+                        // No code found, show full message
+                        chatText.append(message.content).append("\n");
+                    }
+
+                    chatText.append("\n");
+                    messageIndex++;
+                }
+                chatHistoryView.setText(chatText.toString());
+            }
+        }
+    }
+
+    /**
      * Displays the code in the current DesignSession with line numbers
      * depending on the toggle.
      */
@@ -1664,6 +1770,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         }
 
         // Don't auto-expand the code section - let user choose when to view it
+
+        // Update chat history display
+        updateChatHistoryDisplay();
     }
 
     /**

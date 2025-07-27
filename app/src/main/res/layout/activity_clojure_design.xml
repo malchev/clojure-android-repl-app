@@ -16,6 +16,25 @@
         android:textColorHint="#808080"
         android:inputType="textMultiLine" />
 
+    <ScrollView
+        android:id="@+id/chat_history_container"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:visibility="gone"
+        android:background="#f5f5f5"
+        android:padding="8dp">
+
+        <TextView
+            android:id="@+id/chat_history_view"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:textColor="#000000"
+            android:lineSpacingExtra="4dp" />
+
+    </ScrollView>
+
     <Button
         android:id="@+id/generate_button"
         android:layout_width="match_parent"

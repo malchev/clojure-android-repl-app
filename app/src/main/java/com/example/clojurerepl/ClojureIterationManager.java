@@ -59,21 +59,23 @@ public class ClojureIterationManager {
      */
     public static class CodeExtractionResult {
         public final String code;
+        public final String textWithoutCode;
         public final boolean success;
         public final String errorMessage;
 
-        private CodeExtractionResult(String code, boolean success, String errorMessage) {
+        private CodeExtractionResult(String code, String textWithoutCode, boolean success, String errorMessage) {
             this.code = code;
+            this.textWithoutCode = textWithoutCode;
             this.success = success;
             this.errorMessage = errorMessage;
         }
 
-        public static CodeExtractionResult success(String code) {
-            return new CodeExtractionResult(code, true, null);
+        public static CodeExtractionResult success(String code, String textWithoutCode) {
+            return new CodeExtractionResult(code, textWithoutCode, true, null);
         }
 
         public static CodeExtractionResult failure(String errorMessage) {
-            return new CodeExtractionResult(null, false, errorMessage);
+            return new CodeExtractionResult(null, null, false, errorMessage);
         }
     }
 
@@ -189,7 +191,7 @@ public class ClojureIterationManager {
     public static CodeExtractionResult extractClojureCode(String input) {
         if (input == null || input.isEmpty()) {
             Log.d(TAG, "Input is null or empty, returning empty string");
-            return CodeExtractionResult.success("");
+            return CodeExtractionResult.success("", "");
         }
 
         // Check if the input contains markdown code block markers
@@ -212,8 +214,21 @@ public class ClojureIterationManager {
                     if (endMarkerPos != -1) {
                         // Extract just the code between the markers
                         String extractedCode = input.substring(codeStart, endMarkerPos).trim();
+
+                        // Extract text without the code block
+                        String textBeforeCode = input.substring(0, startMarkerPos).trim();
+                        String textAfterCode = input.substring(endMarkerPos + 3).trim(); // +3 for "```"
+                        String textWithoutCode = textBeforeCode;
+                        if (!textAfterCode.isEmpty()) {
+                            if (!textWithoutCode.isEmpty()) {
+                                textWithoutCode += "\n\n" + textAfterCode;
+                            } else {
+                                textWithoutCode = textAfterCode;
+                            }
+                        }
+
                         Log.d(TAG, "Successfully extracted code. Length: " + extractedCode.length());
-                        return CodeExtractionResult.success(extractedCode);
+                        return CodeExtractionResult.success(extractedCode, textWithoutCode);
                     }
                     Log.d(TAG, "Could not find closing marker.");
                     return CodeExtractionResult.failure("No closing code block marker found in response");
@@ -227,9 +242,10 @@ public class ClojureIterationManager {
             }
         }
 
-        // If we couldn't extract a code block or there are no markers, return error
+        // If we couldn't extract a code block or there are no markers, return the
+        // original text
         Log.d(TAG, "No code block markers found in response");
-        return CodeExtractionResult.failure("Response did not contain properly formatted Clojure code block");
+        return CodeExtractionResult.success("", input.trim());
     }
 
     public CompletableFuture<String> generateNextIteration(String description, String feedback,
