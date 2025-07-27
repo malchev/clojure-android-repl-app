@@ -49,7 +49,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     private Button generateButton;
     private TextView currentCodeView;
     private ScrollView chatHistoryContainer;
-    private TextView chatHistoryView;
+    private LinearLayout chatHistoryLayout;
     private EditText feedbackInput;
     private ImageView screenshotView;
     private TextView logcatOutput;
@@ -109,8 +109,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     // Add field to track whether line numbers are showing
     private boolean showingLineNumbers = true;
 
-    // Track expanded code sections
+    // Track expanded code sections and system prompt
     private Set<Integer> expandedCodeSections = new HashSet<>();
+    private boolean systemPromptExpanded = false;
 
     private void createNewSession() {
         // Create a new session
@@ -212,14 +213,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         generateButton = findViewById(R.id.generate_button);
         currentCodeView = findViewById(R.id.current_code_view);
         chatHistoryContainer = findViewById(R.id.chat_history_container);
-        chatHistoryView = findViewById(R.id.chat_history_view);
-
-        // Make chat history view clickable
-        chatHistoryView.setClickable(true);
-        chatHistoryView.setFocusable(true);
-
-        // Add click listener for code expansion
-        chatHistoryView.setOnClickListener(v -> handleChatHistoryClick());
+        chatHistoryLayout = findViewById(R.id.chat_history_layout);
         feedbackInput = findViewById(R.id.feedback_input);
         screenshotView = findViewById(R.id.screenshot_view);
         logcatOutput = findViewById(R.id.logcat_output);
@@ -1673,84 +1667,189 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     }
 
     /**
-     * Handles clicks on the chat history view to expand/collapse code sections
-     */
-    private void handleChatHistoryClick() {
-        if (currentSession != null) {
-            List<LLMClient.Message> messages = currentSession.getChatHistory();
-            if (messages != null && !messages.isEmpty()) {
-                // Find which message was clicked by checking if it contains code
-                int messageIndex = 0;
-                for (LLMClient.Message message : messages) {
-                    ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
-                            .extractClojureCode(message.content);
-
-                    if (result.success && result.code != null && !result.code.isEmpty()) {
-                        if (expandedCodeSections.contains(messageIndex)) {
-                            expandedCodeSections.remove(messageIndex);
-                        } else {
-                            expandedCodeSections.add(messageIndex);
-                        }
-                        break; // Only handle the first code section for now
-                    }
-                    messageIndex++;
-                }
-                updateChatHistoryDisplay();
-            }
-        }
-    }
-
-    /**
      * Updates the chat history display
      */
     private void updateChatHistoryDisplay() {
         if (currentSession != null) {
             List<LLMClient.Message> messages = currentSession.getChatHistory();
             if (messages != null && !messages.isEmpty()) {
-                StringBuilder chatText = new StringBuilder();
+                // Clear existing views
+                chatHistoryLayout.removeAllViews();
+
                 int messageIndex = 0;
-
                 for (LLMClient.Message message : messages) {
+                    // Create message container
+                    LinearLayout messageContainer = new LinearLayout(this);
+                    messageContainer.setLayoutParams(new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT));
+                    messageContainer.setOrientation(LinearLayout.VERTICAL);
+                    messageContainer.setPadding(0, 8, 0, 8);
+
+                    // Create role label
+                    TextView roleLabel = new TextView(this);
+                    roleLabel.setLayoutParams(new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT));
+                    roleLabel.setTextSize(12);
+                    roleLabel.setTypeface(null, android.graphics.Typeface.BOLD);
+                    roleLabel.setPadding(0, 0, 0, 4);
+
                     if (message.role == LLMClient.MessageRole.USER) {
-                        chatText.append("👤 You:\n");
+                        roleLabel.setText("👤 You:");
                     } else if (message.role == LLMClient.MessageRole.ASSISTANT) {
-                        chatText.append("🤖 AI:\n");
+                        roleLabel.setText("🤖 AI:");
                     } else {
-                        chatText.append("⚙️  System:\n");
+                        roleLabel.setText("⚙️ System:");
+                    }
+                    messageContainer.addView(roleLabel);
+
+                    // Handle system prompts
+                    if (message.role == LLMClient.MessageRole.SYSTEM) {
+                        createSystemPromptView(messageContainer, messageIndex);
+                    } else {
+                        // Handle regular messages with potential code
+                        createMessageView(messageContainer, message, messageIndex);
                     }
 
-                    // Use the extraction function to get code and text separately
-                    ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
-                            .extractClojureCode(message.content);
-
-                    if (result.success && result.code != null && !result.code.isEmpty()) {
-                        // Show text before code
-                        if (result.textBeforeCode != null && !result.textBeforeCode.isEmpty()) {
-                            chatText.append(result.textBeforeCode).append("\n");
-                        }
-
-                        // Add clickable code indicator
-                        if (expandedCodeSections.contains(messageIndex)) {
-                            chatText.append("📄 [Click to hide Clojure code]\n");
-                            chatText.append("```clojure\n").append(result.code).append("\n```\n");
-                        } else {
-                            chatText.append("📄 [Click to show Clojure code]\n");
-                        }
-
-                        // Show text after code
-                        if (result.textAfterCode != null && !result.textAfterCode.isEmpty()) {
-                            chatText.append(result.textAfterCode).append("\n");
-                        }
-                    } else {
-                        // No code found, show full message
-                        chatText.append(message.content).append("\n");
-                    }
-
-                    chatText.append("\n");
+                    chatHistoryLayout.addView(messageContainer);
                     messageIndex++;
                 }
-                chatHistoryView.setText(chatText.toString());
             }
+        }
+    }
+
+    /**
+     * Creates a view for system prompt messages
+     */
+    private void createSystemPromptView(LinearLayout container, int messageIndex) {
+        // Get the system message content
+        List<LLMClient.Message> messages = currentSession.getChatHistory();
+        String systemContent = "";
+        for (LLMClient.Message message : messages) {
+            if (message.role == LLMClient.MessageRole.SYSTEM) {
+                systemContent = message.content;
+                break;
+            }
+        }
+        // Create clickable button for system prompt
+        Button systemPromptButton = new Button(this);
+        systemPromptButton.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        systemPromptButton.setTextAlignment(View.TEXT_ALIGNMENT_TEXT_START);
+        systemPromptButton.setBackgroundResource(android.R.color.transparent);
+        systemPromptButton.setTextColor(getResources().getColor(android.R.color.holo_blue_dark));
+        systemPromptButton.setPadding(0, 8, 0, 8);
+
+        if (systemPromptExpanded) {
+            systemPromptButton.setText("📋 [Click to hide system prompt]");
+        } else {
+            systemPromptButton.setText("📋 [Click to show system prompt]");
+        }
+
+        systemPromptButton.setOnClickListener(v -> {
+            systemPromptExpanded = !systemPromptExpanded;
+            updateChatHistoryDisplay();
+        });
+        container.addView(systemPromptButton);
+
+        // Add system prompt content if expanded
+        if (systemPromptExpanded) {
+            TextView contentView = new TextView(this);
+            contentView.setLayoutParams(new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            contentView.setTextSize(14);
+            contentView.setPadding(16, 8, 16, 8);
+            contentView.setBackgroundColor(getResources().getColor(android.R.color.white));
+            contentView.setText(systemContent);
+            container.addView(contentView);
+        }
+    }
+
+    /**
+     * Creates a view for regular messages (user/assistant)
+     */
+    private void createMessageView(LinearLayout container, LLMClient.Message message, int messageIndex) {
+        // Use the extraction function to get code and text separately
+        ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
+                .extractClojureCode(message.content);
+
+        if (result.success && result.code != null && !result.code.isEmpty()) {
+            // Show text before code
+            if (result.textBeforeCode != null && !result.textBeforeCode.isEmpty()) {
+                TextView beforeTextView = new TextView(this);
+                beforeTextView.setLayoutParams(new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+                beforeTextView.setTextSize(14);
+                beforeTextView.setPadding(0, 4, 0, 4);
+                beforeTextView.setText(result.textBeforeCode);
+                container.addView(beforeTextView);
+            }
+
+            // Create clickable button for code
+            Button codeButton = new Button(this);
+            codeButton.setLayoutParams(new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            codeButton.setTextAlignment(View.TEXT_ALIGNMENT_TEXT_START);
+            codeButton.setBackgroundResource(android.R.color.transparent);
+            codeButton.setTextColor(getResources().getColor(android.R.color.holo_blue_dark));
+            codeButton.setPadding(0, 8, 0, 8);
+
+            if (expandedCodeSections.contains(messageIndex)) {
+                codeButton.setText("📄 [Click to hide Clojure code]");
+            } else {
+                codeButton.setText("📄 [Click to show Clojure code]");
+            }
+
+            codeButton.setOnClickListener(v -> {
+                if (expandedCodeSections.contains(messageIndex)) {
+                    expandedCodeSections.remove(messageIndex);
+                } else {
+                    expandedCodeSections.add(messageIndex);
+                }
+                updateChatHistoryDisplay();
+            });
+            container.addView(codeButton);
+
+            // Add code content if expanded
+            if (expandedCodeSections.contains(messageIndex)) {
+                TextView codeView = new TextView(this);
+                codeView.setLayoutParams(new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+                codeView.setTextSize(12);
+                codeView.setTypeface(android.graphics.Typeface.MONOSPACE);
+                codeView.setPadding(16, 8, 16, 8);
+                codeView.setBackgroundColor(getResources().getColor(android.R.color.white));
+                codeView.setText("```clojure\n" + result.code + "\n```");
+                container.addView(codeView);
+            }
+
+            // Show text after code
+            if (result.textAfterCode != null && !result.textAfterCode.isEmpty()) {
+                TextView afterTextView = new TextView(this);
+                afterTextView.setLayoutParams(new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+                afterTextView.setTextSize(14);
+                afterTextView.setPadding(0, 4, 0, 4);
+                afterTextView.setText(result.textAfterCode);
+                container.addView(afterTextView);
+            }
+        } else {
+            // No code found, show full message
+            TextView contentView = new TextView(this);
+            contentView.setLayoutParams(new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            contentView.setTextSize(14);
+            contentView.setPadding(0, 4, 0, 4);
+            contentView.setText(message.content);
+            container.addView(contentView);
         }
     }
 
