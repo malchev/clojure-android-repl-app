@@ -584,7 +584,7 @@ public class GeminiLLMClient extends LLMClient {
         String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback, image != null);
 
         // Queue the user message (with image attachment if provided)
-        chatSession.queueUserMessageWithImage(prompt, image);
+        chatSession.queueUserMessageWithImage(prompt, image, logcat, feedback, null);
 
         // Send all messages and get the response
         return sendMessages(chatSession)

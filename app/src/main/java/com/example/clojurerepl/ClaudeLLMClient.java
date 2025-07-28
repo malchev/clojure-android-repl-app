@@ -229,7 +229,7 @@ public class ClaudeLLMClient extends LLMClient {
         String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback, image != null);
 
         // Queue the user message (with image attachment if provided)
-        chatSession.queueUserMessageWithImage(prompt, image);
+        chatSession.queueUserMessageWithImage(prompt, image, logcat, feedback, null);
 
         Log.d(TAG, "After queueing new user message, session now has " +
                 chatSession.getMessages().size() + " messages");

@@ -284,6 +284,19 @@ public class DesignSession {
                 messageJson.put("mimeType", message.mimeType);
             }
 
+            // Add additional fields for user messages
+            if (message.role == LLMClient.MessageRole.USER) {
+                if (message.getLogcat() != null) {
+                    messageJson.put("logcat", message.getLogcat());
+                }
+                if (message.getFeedback() != null) {
+                    messageJson.put("feedback", message.getFeedback());
+                }
+                if (message.getInitialCode() != null) {
+                    messageJson.put("initialCode", message.getInitialCode());
+                }
+            }
+
             messagesJson.put(messageJson);
         }
         json.put("chatHistory", messagesJson);
@@ -373,6 +386,22 @@ public class DesignSession {
                     }
                 }
 
+                // Get additional fields for user messages
+                String logcat = null;
+                String feedback = null;
+                String messageInitialCode = null;
+                if (role == LLMClient.MessageRole.USER) {
+                    if (messageJson.has("logcat")) {
+                        logcat = messageJson.getString("logcat");
+                    }
+                    if (messageJson.has("feedback")) {
+                        feedback = messageJson.getString("feedback");
+                    }
+                    if (messageJson.has("initialCode")) {
+                        messageInitialCode = messageJson.getString("initialCode");
+                    }
+                }
+
                 // Check if the message has an image
                 if (messageJson.has("imageFile") && messageJson.has("mimeType")) {
                     String imagePath = messageJson.getString("imageFile");
@@ -383,25 +412,28 @@ public class DesignSession {
                     if (imageFile.exists()) {
                         if (modelProvider != null && modelName != null) {
                             chatHistory.add(new LLMClient.Message(role, content, imageFile, mimeType, modelProvider,
-                                    modelName));
+                                    modelName, logcat, feedback, messageInitialCode));
                         } else {
-                            chatHistory.add(new LLMClient.Message(role, content, imageFile, mimeType));
+                            chatHistory.add(new LLMClient.Message(role, content, imageFile, mimeType, logcat, feedback,
+                                    messageInitialCode));
                         }
                     } else {
                         // File doesn't exist, create regular message
                         Log.w(TAG, "Image file not found during deserialization: " + imagePath);
                         if (modelProvider != null && modelName != null) {
-                            chatHistory.add(new LLMClient.Message(role, content, modelProvider, modelName));
+                            chatHistory.add(new LLMClient.Message(role, content, modelProvider, modelName, logcat,
+                                    feedback, messageInitialCode));
                         } else {
-                            chatHistory.add(new LLMClient.Message(role, content));
+                            chatHistory.add(new LLMClient.Message(role, content, logcat, feedback, messageInitialCode));
                         }
                     }
                 } else {
                     // Regular message without image
                     if (modelProvider != null && modelName != null) {
-                        chatHistory.add(new LLMClient.Message(role, content, modelProvider, modelName));
+                        chatHistory.add(new LLMClient.Message(role, content, modelProvider, modelName, logcat, feedback,
+                                messageInitialCode));
                     } else {
-                        chatHistory.add(new LLMClient.Message(role, content));
+                        chatHistory.add(new LLMClient.Message(role, content, logcat, feedback, messageInitialCode));
                     }
                 }
             }
@@ -416,9 +448,11 @@ public class DesignSession {
                 session.chatSession.queueSystemPrompt(message.content);
             } else if (LLMClient.MessageRole.USER.equals(message.role)) {
                 if (message.hasImage()) {
-                    session.chatSession.queueUserMessageWithImage(message.content, message.imageFile);
+                    session.chatSession.queueUserMessageWithImage(message.content, message.imageFile,
+                            message.getLogcat(), message.getFeedback(), message.getInitialCode());
                 } else {
-                    session.chatSession.queueUserMessage(message.content);
+                    session.chatSession.queueUserMessage(message.content, message.getLogcat(),
+                            message.getFeedback(), message.getInitialCode());
                 }
             } else if (LLMClient.MessageRole.ASSISTANT.equals(message.role)) {
                 // Use the model information if available, otherwise use the default method

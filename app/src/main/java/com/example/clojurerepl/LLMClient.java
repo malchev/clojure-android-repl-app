@@ -164,7 +164,7 @@ public abstract class LLMClient {
         String prompt = formatInitialPrompt(description, initialCode);
 
         // Queue the user message and send all messages
-        chatSession.queueUserMessage(prompt);
+        chatSession.queueUserMessage(prompt, null, null, initialCode);
         return chatSession;
     }
 
@@ -214,10 +214,14 @@ public abstract class LLMClient {
     public static class Message {
         public final MessageRole role;
         public final String content;
-        public final File imageFile;
-        public final String mimeType;
         public final LLMClientFactory.LLMType modelProvider; // Provider (CLAUDE, OPENAI, GEMINI)
         public final String modelName; // Specific model name
+        // The fields below are for user messages.
+        public final File imageFile; // image attachment
+        public final String mimeType; // image MIME type
+        public final String logcat; // Logcat output for
+        public final String feedback; // User feedback
+        public final String initialCode; // Initial code
 
         public Message(MessageRole role, String content) {
             this.role = role;
@@ -226,6 +230,9 @@ public abstract class LLMClient {
             this.mimeType = null;
             this.modelProvider = null;
             this.modelName = null;
+            this.logcat = null;
+            this.feedback = null;
+            this.initialCode = null;
         }
 
         public Message(MessageRole role, String content, File imageFile, String mimeType) {
@@ -235,6 +242,9 @@ public abstract class LLMClient {
             this.mimeType = mimeType;
             this.modelProvider = null;
             this.modelName = null;
+            this.logcat = null;
+            this.feedback = null;
+            this.initialCode = null;
         }
 
         public Message(MessageRole role, String content, LLMClientFactory.LLMType modelProvider, String modelName) {
@@ -244,6 +254,9 @@ public abstract class LLMClient {
             this.mimeType = null;
             this.modelProvider = modelProvider;
             this.modelName = modelName;
+            this.logcat = null;
+            this.feedback = null;
+            this.initialCode = null;
         }
 
         public Message(MessageRole role, String content, File imageFile, String mimeType,
@@ -254,6 +267,61 @@ public abstract class LLMClient {
             this.mimeType = mimeType;
             this.modelProvider = modelProvider;
             this.modelName = modelName;
+            this.logcat = null;
+            this.feedback = null;
+            this.initialCode = null;
+        }
+
+        public Message(MessageRole role, String content, String logcat, String feedback, String initialCode) {
+            this.role = role;
+            this.content = content;
+            this.imageFile = null;
+            this.mimeType = null;
+            this.modelProvider = null;
+            this.modelName = null;
+            this.logcat = logcat;
+            this.feedback = feedback;
+            this.initialCode = initialCode;
+        }
+
+        public Message(MessageRole role, String content, File imageFile, String mimeType,
+                String logcat, String feedback, String initialCode) {
+            this.role = role;
+            this.content = content;
+            this.imageFile = imageFile;
+            this.mimeType = mimeType;
+            this.modelProvider = null;
+            this.modelName = null;
+            this.logcat = logcat;
+            this.feedback = feedback;
+            this.initialCode = initialCode;
+        }
+
+        public Message(MessageRole role, String content, LLMClientFactory.LLMType modelProvider, String modelName,
+                String logcat, String feedback, String initialCode) {
+            this.role = role;
+            this.content = content;
+            this.imageFile = null;
+            this.mimeType = null;
+            this.modelProvider = modelProvider;
+            this.modelName = modelName;
+            this.logcat = logcat;
+            this.feedback = feedback;
+            this.initialCode = initialCode;
+        }
+
+        public Message(MessageRole role, String content, File imageFile, String mimeType,
+                LLMClientFactory.LLMType modelProvider, String modelName,
+                String logcat, String feedback, String initialCode) {
+            this.role = role;
+            this.content = content;
+            this.imageFile = imageFile;
+            this.mimeType = mimeType;
+            this.modelProvider = modelProvider;
+            this.modelName = modelName;
+            this.logcat = logcat;
+            this.feedback = feedback;
+            this.initialCode = initialCode;
         }
 
         public boolean hasImage() {
@@ -276,6 +344,33 @@ public abstract class LLMClient {
          */
         public String getModelName() {
             return modelName;
+        }
+
+        /**
+         * Get the logcat output associated with this message
+         * 
+         * @return The logcat output, or null if not applicable
+         */
+        public String getLogcat() {
+            return logcat;
+        }
+
+        /**
+         * Get the user feedback associated with this message
+         * 
+         * @return The user feedback, or null if not applicable
+         */
+        public String getFeedback() {
+            return feedback;
+        }
+
+        /**
+         * Get the initial code associated with this message
+         * 
+         * @return The initial code, or null if not applicable
+         */
+        public String getInitialCode() {
+            return initialCode;
         }
     }
 
@@ -344,6 +439,18 @@ public abstract class LLMClient {
         }
 
         /**
+         * Queues a user message with additional fields to be sent in the next API call
+         *
+         * @param content     The user message content
+         * @param logcat      The logcat output (can be null)
+         * @param feedback    The user feedback (can be null)
+         * @param initialCode The initial code (can be null)
+         */
+        public void queueUserMessage(String content, String logcat, String feedback, String initialCode) {
+            queueUserMessageWithImage(content, null, logcat, feedback, initialCode);
+        }
+
+        /**
          * Queues a user message with an attached image to be sent in the next API call
          *
          * @param content   The user message content
@@ -351,20 +458,37 @@ public abstract class LLMClient {
          *                  messages)
          */
         public void queueUserMessageWithImage(String content, File imageFile) {
-            Log.d(TAG, "Queuing user message with image in session: " + sessionId);
+            queueUserMessageWithImage(content, imageFile, null, null, null);
+        }
+
+        /**
+         * Queues a user message with an attached image and additional fields to be sent
+         * in the next API call
+         *
+         * @param content     The user message content
+         * @param imageFile   The image file to attach (can be null for text-only
+         *                    messages)
+         * @param logcat      The logcat output (can be null)
+         * @param feedback    The user feedback (can be null)
+         * @param initialCode The initial code (can be null)
+         */
+        public void queueUserMessageWithImage(String content, File imageFile, String logcat, String feedback,
+                String initialCode) {
+            Log.d(TAG, "Queuing user message with image and fields in session: " + sessionId);
 
             if (imageFile != null) {
                 // Determine MIME type based on file extension
                 String mimeType = determineMimeType(imageFile);
 
-                // Create message with image
-                Message message = new Message(MessageRole.USER, content, imageFile, mimeType);
+                // Create message with image and fields
+                Message message = new Message(MessageRole.USER, content, imageFile, mimeType, logcat, feedback,
+                        initialCode);
                 messages.add(message);
 
-                Log.d(TAG, "Added message with image, MIME type: " + mimeType);
+                Log.d(TAG, "Added message with image and fields, MIME type: " + mimeType);
             } else {
-                // Regular text-only message
-                messages.add(new Message(MessageRole.USER, content));
+                // Regular text-only message with fields
+                messages.add(new Message(MessageRole.USER, content, logcat, feedback, initialCode));
             }
         }
 
