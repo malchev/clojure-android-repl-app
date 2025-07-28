@@ -715,7 +715,12 @@ public class GeminiLLMClient extends LLMClient {
                 }
                 Log.d(TAG, String.format("Message %d - Role: %s\nContent:\n%s\nImage: %s (MIME: %s)",
                         i, geminiRole, contentPreview,
-                        msg.hasImage() ? msg.imageFile.getPath() : "none", msg.mimeType));
+                        (msg.role == LLMClient.MessageRole.USER && ((LLMClient.UserMessage) msg).hasImage())
+                                ? ((LLMClient.UserMessage) msg).imageFile.getPath()
+                                : "none",
+                        (msg.role == LLMClient.MessageRole.USER && ((LLMClient.UserMessage) msg).hasImage())
+                                ? ((LLMClient.UserMessage) msg).mimeType
+                                : "none"));
             }
 
             String apiKey = apiKeyManager.getApiKey(LLMClientFactory.LLMType.GEMINI);
@@ -779,19 +784,20 @@ public class GeminiLLMClient extends LLMClient {
                     }
 
                     // Add image part if image exists and is readable
-                    if (message.hasImage()) {
+                    if (message.role == LLMClient.MessageRole.USER && ((LLMClient.UserMessage) message).hasImage()) {
                         try {
-                            String base64Image = encodeImageToBase64(message.imageFile);
+                            LLMClient.UserMessage userMsg = (LLMClient.UserMessage) message;
+                            String base64Image = encodeImageToBase64(userMsg.imageFile);
                             JSONObject imagePart = new JSONObject();
                             JSONObject inlineData = new JSONObject();
-                            inlineData.put("mime_type", message.mimeType);
+                            inlineData.put("mime_type", userMsg.mimeType);
                             inlineData.put("data", base64Image);
                             imagePart.put("inline_data", inlineData);
                             parts.put(imagePart);
 
                             Log.d(TAG, "Added message with image, text length: " +
                                     message.content.length() + ", image base64 length: " + base64Image.length() +
-                                    ", MIME type: " + message.mimeType);
+                                    ", MIME type: " + userMsg.mimeType);
                         } catch (IOException e) {
                             Log.e(TAG, "Failed to encode image for message", e);
                             // Continue without the image

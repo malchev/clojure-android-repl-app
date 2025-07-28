@@ -191,14 +191,23 @@ public abstract class LLMClient {
                 ", screenshot: " + (screenshot != null ? screenshot.getPath() : "null") +
                 ", feedback: " + feedback +
                 ", hasImage: " + hasImage);
-        return String.format(
-                "The app needs work. Provide an improved version addressing the user feedback%s logcat output%s.\n" +
-                        "User feedback: %s\n" +
-                        "Logcat output:\n```\n%s\n```\n\n",
-                hasImage ? "," : " and",
-                hasImage ? ", and attached image" : "",
-                feedback,
-                logcat);
+        boolean hasLogcat = logcat != null && !logcat.isEmpty();
+        if (hasLogcat) {
+            return String.format(
+                    "The app needs work. Provide an improved version addressing the feedback%s logcat output%s.\n" +
+                            "User feedback: %s\n" +
+                            "Logcat output:\n```\n%s\n```\n\n",
+                    hasImage ? "," : " and",
+                    hasImage ? ", and attached image" : "",
+                    feedback,
+                    logcat);
+        } else {
+            return String.format(
+                    "The app needs work. Provide an improved version addressing the feedback%s.\n" +
+                            "User feedback: %s\n",
+                    hasImage ? " and attached image" : "",
+                    feedback);
+        }
     }
 
     public abstract CompletableFuture<String> generateNextIteration(
@@ -210,167 +219,139 @@ public abstract class LLMClient {
             String feedback,
             File image);
 
-    // Message class for chat history (supports both text and images)
-    public static class Message {
+    // Base Message class for chat history
+    public static abstract class Message {
         public final MessageRole role;
         public final String content;
-        public final LLMClientFactory.LLMType modelProvider; // Provider (CLAUDE, OPENAI, GEMINI)
-        public final String modelName; // Specific model name
-        // The fields below are for user messages.
-        public final File imageFile; // image attachment
-        public final String mimeType; // image MIME type
-        public final String logcat; // Logcat output for
-        public final String feedback; // User feedback
-        public final String initialCode; // Initial code
 
-        public Message(MessageRole role, String content) {
+        protected Message(MessageRole role, String content) {
             this.role = role;
             this.content = content;
+        }
+    }
+
+    // System message - simple text only
+    public static class SystemMessage extends Message {
+        public SystemMessage(String content) {
+            super(MessageRole.SYSTEM, content);
+        }
+    }
+
+    // User message - can have image, logcat, feedback, initialCode
+    public static class UserMessage extends Message {
+        public final File imageFile;
+        public final String mimeType;
+        public final String logcat;
+        public final String feedback;
+        public final String initialCode;
+
+        public UserMessage(String content) {
+            super(MessageRole.USER, content);
             this.imageFile = null;
             this.mimeType = null;
-            this.modelProvider = null;
-            this.modelName = null;
             this.logcat = null;
             this.feedback = null;
             this.initialCode = null;
         }
 
-        public Message(MessageRole role, String content, File imageFile, String mimeType) {
-            this.role = role;
-            this.content = content;
+        public UserMessage(String content, File imageFile, String mimeType) {
+            super(MessageRole.USER, content);
             this.imageFile = imageFile;
             this.mimeType = mimeType;
-            this.modelProvider = null;
-            this.modelName = null;
             this.logcat = null;
             this.feedback = null;
             this.initialCode = null;
         }
 
-        public Message(MessageRole role, String content, LLMClientFactory.LLMType modelProvider, String modelName) {
-            this.role = role;
-            this.content = content;
+        public UserMessage(String content, String logcat, String feedback, String initialCode) {
+            super(MessageRole.USER, content);
             this.imageFile = null;
             this.mimeType = null;
-            this.modelProvider = modelProvider;
-            this.modelName = modelName;
-            this.logcat = null;
-            this.feedback = null;
-            this.initialCode = null;
-        }
-
-        public Message(MessageRole role, String content, File imageFile, String mimeType,
-                LLMClientFactory.LLMType modelProvider, String modelName) {
-            this.role = role;
-            this.content = content;
-            this.imageFile = imageFile;
-            this.mimeType = mimeType;
-            this.modelProvider = modelProvider;
-            this.modelName = modelName;
-            this.logcat = null;
-            this.feedback = null;
-            this.initialCode = null;
-        }
-
-        public Message(MessageRole role, String content, String logcat, String feedback, String initialCode) {
-            this.role = role;
-            this.content = content;
-            this.imageFile = null;
-            this.mimeType = null;
-            this.modelProvider = null;
-            this.modelName = null;
             this.logcat = logcat;
             this.feedback = feedback;
             this.initialCode = initialCode;
         }
 
-        public Message(MessageRole role, String content, File imageFile, String mimeType,
+        public UserMessage(String content, File imageFile, String mimeType,
                 String logcat, String feedback, String initialCode) {
-            this.role = role;
-            this.content = content;
+            super(MessageRole.USER, content);
             this.imageFile = imageFile;
             this.mimeType = mimeType;
-            this.modelProvider = null;
-            this.modelName = null;
             this.logcat = logcat;
             this.feedback = feedback;
             this.initialCode = initialCode;
         }
 
-        public Message(MessageRole role, String content, LLMClientFactory.LLMType modelProvider, String modelName,
-                String logcat, String feedback, String initialCode) {
-            this.role = role;
-            this.content = content;
-            this.imageFile = null;
-            this.mimeType = null;
-            this.modelProvider = modelProvider;
-            this.modelName = modelName;
-            this.logcat = logcat;
-            this.feedback = feedback;
-            this.initialCode = initialCode;
-        }
-
-        public Message(MessageRole role, String content, File imageFile, String mimeType,
-                LLMClientFactory.LLMType modelProvider, String modelName,
-                String logcat, String feedback, String initialCode) {
-            this.role = role;
-            this.content = content;
-            this.imageFile = imageFile;
-            this.mimeType = mimeType;
-            this.modelProvider = modelProvider;
-            this.modelName = modelName;
-            this.logcat = logcat;
-            this.feedback = feedback;
-            this.initialCode = initialCode;
-        }
-
+        /**
+         * Check if this message has an image
+         * 
+         * @return true if the message has an image, false otherwise
+         */
         public boolean hasImage() {
             return imageFile != null && imageFile.exists() && imageFile.canRead();
         }
 
         /**
-         * Get the model provider that generated this message
+         * Get the logcat output associated with this user message
          * 
-         * @return The model provider, or null if not applicable
-         */
-        public LLMClientFactory.LLMType getModelProvider() {
-            return modelProvider;
-        }
-
-        /**
-         * Get the model name that generated this message
-         * 
-         * @return The model name, or null if not applicable
-         */
-        public String getModelName() {
-            return modelName;
-        }
-
-        /**
-         * Get the logcat output associated with this message
-         * 
-         * @return The logcat output, or null if not applicable
+         * @return The logcat output, or null if not present
          */
         public String getLogcat() {
             return logcat;
         }
 
         /**
-         * Get the user feedback associated with this message
+         * Get the feedback associated with this user message
          * 
-         * @return The user feedback, or null if not applicable
+         * @return The feedback, or null if not present
          */
         public String getFeedback() {
             return feedback;
         }
 
         /**
-         * Get the initial code associated with this message
+         * Get the initial code associated with this user message
          * 
-         * @return The initial code, or null if not applicable
+         * @return The initial code, or null if not present
          */
         public String getInitialCode() {
             return initialCode;
+        }
+    }
+
+    // Assistant message - can have model provider info
+    public static class AssistantMessage extends Message {
+        public final LLMClientFactory.LLMType modelProvider;
+        public final String modelName;
+
+        public AssistantMessage(String content) {
+            super(MessageRole.ASSISTANT, content);
+            this.modelProvider = null;
+            this.modelName = null;
+        }
+
+        public AssistantMessage(String content, LLMClientFactory.LLMType modelProvider, String modelName) {
+            super(MessageRole.ASSISTANT, content);
+            this.modelProvider = modelProvider;
+            this.modelName = modelName;
+        }
+
+        /**
+         * Get the model provider for this assistant message
+         * 
+         * @return The model provider, or null if not set
+         */
+        public LLMClientFactory.LLMType getModelProvider() {
+            return modelProvider;
+        }
+
+        /**
+         * Get the model name for this assistant message
+         * 
+         * @return The model name, or null if not set
+         */
+        public String getModelName() {
+            return modelName;
         }
     }
 
@@ -426,7 +407,7 @@ public abstract class LLMClient {
         public void queueSystemPrompt(String content) {
             Log.d(TAG, "Queuing system prompt in session: " + sessionId);
             this.systemPrompt = content;
-            messages.add(new Message(MessageRole.SYSTEM, content));
+            messages.add(new SystemMessage(content));
         }
 
         /**
@@ -481,14 +462,13 @@ public abstract class LLMClient {
                 String mimeType = determineMimeType(imageFile);
 
                 // Create message with image and fields
-                Message message = new Message(MessageRole.USER, content, imageFile, mimeType, logcat, feedback,
-                        initialCode);
+                UserMessage message = new UserMessage(content, imageFile, mimeType, logcat, feedback, initialCode);
                 messages.add(message);
 
                 Log.d(TAG, "Added message with image and fields, MIME type: " + mimeType);
             } else {
                 // Regular text-only message with fields
-                messages.add(new Message(MessageRole.USER, content, logcat, feedback, initialCode));
+                messages.add(new UserMessage(content, logcat, feedback, initialCode));
             }
         }
 
@@ -500,7 +480,7 @@ public abstract class LLMClient {
          */
         public void queueAssistantResponse(String content) {
             Log.d(TAG, "Queuing assistant response in session: " + sessionId);
-            messages.add(new Message(MessageRole.ASSISTANT, content));
+            messages.add(new AssistantMessage(content));
         }
 
         /**
@@ -513,7 +493,7 @@ public abstract class LLMClient {
         public void queueAssistantResponse(String content, LLMClientFactory.LLMType modelProvider, String modelName) {
             Log.d(TAG, "Queuing assistant response with model: " + modelProvider + "/" + modelName + " in session: "
                     + sessionId);
-            messages.add(new Message(MessageRole.ASSISTANT, content, modelProvider, modelName));
+            messages.add(new AssistantMessage(content, modelProvider, modelName));
         }
 
         /**

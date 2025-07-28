@@ -388,7 +388,7 @@ public class ClaudeLLMClient extends LLMClient {
                 messageObj.put("role", claudeRole);
 
                 // For Claude API, we need to handle both text and image content
-                if (msg.hasImage()) {
+                if (msg.role == LLMClient.MessageRole.USER && ((LLMClient.UserMessage) msg).hasImage()) {
                     // Create content array with both text and image
                     JSONArray contentArray = new JSONArray();
 
@@ -402,26 +402,29 @@ public class ClaudeLLMClient extends LLMClient {
 
                     // Add image content
                     try {
+                        // Cast to UserMessage to access image fields
+                        LLMClient.UserMessage userMsg = (LLMClient.UserMessage) msg;
+
                         // Verify image file exists and is readable
-                        if (!msg.imageFile.exists()) {
-                            Log.e(TAG, "Image file does not exist: " + msg.imageFile.getAbsolutePath());
-                            throw new IOException("Image file does not exist: " + msg.imageFile.getAbsolutePath());
+                        if (!userMsg.imageFile.exists()) {
+                            Log.e(TAG, "Image file does not exist: " + userMsg.imageFile.getAbsolutePath());
+                            throw new IOException("Image file does not exist: " + userMsg.imageFile.getAbsolutePath());
                         }
 
-                        if (!msg.imageFile.canRead()) {
-                            Log.e(TAG, "Image file is not readable: " + msg.imageFile.getAbsolutePath());
-                            throw new IOException("Image file is not readable: " + msg.imageFile.getAbsolutePath());
+                        if (!userMsg.imageFile.canRead()) {
+                            Log.e(TAG, "Image file is not readable: " + userMsg.imageFile.getAbsolutePath());
+                            throw new IOException("Image file is not readable: " + userMsg.imageFile.getAbsolutePath());
                         }
 
-                        Log.d(TAG, "Processing image: " + msg.imageFile.getAbsolutePath() +
-                                ", size: " + msg.imageFile.length() + " bytes");
+                        Log.d(TAG, "Processing image: " + userMsg.imageFile.getAbsolutePath() +
+                                ", size: " + userMsg.imageFile.length() + " bytes");
 
-                        String base64Image = encodeImageToBase64(msg.imageFile);
+                        String base64Image = encodeImageToBase64(userMsg.imageFile);
                         JSONObject imageContent = new JSONObject();
                         imageContent.put("type", "image");
                         JSONObject imageSource = new JSONObject();
                         imageSource.put("type", "base64");
-                        imageSource.put("media_type", msg.mimeType);
+                        imageSource.put("media_type", userMsg.mimeType);
                         imageSource.put("data", base64Image);
                         imageContent.put("source", imageSource);
                         contentArray.put(imageContent);
@@ -429,15 +432,17 @@ public class ClaudeLLMClient extends LLMClient {
                         Log.d(TAG, "Added message with image, text length: " +
                                 (msg.content != null ? msg.content.length() : 0) +
                                 ", image base64 length: " + base64Image.length() +
-                                ", MIME type: " + msg.mimeType);
+                                ", MIME type: " + userMsg.mimeType);
                     } catch (IOException e) {
-                        Log.e(TAG, "Failed to encode image for message: " + msg.imageFile.getAbsolutePath(), e);
+                        LLMClient.UserMessage userMsg = (LLMClient.UserMessage) msg;
+                        Log.e(TAG, "Failed to encode image for message: " + userMsg.imageFile.getAbsolutePath(), e);
                         // Continue without the image, just add text content
                         if (msg.content != null && !msg.content.trim().isEmpty()) {
                             messageObj.put("content", msg.content);
                         }
                     } catch (Exception e) {
-                        Log.e(TAG, "Unexpected error processing image: " + msg.imageFile.getAbsolutePath(), e);
+                        LLMClient.UserMessage userMsg = (LLMClient.UserMessage) msg;
+                        Log.e(TAG, "Unexpected error processing image: " + userMsg.imageFile.getAbsolutePath(), e);
                         // Continue without the image, just add text content
                         if (msg.content != null && !msg.content.trim().isEmpty()) {
                             messageObj.put("content", msg.content);
