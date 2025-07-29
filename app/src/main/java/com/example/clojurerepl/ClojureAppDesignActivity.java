@@ -1335,7 +1335,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 currentCode,
                 currentSession.getId().toString(),
                 currentSession.getIterationCount(),
-                true);
+                true,
+                false);
     }
 
     private void clearChatSession() {

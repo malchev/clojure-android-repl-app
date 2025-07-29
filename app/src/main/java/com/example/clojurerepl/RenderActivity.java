@@ -58,13 +58,15 @@ public class RenderActivity extends AppCompatActivity {
     public static final String EXTRA_ITERATION = "iteration";
     public static final String EXTRA_ENABLE_SCREENSHOTS = "enable_screenshots";
     public static final String EXTRA_PID_FILE = "pid_file";
+    public static final String EXTRA_AUTO_RETURN_ON_ERROR = "auto_return_on_error";
 
     // results
-    public static final String EXTRA_RESULT_SCREENSHOT_PATHS = "screenshot_paths";
-    public static final String EXTRA_RESULT_SUCCESS = "success";
-    public static final String EXTRA_RESULT_ERROR = "error";
-    public static final String EXTRA_RESULT_TIMINGS = "timings";
-    public static final String EXTRA_RESULT_PROCESS_LOGCAT = "process_logcat";
+    public static final String EXTRA_RESULT_SCREENSHOT_PATHS = "result_screenshot_paths";
+    public static final String EXTRA_RESULT_SUCCESS = "result_success";
+    public static final String EXTRA_RESULT_ERROR = "result_error";
+    public static final String EXTRA_RESULT_TIMINGS = "result_timings";
+    public static final String EXTRA_RESULT_PROCESS_LOGCAT = "result_process_logcat";
+    public static final String EXTRA_RESULT_AUTO_RETURN_ON_ERROR = "result_return_on_error";
 
     private LinearLayout contentLayout;
     private Var contextVar;
@@ -86,6 +88,9 @@ public class RenderActivity extends AppCompatActivity {
 
     // Add flag for controlling screenshots
     private boolean screenshotsEnabled = false;
+
+    // Add flag for controlling error handling behavior
+    private boolean returnOnError = false;
 
     // Add a field to track screenshots
     private List<File> capturedScreenshots = new ArrayList<>();
@@ -228,7 +233,7 @@ public class RenderActivity extends AppCompatActivity {
 
     public static boolean launch(Context context, Class<?> launchingActivity,
             ExitCallback cb,
-            String code, String sessionId, int iteration, boolean enableScreenshots) {
+            String code, String sessionId, int iteration, boolean enableScreenshots, boolean returnOnError) {
         try {
             LogcatMonitor logcatMonitor = new LogcatMonitor();
 
@@ -290,6 +295,7 @@ public class RenderActivity extends AppCompatActivity {
             launchIntent.putExtra(RenderActivity.EXTRA_SESSION_ID, sessionId);
             launchIntent.putExtra(RenderActivity.EXTRA_ITERATION, iteration);
             launchIntent.putExtra(RenderActivity.EXTRA_ENABLE_SCREENSHOTS, enableScreenshots);
+            launchIntent.putExtra(RenderActivity.EXTRA_AUTO_RETURN_ON_ERROR, returnOnError);
             launchIntent.putExtra(RenderActivity.EXTRA_LAUNCHING_ACTIVITY, launchingActivity.getName());
             context.startActivity(launchIntent);
         } catch (Exception e) {
@@ -312,25 +318,23 @@ public class RenderActivity extends AppCompatActivity {
             // is communicated via onNewIntent().
             Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
                 Log.e(TAG, "RenderActivity crashed", throwable);
+                Toast.makeText(this, "RenderActivity crashed", Toast.LENGTH_LONG).show();
 
                 if (parentActivity != null) {
                     Class<?> parentActivityClass = getParentActivityClass();
                     if (parentActivityClass != null) {
                         Intent intent = new Intent(this, parentActivityClass);
                         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                        clojureStatus = "RenderActivity crashed: " + formatFullErrorMessage(throwable);
+                        String errorMessage = "RenderActivity crashed: " + formatFullErrorMessage(throwable);
                         // Can't call showError() here since the activity has
                         // crashed. Instead, show a toast and return the error
                         // to the calling activity.
-                        Toast.makeText(this, "RenderActivity crashed", Toast.LENGTH_LONG).show();
-                        intent.putExtra(EXTRA_RESULT_ERROR, clojureStatus);
-                        intent.putExtra(RenderActivity.EXTRA_RESULT_SUCCESS, false);
-                        startActivity(intent);
+                        handleError(errorMessage, true); // force exit
                     } else {
-                        Log.i(TAG, "Could not get class for " + parentActivity);
+                        Log.e(TAG, "Could not get class for " + parentActivity);
                     }
                 } else {
-                    Log.i(TAG, "ParentActivity is null");
+                    Log.e(TAG, "ParentActivity is null");
                 }
 
                 Log.d(TAG, "Invoking finish()");
@@ -385,6 +389,10 @@ public class RenderActivity extends AppCompatActivity {
                 screenshotsEnabled = intent.getBooleanExtra(EXTRA_ENABLE_SCREENSHOTS, false);
                 Log.d(TAG, "Screenshots enabled: " + screenshotsEnabled);
 
+                // Extract return on error flag from intent
+                returnOnError = intent.getBooleanExtra(EXTRA_AUTO_RETURN_ON_ERROR, false);
+                Log.d(TAG, "Return on error enabled: " + returnOnError);
+
                 // Store code in class member instead of local variable
                 code = intent.getStringExtra(EXTRA_CODE);
                 Log.d(TAG, "Received intent with code: " + (code != null ? "length=" + code.length() : "null"));
@@ -428,11 +436,11 @@ public class RenderActivity extends AppCompatActivity {
                     renderCode();
                 } else {
                     Log.w(TAG, "No code provided in intent");
-                    showError("No code provided in intent");
+                    handleError("No code provided in intent", false);
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Error in RenderActivity", e);
-                showError("Error: " + e.getMessage());
+                handleError("Error: " + e.getMessage(), false);
             }
 
             // Add touch interceptor to detect user interactions
@@ -508,6 +516,7 @@ public class RenderActivity extends AppCompatActivity {
             if (clojureStatus != null) {
                 Log.d(TAG, "Adding error to parent intent: " + clojureStatus);
                 parentIntent.putExtra(EXTRA_RESULT_ERROR, clojureStatus);
+                parentIntent.putExtra(EXTRA_RESULT_AUTO_RETURN_ON_ERROR, false);
             }
 
             startActivity(parentIntent);
@@ -747,8 +756,7 @@ public class RenderActivity extends AppCompatActivity {
                         // Capture the error and format it for propagation back to parent activity
                         String fullErrorMessage = "Error invoking -main function directly: "
                                 + formatFullErrorMessage(e);
-                        clojureStatus = fullErrorMessage;
-                        showError(fullErrorMessage);
+                        handleError(fullErrorMessage, false);
                     }
                 }
 
@@ -775,8 +783,7 @@ public class RenderActivity extends AppCompatActivity {
 
                 // Capture the full error information including "Caused by" details
                 String fullErrorMessage = formatFullErrorMessage(e);
-                clojureStatus = fullErrorMessage;
-                showError(fullErrorMessage);
+                handleError(fullErrorMessage, false);
             }
         } catch (Exception e) {
             Log.e(TAG, "Error setting up Clojure environment", e);
@@ -787,6 +794,32 @@ public class RenderActivity extends AppCompatActivity {
         } finally {
             Log.d(TAG, "Cleaning up bindings");
             Var.popThreadBindings();
+        }
+    }
+
+    /**
+     * Handle an error based on the returnOnError flag
+     * 
+     * @param errorMessage The error message to handle
+     */
+    private void handleError(String errorMessage, boolean forceExit) {
+        clojureStatus = errorMessage;
+
+        if (forceExit || returnOnError) {
+            // Return to calling activity with error
+            Class<?> parentActivityClass = getParentActivityClass();
+            if (parentActivityClass != null) {
+                Intent intent = new Intent(this, parentActivityClass);
+                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                intent.putExtra(EXTRA_RESULT_ERROR, errorMessage);
+                intent.putExtra(EXTRA_RESULT_AUTO_RETURN_ON_ERROR, returnOnError);
+                intent.putExtra(EXTRA_RESULT_SUCCESS, false);
+                startActivity(intent);
+                finish();
+            }
+        } else {
+            // Show error in UI
+            showError(errorMessage);
         }
     }
 
