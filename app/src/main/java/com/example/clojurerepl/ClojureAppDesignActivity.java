@@ -40,6 +40,8 @@ import com.example.clojurerepl.session.DesignSession;
 import com.example.clojurerepl.session.SessionManager;
 import android.widget.ScrollView;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletionException;
 
 public class ClojureAppDesignActivity extends AppCompatActivity
         implements ClojureIterationManager.ExtractionErrorCallback {
@@ -742,6 +744,24 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     });
                 })
                 .exceptionally(throwable -> {
+                    // Check if this is a cancellation exception, which is expected behavior
+                    if (throwable instanceof CancellationException ||
+                            (throwable instanceof CompletionException &&
+                                    throwable.getCause() instanceof CancellationException)) {
+                        Log.d(TAG, "Manual iteration was cancelled - this is expected behavior");
+                        runOnUiThread(() -> {
+                            // Dismiss progress dialog
+                            progressDialog.dismiss();
+
+                            // Make sure buttons are enabled after cancellation
+                            thumbsUpButton.setEnabled(true);
+                            runButton.setEnabled(true);
+                            generateButton.setEnabled(true);
+                        });
+                        return null;
+                    }
+
+                    // Handle actual errors
                     Log.e(TAG, "Error generating next iteration", throwable);
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
@@ -2178,6 +2198,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         dialogCancelButton.setText("Cancel Iteration");
         dialogCancelButton.setOnClickListener(v -> {
             cancelCurrentIteration();
+            // The dialog will be dismissed in cancelCurrentIteration()
         });
         layout.addView(dialogCancelButton);
 
@@ -2248,6 +2269,33 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     });
                 })
                 .exceptionally(throwable -> {
+                    // Check if this is a cancellation exception, which is expected behavior
+                    if (throwable instanceof CancellationException ||
+                            (throwable instanceof CompletionException &&
+                                    throwable.getCause() instanceof CancellationException)) {
+                        Log.d(TAG, "Automatic iteration was cancelled - this is expected behavior");
+                        runOnUiThread(() -> {
+                            // Dismiss progress dialog
+                            if (iterationProgressDialog != null) {
+                                iterationProgressDialog.dismiss();
+                                iterationProgressDialog = null;
+                            }
+
+                            // Re-enable buttons and show normal buttons
+                            isIterating = false;
+                            cancelIterationButton.setVisibility(View.GONE);
+                            thumbsUpButton.setVisibility(View.VISIBLE);
+                            runButton.setVisibility(View.VISIBLE);
+                            generateButton.setEnabled(true);
+
+                            // Show feedback dialog for manual feedback since automatic iteration was
+                            // cancelled
+                            showFeedbackDialog();
+                        });
+                        return null;
+                    }
+
+                    // Handle actual errors
                     Log.e(TAG, "Error in automatic iteration", throwable);
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
@@ -2281,6 +2329,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         Log.d(TAG, "Cancelling current iteration");
         isIterating = false;
+
+        // Cancel the underlying LLM request and generation
+        if (iterationManager != null) {
+            boolean cancelled = iterationManager.cancelCurrentGeneration();
+            Log.d(TAG, "Cancellation result: " + cancelled);
+        }
 
         // Dismiss progress dialog
         if (iterationProgressDialog != null) {
