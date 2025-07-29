@@ -191,6 +191,18 @@
             android:textSize="14sp"
             android:textColor="#FFFFFF"
             android:backgroundTint="#00FF00" />
+
+        <Button
+            android:id="@+id/cancel_iteration_button"
+            android:layout_width="0dp"
+            android:layout_height="60dp"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="Cancel"
+            android:textSize="14sp"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#FF5722"
+            android:visibility="gone" />
     </LinearLayout>
 
     <!-- Legacy buttons to be removed later -->

@@ -114,6 +114,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     private Set<Integer> expandedLogcatSections = new HashSet<>();
     private boolean systemPromptExpanded = false;
 
+    // Add fields for automatic iteration and cancel functionality
+    private boolean autoIterateOnError = true;
+    private boolean isIterating = false;
+    private AlertDialog iterationProgressDialog;
+    private Button cancelIterationButton;
+
     private void createNewSession() {
         // Create a new session
         currentSession = new DesignSession();
@@ -223,6 +229,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         feedbackButtonsContainer = findViewById(R.id.feedback_buttons_container);
         thumbsUpButton = findViewById(R.id.thumbs_up_button);
         runButton = findViewById(R.id.run_button);
+        cancelIterationButton = findViewById(R.id.cancel_iteration_button);
 
         // Legacy buttons to maintain compatibility
         submitFeedbackButton = findViewById(R.id.submit_feedback_button);
@@ -315,7 +322,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         // Set up click listeners
         generateButton.setOnClickListener(v -> handleGenerateButtonClick());
         thumbsUpButton.setOnClickListener(v -> acceptApp());
-        runButton.setOnClickListener(v -> runCurrentCode());
+        runButton.setOnClickListener(v -> runCurrentCode(false));
+        cancelIterationButton.setOnClickListener(v -> cancelCurrentIteration());
 
         // Set up toggle button listeners
         codeToggleButton.setOnClickListener(v -> toggleCodeSection());
@@ -606,7 +614,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                         // Only launch RenderActivity after we have the code
                         if (code != null && !code.isEmpty()) {
-                            runCurrentCode();
+                            runCurrentCode(true);
                         }
 
                         generateButton.setEnabled(true);
@@ -730,7 +738,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         // Update chat history
                         updateChatHistoryDisplay();
 
-                        runCurrentCode();
+                        runCurrentCode(true);
                     });
                 })
                 .exceptionally(throwable -> {
@@ -798,6 +806,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         if (apiKeyDialog != null && apiKeyDialog.isShowing()) {
             apiKeyDialog.dismiss();
+        }
+
+        if (iterationProgressDialog != null && iterationProgressDialog.isShowing()) {
+            iterationProgressDialog.dismiss();
         }
     }
 
@@ -869,8 +881,16 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 Log.d(TAG, "Saved error feedback to session");
             }
 
-            // Show the feedback dialog
-            showFeedbackDialog();
+            // Check if we should automatically iterate on error
+            if (intent.hasExtra(RenderActivity.EXTRA_RESULT_AUTO_RETURN_ON_ERROR) &&
+                    intent.getBooleanExtra(RenderActivity.EXTRA_RESULT_AUTO_RETURN_ON_ERROR, false) &&
+                    autoIterateOnError && !isIterating) {
+                Log.d(TAG, "Auto-iterating on error");
+                startAutomaticIteration(errorFeedback);
+            } else {
+                // Show the feedback dialog
+                showFeedbackDialog();
+            }
         } else {
             Log.d(TAG, "RenderActivity returned with no error status");
             currentSession.setLastErrorFeedback(null);
@@ -1303,7 +1323,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     /**
      * Runs the current code without accepting it
      */
-    private void runCurrentCode() {
+    private void runCurrentCode(boolean returnOnError) {
         String currentCode = currentSession.getCurrentCode();
         if (currentCode == null || currentCode.isEmpty()) {
             Toast.makeText(this, "No code to run", Toast.LENGTH_SHORT).show();
@@ -1336,7 +1356,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 currentSession.getId().toString(),
                 currentSession.getIterationCount(),
                 true,
-                false);
+                returnOnError); // Enable return_on_error flag
     }
 
     private void clearChatSession() {
@@ -2112,5 +2132,171 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             logcatContainer.setVisibility(View.GONE);
             logcatToggleButton.setText(R.string.show_logcat_output);
         }
+    }
+
+    /**
+     * Starts automatic iteration when an error is returned from RenderActivity
+     */
+    private void startAutomaticIteration(String errorFeedback) {
+        if (isIterating) {
+            Log.d(TAG, "Already iterating, skipping automatic iteration");
+            return;
+        }
+
+        if (iterationManager == null) {
+            Log.w(TAG, "No iteration manager available for automatic iteration");
+            showFeedbackDialog();
+            return;
+        }
+
+        Log.d(TAG, "Starting automatic iteration with error feedback: " + errorFeedback);
+        isIterating = true;
+
+        // Create a custom progress dialog with cancel button
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Automatically Fixing Error");
+
+        // Create a custom layout for the dialog
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(50, 30, 50, 30);
+
+        // Add progress message
+        TextView progressText = new TextView(this);
+        progressText.setText("Generating next iteration...");
+        progressText.setTextSize(16);
+        layout.addView(progressText);
+
+        // Add some spacing
+        View spacer = new View(this);
+        spacer.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 20));
+        layout.addView(spacer);
+
+        // Add cancel button
+        Button dialogCancelButton = new Button(this);
+        dialogCancelButton.setText("Cancel Iteration");
+        dialogCancelButton.setOnClickListener(v -> {
+            cancelCurrentIteration();
+        });
+        layout.addView(dialogCancelButton);
+
+        builder.setView(layout);
+        builder.setCancelable(false);
+
+        iterationProgressDialog = builder.create();
+        iterationProgressDialog.show();
+
+        // Hide the main cancel button since it's now in the dialog
+        cancelIterationButton.setVisibility(View.GONE);
+        thumbsUpButton.setVisibility(View.GONE);
+        runButton.setVisibility(View.GONE);
+
+        // Disable other buttons during iteration
+        generateButton.setEnabled(false);
+
+        // Get the current screenshot if any
+        File currentScreenshot = null;
+        if (!currentScreenshots.isEmpty()) {
+            currentScreenshot = currentScreenshots.get(currentScreenshots.size() - 1);
+        }
+
+        // Get the current logcat output
+        String logcatText = logcatOutput.getText().toString();
+
+        // Create an IterationResult with the current state
+        ClojureIterationManager.IterationResult result = new ClojureIterationManager.IterationResult(
+                currentSession.getCurrentCode(),
+                logcatText,
+                currentScreenshot,
+                true,
+                errorFeedback);
+
+        // Generate next iteration using the iteration manager's method
+        iterationManager.generateNextIteration(
+                currentSession.getDescription(),
+                errorFeedback,
+                result,
+                null) // No image for automatic iteration
+                .thenAccept(code -> {
+                    runOnUiThread(() -> {
+                        // Dismiss progress dialog
+                        if (iterationProgressDialog != null) {
+                            iterationProgressDialog.dismiss();
+                            iterationProgressDialog = null;
+                        }
+
+                        assert currentSession != null;
+
+                        currentSession.setCurrentCode(code);
+                        sessionManager.updateSession(currentSession);
+
+                        displayCurrentCode();
+
+                        // Re-enable buttons and show normal buttons
+                        isIterating = false;
+                        cancelIterationButton.setVisibility(View.GONE);
+                        thumbsUpButton.setVisibility(View.VISIBLE);
+                        runButton.setVisibility(View.VISIBLE);
+                        generateButton.setEnabled(true);
+
+                        // Update chat history
+                        updateChatHistoryDisplay();
+
+                        // Automatically run the fixed code
+                        runCurrentCode(true);
+                    });
+                })
+                .exceptionally(throwable -> {
+                    Log.e(TAG, "Error in automatic iteration", throwable);
+                    runOnUiThread(() -> {
+                        // Dismiss progress dialog
+                        if (iterationProgressDialog != null) {
+                            iterationProgressDialog.dismiss();
+                            iterationProgressDialog = null;
+                        }
+
+                        // Re-enable buttons and show normal buttons
+                        isIterating = false;
+                        cancelIterationButton.setVisibility(View.GONE);
+                        thumbsUpButton.setVisibility(View.VISIBLE);
+                        runButton.setVisibility(View.VISIBLE);
+                        generateButton.setEnabled(true);
+
+                        showLLMErrorDialog("Automatic Iteration Error",
+                                "Error during automatic iteration: " + throwable.getMessage());
+                    });
+                    return null;
+                });
+    }
+
+    /**
+     * Cancels the current iteration
+     */
+    private void cancelCurrentIteration() {
+        if (!isIterating) {
+            Log.d(TAG, "No iteration in progress to cancel");
+            return;
+        }
+
+        Log.d(TAG, "Cancelling current iteration");
+        isIterating = false;
+
+        // Dismiss progress dialog
+        if (iterationProgressDialog != null) {
+            iterationProgressDialog.dismiss();
+            iterationProgressDialog = null;
+        }
+
+        // Re-enable buttons and hide cancel button
+        cancelIterationButton.setVisibility(View.GONE);
+        thumbsUpButton.setVisibility(View.VISIBLE);
+        runButton.setVisibility(View.VISIBLE);
+        generateButton.setEnabled(true);
+
+        // Show feedback dialog for manual feedback
+        showFeedbackDialog();
+
+        Toast.makeText(this, "Iteration cancelled", Toast.LENGTH_SHORT).show();
     }
 }
