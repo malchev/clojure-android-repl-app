@@ -14,14 +14,22 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.io.File;
+import java.io.IOException;
 import java.util.UUID;
 
-import java.io.IOException;
-
+/**
+ * Implementation of LLMClient for OpenAI's API.
+ * Based on API documentation: https://platform.openai.com/docs/api-reference
+ */
 public class OpenAIChatClient extends LLMClient {
     private static final String TAG = "OpenAIChatClient";
     private String modelName = null;
+
+    // Track the current request for cancellation
+    private final AtomicReference<CancellableCompletableFuture<String>> currentRequest = new AtomicReference<>();
 
     // Static cache for available models
     private static List<String> cachedModels = null;
@@ -182,7 +190,7 @@ public class OpenAIChatClient extends LLMClient {
     }
 
     @Override
-    protected CompletableFuture<String> sendMessages(ChatSession session) {
+    protected CancellableCompletableFuture<String> sendMessages(ChatSession session) {
         Log.d(TAG, "Sending " + session.getMessages().size() + " messages in session: " + session.getSessionId());
         // Print the message types and the first 50 characters of the content
         for (Message msg : session.getMessages()) {
@@ -202,20 +210,57 @@ public class OpenAIChatClient extends LLMClient {
             Log.d(TAG, "Message type: " + openaiRole + ", content: " + msg.content);
         }
 
-        return CompletableFuture.supplyAsync(() -> {
+        // Cancel any existing request
+        cancelCurrentRequest();
+
+        // Create a new cancellable future
+        CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+        currentRequest.set(future);
+
+        CompletableFuture.runAsync(() -> {
             try {
-                String response = callOpenAIAPI(session.getMessages());
+                // Check if cancelled before starting
+                if (future.isCancelled()) {
+                    Log.d(TAG, "Request was cancelled before starting");
+                    return;
+                }
+
+                String response = callOpenAIAPI(session.getMessages(), future);
+
+                // Check if cancelled after API call
+                if (future.isCancelled()) {
+                    Log.d(TAG, "Request was cancelled after API call");
+                    return;
+                }
+
                 Log.d(TAG, "=== FULL OPENAI RESPONSE ===\n" + response);
 
                 // Add assistant message to history
                 session.queueAssistantResponse(response, getType(), getModel());
 
-                return response;
+                future.complete(response);
             } catch (Exception e) {
+                // Check if this is a cancellation exception, which is expected behavior
+                if (e instanceof CancellationException ||
+                        (e instanceof RuntimeException && e.getCause() instanceof CancellationException)) {
+                    Log.d(TAG, "OpenAI chat session was cancelled - this is expected behavior");
+                    if (!future.isCancelled()) {
+                        future.completeExceptionally(e);
+                    }
+                    return;
+                }
+
                 Log.e(TAG, "Error in chat session", e);
-                throw new RuntimeException("Failed to get response from OpenAI", e);
+                if (!future.isCancelled()) {
+                    future.completeExceptionally(new RuntimeException("Failed to get response from OpenAI", e));
+                }
+            } finally {
+                // Clear the current request reference
+                currentRequest.compareAndSet(future, null);
             }
         });
+
+        return future;
     }
 
     @Override
@@ -234,18 +279,49 @@ public class OpenAIChatClient extends LLMClient {
     }
 
     @Override
-    public CompletableFuture<String> generateInitialCode(UUID sessionId, String description) {
+    public boolean cancelCurrentRequest() {
+        CancellableCompletableFuture<String> request = currentRequest.get();
+        if (request != null && !request.isCancelledOrCompleted()) {
+            Log.d(TAG, "Cancelling current OpenAI API request");
+            boolean cancelled = request.cancel(true);
+            currentRequest.set(null);
+            return cancelled;
+        }
+        return false;
+    }
+
+    @Override
+    public CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description) {
         ensureModelIsSet();
         Log.d(TAG, "┌───────────────────────────────────────────┐");
         Log.d(TAG, "│         GENERATING INITIAL CODE           │");
         Log.d(TAG, "└───────────────────────────────────────────┘");
 
         preparePromptForInitialCode(sessionId, description);
-        return sendMessages(chatSession);
+        CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+        sendMessages(chatSession)
+                .thenAccept(response -> {
+                    Log.d(TAG, "Got response, length: " + response.length());
+                    future.complete(response);
+                })
+                .exceptionally(ex -> {
+                    // Check if this is a cancellation exception, which is expected behavior
+                    if (ex instanceof CancellationException ||
+                            (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
+                        Log.d(TAG, "OpenAI initial code generation was cancelled - this is expected behavior");
+                        future.completeExceptionally(ex);
+                    } else {
+                        Log.e(TAG, "Error in initial code generation", ex);
+                        future.completeExceptionally(ex);
+                    }
+                    return null;
+                });
+        return future;
     }
 
     @Override
-    public CompletableFuture<String> generateInitialCode(UUID sessionId, String description, String initialCode) {
+    public CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description,
+            String initialCode) {
         ensureModelIsSet();
         Log.d(TAG, "┌───────────────────────────────────────────┐");
         Log.d(TAG, "│         GENERATING INITIAL CODE           │");
@@ -253,11 +329,31 @@ public class OpenAIChatClient extends LLMClient {
         Log.d(TAG, "└───────────────────────────────────────────┘");
 
         preparePromptForInitialCode(sessionId, description, initialCode);
-        return sendMessages(chatSession);
+        CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+        sendMessages(chatSession)
+                .thenAccept(response -> {
+                    Log.d(TAG, "Got response, length: " + response.length());
+                    future.complete(response);
+                })
+                .exceptionally(ex -> {
+                    // Check if this is a cancellation exception, which is expected behavior
+                    if (ex instanceof CancellationException ||
+                            (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
+                        Log.d(TAG,
+                                "OpenAI initial code generation with template was cancelled - this is expected behavior");
+                        future.completeExceptionally(ex);
+                    } else {
+                        Log.e(TAG, "Error in initial code generation with template", ex);
+                        future.completeExceptionally(ex);
+                    }
+                    return null;
+                });
+        return future;
     }
 
     @Override
-    public CompletableFuture<String> generateNextIteration(UUID sessionId, String description, String currentCode,
+    public CancellableCompletableFuture<String> generateNextIteration(UUID sessionId, String description,
+            String currentCode,
             String logcat,
             File screenshot, String feedback, File image) {
         ensureModelIsSet();
@@ -269,8 +365,10 @@ public class OpenAIChatClient extends LLMClient {
         if (image != null) {
             ModelProperties props = getModelProperties(getModel());
             if (props == null || !props.isMultimodal) {
-                return CompletableFuture.failedFuture(
+                CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+                future.completeExceptionally(
                         new UnsupportedOperationException("Image parameter provided but model is not multimodal"));
+                return future;
             }
         }
 
@@ -279,10 +377,28 @@ public class OpenAIChatClient extends LLMClient {
 
         // Queue the user message (with image attachment if provided)
         chatSession.queueUserMessageWithImage(prompt, image, logcat, feedback, null);
-        return sendMessages(chatSession);
+        CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+        sendMessages(chatSession)
+                .thenAccept(response -> {
+                    Log.d(TAG, "Got response, length: " + response.length());
+                    future.complete(response);
+                })
+                .exceptionally(ex -> {
+                    // Check if this is a cancellation exception, which is expected behavior
+                    if (ex instanceof CancellationException ||
+                            (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
+                        Log.d(TAG, "OpenAI next iteration generation was cancelled - this is expected behavior");
+                        future.completeExceptionally(ex);
+                    } else {
+                        Log.e(TAG, "Error in next iteration generation", ex);
+                        future.completeExceptionally(ex);
+                    }
+                    return null;
+                });
+        return future;
     }
 
-    private String callOpenAIAPI(List<Message> messages) {
+    private String callOpenAIAPI(List<Message> messages, CancellableCompletableFuture<String> future) {
         ensureModelIsSet();
         Log.d(TAG, "=== Calling OpenAI API with " + messages.size() + " messages ===");
 
@@ -315,14 +431,21 @@ public class OpenAIChatClient extends LLMClient {
             }
             requestBody.put("messages", messagesArray);
 
-            return callOpenAIAPI(requestBody.toString());
+            return callOpenAIAPI(requestBody.toString(), future);
         } catch (Exception e) {
+            // Check if this is a cancellation exception, which is expected behavior
+            if (e instanceof CancellationException ||
+                    (e instanceof RuntimeException && e.getCause() instanceof CancellationException)) {
+                Log.d(TAG, "OpenAI API request preparation was cancelled - this is expected behavior");
+                throw new RuntimeException("Request was cancelled", e); // Wrap to avoid JSONException issues
+            }
+
             Log.e(TAG, "Error preparing OpenAI API request", e);
             throw new RuntimeException("Failed to prepare OpenAI API request", e);
         }
     }
 
-    private String callOpenAIAPI(String requestBody) {
+    private String callOpenAIAPI(String requestBody, CancellableCompletableFuture<String> future) {
         ensureModelIsSet();
         Log.d(TAG, "=== Calling OpenAI API ===");
         Log.d(TAG, "Request length: " + requestBody.length());
@@ -335,6 +458,12 @@ public class OpenAIChatClient extends LLMClient {
         Log.d(TAG, "╚═════════════════════════╝");
 
         try {
+            // Check for cancellation before setting up connection
+            if (future.isCancelled()) {
+                Log.d(TAG, "Request cancelled before setting up connection");
+                throw new CancellationException("Request was cancelled");
+            }
+
             URL url = new URL("https://api.openai.com/v1/chat/completions");
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("POST");
@@ -343,9 +472,27 @@ public class OpenAIChatClient extends LLMClient {
                     "Bearer " + ApiKeyManager.getInstance(context).getApiKey(LLMClientFactory.LLMType.OPENAI));
             connection.setDoOutput(true);
 
+            // Check for cancellation before writing request
+            if (future.isCancelled()) {
+                Log.d(TAG, "Request cancelled before writing to connection");
+                throw new CancellationException("Request was cancelled");
+            }
+
             try (OutputStream os = connection.getOutputStream()) {
                 byte[] input = requestBody.getBytes(StandardCharsets.UTF_8);
                 os.write(input, 0, input.length);
+            }
+
+            // Check for cancellation after writing request
+            if (future.isCancelled()) {
+                Log.d(TAG, "Request cancelled after writing request");
+                throw new CancellationException("Request was cancelled");
+            }
+
+            // Check for cancellation before getting response
+            if (future.isCancelled()) {
+                Log.d(TAG, "Request cancelled before getting response");
+                throw new CancellationException("Request was cancelled");
             }
 
             int responseCode = connection.getResponseCode();
@@ -354,7 +501,13 @@ public class OpenAIChatClient extends LLMClient {
                         new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
                     StringBuilder response = new StringBuilder();
                     String responseLine;
+                    int lineCount = 0;
                     while ((responseLine = br.readLine()) != null) {
+                        // Check for cancellation every 10 lines during response reading for efficiency
+                        if (++lineCount % 10 == 0 && future.isCancelled()) {
+                            Log.d(TAG, "Request cancelled during response reading");
+                            throw new CancellationException("Request was cancelled");
+                        }
                         response.append(responseLine.trim());
                     }
                     String jsonResponse = response.toString();
@@ -391,6 +544,13 @@ public class OpenAIChatClient extends LLMClient {
                 }
             }
         } catch (Exception e) {
+            // Check if this is a cancellation exception, which is expected behavior
+            if (e instanceof CancellationException ||
+                    (e instanceof RuntimeException && e.getCause() instanceof CancellationException)) {
+                Log.d(TAG, "OpenAI API call was cancelled - this is expected behavior");
+                throw new RuntimeException("Request was cancelled", e); // Wrap to avoid IOException issues
+            }
+
             Log.e(TAG, "Error calling OpenAI API", e);
             throw new RuntimeException("Failed to call OpenAI API", e);
         }

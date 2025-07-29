@@ -102,6 +102,44 @@ public class ClojureIterationManager {
     }
 
     /**
+     * Cancels the current code generation request if one is in progress
+     * 
+     * @return true if a request was cancelled, false if no request was in progress
+     */
+    public boolean cancelCurrentGeneration() {
+        Log.d(TAG, "Attempting to cancel current generation");
+
+        boolean cancelled = false;
+
+        // Cancel the generation future if it exists and is not done
+        if (generationFuture != null && !generationFuture.isDone()) {
+            Log.d(TAG, "Cancelling generation future");
+            cancelled = generationFuture.cancel(true);
+        }
+
+        // Cancel the current iteration future if it exists and is not done
+        if (currentIterationFuture != null && !currentIterationFuture.isDone()) {
+            Log.d(TAG, "Cancelling current iteration future");
+            cancelled = currentIterationFuture.cancel(true) || cancelled;
+        }
+
+        // Cancel the render future if it exists and is not done
+        if (renderFuture != null && !renderFuture.isDone()) {
+            Log.d(TAG, "Cancelling render future");
+            cancelled = renderFuture.cancel(true) || cancelled;
+        }
+
+        // Cancel the underlying LLM client request
+        if (llmClient != null) {
+            Log.d(TAG, "Cancelling LLM client request");
+            cancelled = llmClient.cancelCurrentRequest() || cancelled;
+        }
+
+        Log.d(TAG, "Cancellation result: " + cancelled);
+        return cancelled;
+    }
+
+    /**
      * Generates initial Clojure code based on a description.
      * This is the entry point for starting a new design.
      * 
@@ -138,8 +176,8 @@ public class ClojureIterationManager {
         // Run in background thread
         executor.execute(() -> {
             try {
-                // Call the LLM client which returns a CompletableFuture
-                CompletableFuture<String> llmFuture;
+                // Call the LLM client which returns a CancellableCompletableFuture
+                LLMClient.CancellableCompletableFuture<String> llmFuture;
                 if (initialCode != null && !initialCode.isEmpty()) {
                     llmFuture = llmClient.generateInitialCode(sessionId, description, initialCode);
                 } else {
@@ -263,8 +301,9 @@ public class ClojureIterationManager {
         // Run in background thread
         executor.execute(() -> {
             try {
-                // Call the LLM client which returns a CompletableFuture - PASS DESCRIPTION HERE
-                CompletableFuture<String> llmFuture = llmClient.generateNextIteration(
+                // Call the LLM client which returns a CancellableCompletableFuture - PASS
+                // DESCRIPTION HERE
+                LLMClient.CancellableCompletableFuture<String> llmFuture = llmClient.generateNextIteration(
                         sessionId,
                         description, // Pass the original description now
                         lastResult.code,

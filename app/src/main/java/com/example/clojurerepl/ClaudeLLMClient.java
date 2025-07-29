@@ -14,10 +14,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
 import java.io.File;
 
 import java.io.IOException;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Implementation of LLMClient for Anthropic's Claude API.
@@ -30,6 +32,9 @@ public class ClaudeLLMClient extends LLMClient {
     private static final int HTTP_TIMEOUT = 60000; // 60 seconds timeout
 
     private String currentModel = null;
+
+    // Track the current request for cancellation
+    private final AtomicReference<CancellableCompletableFuture<String>> currentRequest = new AtomicReference<>();
 
     // Static cache for available models
     private static List<String> cachedModels = null;
@@ -60,11 +65,19 @@ public class ClaudeLLMClient extends LLMClient {
     }
 
     @Override
-    protected CompletableFuture<String> sendMessages(ChatSession session) {
+    protected CancellableCompletableFuture<String> sendMessages(ChatSession session) {
         Log.d(TAG,
                 "DEBUG: ClaudeLLMClient.sendMessages called with " + session.getMessages().size()
                         + " messages in session: "
                         + session.getSessionId());
+
+        // Cancel any existing request
+        cancelCurrentRequest();
+
+        // Create a new cancellable future
+        CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+        currentRequest.set(future);
+
         // Log message types and short previews for debugging
         for (Message msg : session.getMessages()) {
             String preview = msg.content.length() > 50 ? msg.content.substring(0, 50) + "..." : msg.content;
@@ -82,18 +95,33 @@ public class ClaudeLLMClient extends LLMClient {
             Log.d(TAG, "DEBUG: Message type: " + claudeRole + ", content: " + preview);
         }
 
-        return CompletableFuture.supplyAsync(() -> {
+        CompletableFuture.runAsync(() -> {
             Thread.currentThread().setName("Claude-API-Thread");
             Log.d(TAG, "DEBUG: Inside CompletableFuture thread: " + Thread.currentThread().getName());
             try {
+                // Check if cancelled before starting
+                if (future.isCancelled()) {
+                    Log.d(TAG, "Request was cancelled before starting");
+                    return;
+                }
+
                 Log.d(TAG, "DEBUG: About to call Claude API in thread: " + Thread.currentThread().getName());
                 String response = null;
                 try {
-                    response = callClaudeAPI(session.getMessages());
+                    response = callClaudeAPI(session.getMessages(), future);
                     Log.d(TAG, "DEBUG: Claude API call completed successfully");
                 } catch (Exception e) {
                     Log.e(TAG, "ERROR: callClaudeAPI failed", e);
-                    throw e;
+                    if (!future.isCancelled()) {
+                        future.completeExceptionally(e);
+                    }
+                    return;
+                }
+
+                // Check if cancelled after API call
+                if (future.isCancelled()) {
+                    Log.d(TAG, "Request was cancelled after API call");
+                    return;
                 }
 
                 Log.d(TAG, "=== FULL CLAUDE RESPONSE ===\n" +
@@ -104,16 +132,34 @@ public class ClaudeLLMClient extends LLMClient {
                 // Add assistant message to history
                 session.queueAssistantResponse(response, getType(), getModel());
 
-                return response;
+                future.complete(response);
             } catch (Exception e) {
                 Log.e(TAG, "ERROR: Exception in sendMessages CompletableFuture", e);
-                throw new RuntimeException("ERROR: Exception in sendMessages CompletableFuture", e);
+                // Check if this is a cancellation exception, which is expected behavior
+                if (e instanceof CancellationException ||
+                        (e instanceof RuntimeException && e.getCause() instanceof CancellationException)) {
+                    Log.d(TAG, "Claude chat session was cancelled - this is expected behavior");
+                    if (!future.isCancelled()) {
+                        future.completeExceptionally(e);
+                    }
+                    return;
+                }
+
+                if (!future.isCancelled()) {
+                    future.completeExceptionally(
+                            new RuntimeException("ERROR: Exception in sendMessages CompletableFuture", e));
+                }
+            } finally {
+                // Clear the current request reference
+                currentRequest.compareAndSet(future, null);
             }
         });
+
+        return future;
     }
 
     @Override
-    public CompletableFuture<String> generateInitialCode(UUID sessionId, String description) {
+    public CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description) {
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +
                 "│ CLAUDE STARTING INITIAL CODE GENERATION   │\n" +
@@ -131,25 +177,36 @@ public class ClaudeLLMClient extends LLMClient {
             ChatSession session = preparePromptForInitialCode(sessionId, description);
             Log.d(TAG, "DEBUG: Created chat session, about to send messages to Claude API");
 
-            return sendMessages(session).handle((response, ex) -> {
+            CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+            sendMessages(session).handle((response, ex) -> {
                 if (ex != null) {
-                    Log.e(TAG, "ERROR: Failed in Claude sendMessages", ex);
-                    return "ERROR: " + ex.getMessage();
+                    // Check if this is a cancellation exception, which is expected behavior
+                    if (ex instanceof CancellationException ||
+                            (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
+                        Log.d(TAG, "Claude initial code generation was cancelled - this is expected behavior");
+                        future.completeExceptionally(ex);
+                    } else {
+                        Log.e(TAG, "ERROR: Failed in Claude sendMessages", ex);
+                        future.complete("ERROR: " + ex.getMessage());
+                    }
                 } else {
                     Log.d(TAG, "SUCCESS: Claude sendMessages completed successfully");
-                    return response;
+                    future.complete(response);
                 }
+                return null;
             });
+            return future;
         } catch (Exception e) {
             Log.e(TAG, "ERROR: Exception in generateInitialCode", e);
-            CompletableFuture<String> future = new CompletableFuture<>();
+            CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
             future.completeExceptionally(e);
             return future;
         }
     }
 
     @Override
-    public CompletableFuture<String> generateInitialCode(UUID sessionId, String description, String initialCode) {
+    public CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description,
+            String initialCode) {
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +
                 "│         GENERATING INITIAL CODE           │\n" +
@@ -168,25 +225,36 @@ public class ClaudeLLMClient extends LLMClient {
             ChatSession session = preparePromptForInitialCode(sessionId, description, initialCode);
             Log.d(TAG, "DEBUG: Created chat session with template, about to send messages to Claude API");
 
-            return sendMessages(session).handle((response, ex) -> {
+            CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+            sendMessages(session).handle((response, ex) -> {
                 if (ex != null) {
-                    Log.e(TAG, "ERROR: Failed in Claude sendMessages with template", ex);
-                    return "ERROR: " + ex.getMessage();
+                    // Check if this is a cancellation exception, which is expected behavior
+                    if (ex instanceof CancellationException ||
+                            (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
+                        Log.d(TAG,
+                                "Claude initial code generation with template was cancelled - this is expected behavior");
+                        future.completeExceptionally(ex);
+                    } else {
+                        Log.e(TAG, "ERROR: Failed in Claude sendMessages with template", ex);
+                        future.complete("ERROR: " + ex.getMessage());
+                    }
                 } else {
                     Log.d(TAG, "SUCCESS: Claude sendMessages with template completed successfully");
-                    return response;
+                    future.complete(response);
                 }
+                return null;
             });
+            return future;
         } catch (Exception e) {
             Log.e(TAG, "ERROR: Exception in generateInitialCode with template", e);
-            CompletableFuture<String> future = new CompletableFuture<>();
+            CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
             future.completeExceptionally(e);
             return future;
         }
     }
 
     @Override
-    public CompletableFuture<String> generateNextIteration(
+    public CancellableCompletableFuture<String> generateNextIteration(
             UUID sessionId,
             String description,
             String currentCode,
@@ -203,8 +271,10 @@ public class ClaudeLLMClient extends LLMClient {
         if (image != null) {
             ModelProperties props = getModelProperties(getModel());
             if (props == null || !props.isMultimodal) {
-                return CompletableFuture.failedFuture(
+                CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+                future.completeExceptionally(
                         new UnsupportedOperationException("Image parameter provided but model is not multimodal"));
+                return future;
             }
         }
 
@@ -278,11 +348,23 @@ public class ClaudeLLMClient extends LLMClient {
         }
     }
 
+    @Override
+    public boolean cancelCurrentRequest() {
+        CancellableCompletableFuture<String> request = currentRequest.get();
+        if (request != null && !request.isCancelledOrCompleted()) {
+            Log.d(TAG, "Cancelling current Claude API request");
+            boolean cancelled = request.cancel(true);
+            currentRequest.set(null);
+            return cancelled;
+        }
+        return false;
+    }
+
     /**
      * Helper method to call the Claude API with message history.
      * Claude API requires converting multiple messages into a special format.
      */
-    private String callClaudeAPI(List<Message> history) {
+    private String callClaudeAPI(List<Message> history, CancellableCompletableFuture<String> future) {
         try {
             Log.d(TAG, "DEBUG: callClaudeAPI started in thread: " + Thread.currentThread().getName());
             Log.d(TAG, "=== Calling Claude API ===");
@@ -471,11 +553,23 @@ public class ClaudeLLMClient extends LLMClient {
             Log.d(TAG, "║ STOP CLAUDE API REQUEST ║");
             Log.d(TAG, "╚═════════════════════════╝");
 
+            // Check for cancellation before writing request
+            if (future.isCancelled()) {
+                Log.d(TAG, "Request cancelled before writing to connection");
+                throw new CancellationException("Request was cancelled");
+            }
+
             // Write the request
             Log.d(TAG, "DEBUG: Writing request to connection output stream");
             try (OutputStream os = conn.getOutputStream()) {
                 byte[] input = requestStr.getBytes(StandardCharsets.UTF_8);
                 os.write(input, 0, input.length);
+            }
+
+            // Check for cancellation before getting response
+            if (future.isCancelled()) {
+                Log.d(TAG, "Request cancelled before getting response");
+                throw new CancellationException("Request was cancelled");
             }
 
             Log.d(TAG, "DEBUG: Getting response code");
@@ -489,7 +583,13 @@ public class ClaudeLLMClient extends LLMClient {
                         new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
                     StringBuilder response = new StringBuilder();
                     String responseLine;
+                    int lineCount = 0;
                     while ((responseLine = br.readLine()) != null) {
+                        // Check for cancellation every 10 lines during response reading for efficiency
+                        if (++lineCount % 10 == 0 && future.isCancelled()) {
+                            Log.d(TAG, "Request cancelled during response reading");
+                            throw new CancellationException("Request was cancelled");
+                        }
                         response.append(responseLine.trim());
                     }
 

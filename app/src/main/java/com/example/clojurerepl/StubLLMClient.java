@@ -18,33 +18,62 @@ public class StubLLMClient extends LLMClient {
     }
 
     @Override
-    protected CompletableFuture<String> sendMessages(ChatSession session) {
+    protected CancellableCompletableFuture<String> sendMessages(ChatSession session) {
         Log.d(TAG, "Sending " + session.getMessages().size() + " messages in stub session: " + session.getSessionId());
 
-        return CompletableFuture.supplyAsync(() -> {
-            // Find the latest user message
-            String userMessage = "";
-            for (int i = session.getMessages().size() - 1; i >= 0; i--) {
-                if (MessageRole.USER.equals(session.getMessages().get(i).role)) {
-                    userMessage = session.getMessages().get(i).content;
-                    break;
+        CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                // Check if cancelled before starting
+                if (future.isCancelled()) {
+                    Log.d(TAG, "Request was cancelled before starting");
+                    return;
+                }
+
+                // Find the latest user message
+                String userMessage = "";
+                for (int i = session.getMessages().size() - 1; i >= 0; i--) {
+                    if (MessageRole.USER.equals(session.getMessages().get(i).role)) {
+                        userMessage = session.getMessages().get(i).content;
+                        break;
+                    }
+                }
+
+                // Generate stub response
+                String response = generateStubResponse(userMessage);
+
+                // Check if cancelled after generating response
+                if (future.isCancelled()) {
+                    Log.d(TAG, "Request was cancelled after generating response");
+                    return;
+                }
+
+                // Add assistant message to history
+                session.queueAssistantResponse(response, getType(), getModel());
+
+                future.complete(response);
+            } catch (Exception e) {
+                Log.e(TAG, "Error in stub chat session", e);
+                if (!future.isCancelled()) {
+                    future.completeExceptionally(new RuntimeException("Failed to get response from stub", e));
                 }
             }
-
-            // Generate stub response
-            String response = generateStubResponse(userMessage);
-
-            // Add assistant message to history
-            session.queueAssistantResponse(response, getType(), getModel());
-
-            return response;
         });
+
+        return future;
     }
 
     @Override
     public boolean clearApiKey() {
         // No-op for stub client
         return true;
+    }
+
+    @Override
+    public boolean cancelCurrentRequest() {
+        // No-op for stub client - no actual requests to cancel
+        return false;
     }
 
     @Override
@@ -69,7 +98,7 @@ public class StubLLMClient extends LLMClient {
     }
 
     @Override
-    public CompletableFuture<String> generateInitialCode(UUID sessionId, String description) {
+    public CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description) {
         Log.d(TAG, "Generating initial code for description: " + description + " using stub client");
 
         // Prepare the prompt for initial code generation
@@ -80,7 +109,8 @@ public class StubLLMClient extends LLMClient {
     }
 
     @Override
-    public CompletableFuture<String> generateInitialCode(UUID sessionId, String description, String initialCode) {
+    public CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description,
+            String initialCode) {
         Log.d(TAG, "Generating initial code for description: " + description +
                 " using stub client, with initial code: " + (initialCode != null ? "yes" : "no"));
 
@@ -92,7 +122,7 @@ public class StubLLMClient extends LLMClient {
     }
 
     @Override
-    public CompletableFuture<String> generateNextIteration(
+    public CancellableCompletableFuture<String> generateNextIteration(
             UUID sessionId,
             String description,
             String currentCode,
@@ -106,8 +136,10 @@ public class StubLLMClient extends LLMClient {
         if (image != null) {
             ModelProperties props = getModelProperties(getModel());
             if (props == null || !props.isMultimodal) {
-                return CompletableFuture.failedFuture(
+                CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+                future.completeExceptionally(
                         new UnsupportedOperationException("Image parameter provided but model is not multimodal"));
+                return future;
             }
         }
 

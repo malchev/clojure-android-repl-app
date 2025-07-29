@@ -11,6 +11,8 @@ import java.io.InputStreamReader;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.List;
 import java.util.UUID;
 import java.util.Base64;
@@ -23,6 +25,57 @@ public abstract class LLMClient {
     protected final Context context;
     private String promptTemplate;
     protected final ChatSession chatSession;
+
+    /**
+     * A cancellable CompletableFuture that can be cancelled and tracks cancellation
+     * state
+     */
+    public static class CancellableCompletableFuture<T> extends CompletableFuture<T> {
+        private final AtomicBoolean cancelled = new AtomicBoolean(false);
+        private final AtomicBoolean completed = new AtomicBoolean(false);
+
+        public CancellableCompletableFuture() {
+            super();
+        }
+
+        @Override
+        public boolean cancel(boolean mayInterruptIfRunning) {
+            if (cancelled.compareAndSet(false, true)) {
+                Log.d(TAG, "Cancelling CompletableFuture");
+                return super.cancel(mayInterruptIfRunning);
+            }
+            return false;
+        }
+
+        @Override
+        public boolean isCancelled() {
+            return cancelled.get() || super.isCancelled();
+        }
+
+        @Override
+        public boolean complete(T value) {
+            if (completed.compareAndSet(false, true)) {
+                return super.complete(value);
+            }
+            return false;
+        }
+
+        @Override
+        public boolean completeExceptionally(Throwable ex) {
+            if (completed.compareAndSet(false, true)) {
+                return super.completeExceptionally(ex);
+            }
+            return false;
+        }
+
+        public boolean isCompleted() {
+            return completed.get() || super.isDone();
+        }
+
+        public boolean isCancelledOrCompleted() {
+            return isCancelled() || isCompleted();
+        }
+    }
 
     public ChatSession getChatSession() {
         return chatSession;
@@ -168,7 +221,7 @@ public abstract class LLMClient {
         return chatSession;
     }
 
-    public abstract CompletableFuture<String> generateInitialCode(UUID sessionId, String description);
+    public abstract CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description);
 
     /**
      * Generate initial code with optional starting code
@@ -177,9 +230,9 @@ public abstract class LLMClient {
      * @param description The app description
      * @param initialCode Optional initial code to use as a starting point (may be
      *                    null)
-     * @return A CompletableFuture containing the generated code
+     * @return A CancellableCompletableFuture containing the generated code
      */
-    public abstract CompletableFuture<String> generateInitialCode(UUID sessionId, String description,
+    public abstract CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description,
             String initialCode);
 
     protected String formatIterationPrompt(String description,
@@ -210,7 +263,7 @@ public abstract class LLMClient {
         }
     }
 
-    public abstract CompletableFuture<String> generateNextIteration(
+    public abstract CancellableCompletableFuture<String> generateNextIteration(
             UUID sessionId,
             String description,
             String currentCode,
@@ -538,9 +591,9 @@ public abstract class LLMClient {
      * This method must be implemented by each LLMClient subclass
      *
      * @param session The chat session containing messages to send
-     * @return A CompletableFuture containing the API response
+     * @return A CancellableCompletableFuture containing the API response
      */
-    protected abstract CompletableFuture<String> sendMessages(ChatSession session);
+    protected abstract CancellableCompletableFuture<String> sendMessages(ChatSession session);
 
     /**
      * Clears the API key for this client type
@@ -548,6 +601,13 @@ public abstract class LLMClient {
      * @return true if key was successfully cleared, false otherwise
      */
     public abstract boolean clearApiKey();
+
+    /**
+     * Cancels the current API request if one is in progress
+     * 
+     * @return true if a request was cancelled, false if no request was in progress
+     */
+    public abstract boolean cancelCurrentRequest();
 
     // ============================================================================
     // Image Processing Utility Methods

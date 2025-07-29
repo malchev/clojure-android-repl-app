@@ -778,7 +778,7 @@ public class RenderActivity extends AppCompatActivity {
                             "Generated manifest for " + generatedClasses.size() + " classes for hash: " + codeHash);
                 }
             } catch (Exception e) {
-                Log.e(TAG, "Error in Clojure compilation", e);
+                Log.d(TAG, "Clojure compilation error (expected during iteration process)", e);
                 lastResult = "Error: " + e.getMessage();
 
                 // Capture the full error information including "Caused by" details

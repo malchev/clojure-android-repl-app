@@ -19,7 +19,14 @@ import org.json.JSONObject;
 import org.json.JSONArray;
 import com.example.clojurerepl.auth.ApiKeyManager;
 import java.io.IOException;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicReference;
+import java.nio.charset.StandardCharsets;
 
+/**
+ * Implementation of LLMClient for Google's Gemini API.
+ * Based on API documentation: https://ai.google.dev/api/gemini_api
+ */
 public class GeminiLLMClient extends LLMClient {
     private static final String TAG = "GeminiLLMClient";
     private static final String API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
@@ -29,6 +36,9 @@ public class GeminiLLMClient extends LLMClient {
     private static final int HTTP_TIMEOUT = 120000; // 120 seconds timeout (increased from 30)
     private static final int MAX_RETRIES = 1;
     private static final int RETRY_DELAY_MS = 2000; // 2 seconds between retries
+
+    // Track the current request for cancellation
+    private final AtomicReference<CancellableCompletableFuture<String>> currentRequest = new AtomicReference<>();
 
     // Static cache for available models
     private static List<String> cachedModels = null;
@@ -469,25 +479,61 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     @Override
-    protected CompletableFuture<String> sendMessages(ChatSession session) {
+    protected CancellableCompletableFuture<String> sendMessages(ChatSession session) {
         Log.d(TAG, "Sending " + session.getMessages().size() + " messages in session: " + session.getSessionId());
         Log.d(TAG, "System prompt available: " + (session.hasSystemPrompt() ? "yes" : "no"));
 
-        return CompletableFuture.supplyAsync(() -> {
+        // Cancel any existing request
+        cancelCurrentRequest();
+
+        // Create a new cancellable future
+        CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+        currentRequest.set(future);
+
+        CompletableFuture.runAsync(() -> {
             try {
+                // Check if cancelled before starting
+                if (future.isCancelled()) {
+                    Log.d(TAG, "Request was cancelled before starting");
+                    return;
+                }
+
                 // Call the API with the full context including system prompt
-                String response = callGeminiAPI(session.getMessages(), session.getSystemPrompt());
+                String response = callGeminiAPI(session.getMessages(), session.getSystemPrompt(), future);
+
+                // Check if cancelled after API call
+                if (future.isCancelled()) {
+                    Log.d(TAG, "Request was cancelled after API call");
+                    return;
+                }
 
                 // Save the original response to history
                 session.queueAssistantResponse(response, getType(), getModel());
 
-                // Return the extracted code
-                return response;
+                // Complete the future with the response
+                future.complete(response);
             } catch (Exception e) {
+                // Check if this is a cancellation exception, which is expected behavior
+                if (e instanceof CancellationException ||
+                        (e instanceof RuntimeException && e.getCause() instanceof CancellationException)) {
+                    Log.d(TAG, "Gemini chat session was cancelled - this is expected behavior");
+                    if (!future.isCancelled()) {
+                        future.completeExceptionally(e);
+                    }
+                    return;
+                }
+
                 Log.e(TAG, "Error in chat session", e);
-                throw new RuntimeException("Failed to get response from Gemini", e);
+                if (!future.isCancelled()) {
+                    future.completeExceptionally(new RuntimeException("Failed to get response from Gemini", e));
+                }
+            } finally {
+                // Clear the current request reference
+                currentRequest.compareAndSet(future, null);
             }
         });
+
+        return future;
     }
 
     @Override
@@ -506,7 +552,19 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     @Override
-    public CompletableFuture<String> generateInitialCode(UUID sessionId, String description) {
+    public boolean cancelCurrentRequest() {
+        CancellableCompletableFuture<String> request = currentRequest.get();
+        if (request != null && !request.isCancelledOrCompleted()) {
+            Log.d(TAG, "Cancelling current Gemini API request");
+            boolean cancelled = request.cancel(true);
+            currentRequest.set(null);
+            return cancelled;
+        }
+        return false;
+    }
+
+    @Override
+    public CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description) {
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +
                 "│         GENERATING INITIAL CODE           │\n" +
@@ -518,15 +576,30 @@ public class GeminiLLMClient extends LLMClient {
         ChatSession chatSession = preparePromptForInitialCode(sessionId, description);
 
         // Send all messages and get the response
-        return sendMessages(chatSession)
-                .thenApply(response -> {
+        CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+        sendMessages(chatSession)
+                .thenAccept(response -> {
                     Log.d(TAG, "Got response, length: " + response.length());
-                    return response;
+                    future.complete(response);
+                })
+                .exceptionally(ex -> {
+                    // Check if this is a cancellation exception, which is expected behavior
+                    if (ex instanceof CancellationException ||
+                            (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
+                        Log.d(TAG, "Initial code generation was cancelled - this is expected behavior");
+                        future.completeExceptionally(ex);
+                    } else {
+                        Log.e(TAG, "Error in initial code generation", ex);
+                        future.completeExceptionally(ex);
+                    }
+                    return null;
                 });
+        return future;
     }
 
     @Override
-    public CompletableFuture<String> generateInitialCode(UUID sessionId, String description, String initialCode) {
+    public CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description,
+            String initialCode) {
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +
                 "│         GENERATING INITIAL CODE           │\n" +
@@ -540,15 +613,29 @@ public class GeminiLLMClient extends LLMClient {
         ChatSession chatSession = preparePromptForInitialCode(sessionId, description, initialCode);
 
         // Send all messages and get the response
-        return sendMessages(chatSession)
-                .thenApply(response -> {
+        CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+        sendMessages(chatSession)
+                .thenAccept(response -> {
                     Log.d(TAG, "Got response, length: " + response.length());
-                    return response;
+                    future.complete(response);
+                })
+                .exceptionally(ex -> {
+                    // Check if this is a cancellation exception, which is expected behavior
+                    if (ex instanceof CancellationException ||
+                            (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
+                        Log.d(TAG, "Initial code generation was cancelled - this is expected behavior");
+                        future.completeExceptionally(ex);
+                    } else {
+                        Log.e(TAG, "Error in initial code generation", ex);
+                        future.completeExceptionally(ex);
+                    }
+                    return null;
                 });
+        return future;
     }
 
     @Override
-    public CompletableFuture<String> generateNextIteration(
+    public CancellableCompletableFuture<String> generateNextIteration(
             UUID sessionId,
             String description,
             String currentCode,
@@ -566,8 +653,10 @@ public class GeminiLLMClient extends LLMClient {
         if (image != null) {
             ModelProperties props = getModelProperties(getModel());
             if (props == null || !props.isMultimodal) {
-                return CompletableFuture.failedFuture(
+                CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+                future.completeExceptionally(
                         new UnsupportedOperationException("Image parameter provided but model is not multimodal"));
+                return future;
             }
         }
 
@@ -587,15 +676,30 @@ public class GeminiLLMClient extends LLMClient {
         chatSession.queueUserMessageWithImage(prompt, image, logcat, feedback, null);
 
         // Send all messages and get the response
-        return sendMessages(chatSession)
-                .thenApply(response -> {
+        CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+        sendMessages(chatSession)
+                .thenAccept(response -> {
                     Log.d(TAG, "Got response response, length: " + response.length());
-                    return response;
+                    future.complete(response);
+                })
+                .exceptionally(ex -> {
+                    // Check if this is a cancellation exception, which is expected behavior
+                    if (ex instanceof CancellationException ||
+                            (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
+                        Log.d(TAG, "Next iteration generation was cancelled - this is expected behavior");
+                        future.completeExceptionally(ex);
+                    } else {
+                        Log.e(TAG, "Error in next iteration generation", ex);
+                        future.completeExceptionally(ex);
+                    }
+                    return null;
                 });
+        return future;
     }
 
     // Helper method to call the Gemini API with message history
-    private String callGeminiAPI(List<Message> history, String systemPrompt) {
+    private String callGeminiAPI(List<Message> history, String systemPrompt,
+            CancellableCompletableFuture<String> future) {
         int retryCount = 0;
         Exception lastException = null;
         int currentTokenLimit = getMaxOutputTokens(currentModel);
@@ -605,7 +709,7 @@ public class GeminiLLMClient extends LLMClient {
                 Log.d(TAG, "=== Calling Gemini API (attempt " + (retryCount + 1) + "/" + MAX_RETRIES
                         + ") with token limit: " + currentTokenLimit + " ===");
                 ExtractionResult extractionResult = performGeminiAPICall(history, systemPrompt,
-                        currentTokenLimit);
+                        currentTokenLimit, future);
 
                 // Check if the response indicates a token limit issue by parsing it again
                 if (extractionResult.getStatus() == ResponseStatus.MAX_TOKENS) {
@@ -646,6 +750,13 @@ public class GeminiLLMClient extends LLMClient {
                     throw new RuntimeException("Failed to call Gemini API", e);
                 }
             } catch (Exception e) {
+                // Check if this is a cancellation exception, which is expected behavior
+                if (e instanceof CancellationException ||
+                        (e instanceof RuntimeException && e.getCause() instanceof CancellationException)) {
+                    Log.d(TAG, "Gemini API call was cancelled - this is expected behavior");
+                    throw e; // Re-throw cancellation exceptions without wrapping
+                }
+
                 // For non-network errors, don't retry
                 Log.e(TAG, "Non-retryable error calling Gemini API", e);
                 throw new RuntimeException("Failed to call Gemini API", e);
@@ -683,7 +794,8 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     // Actual API call implementation
-    private ExtractionResult performGeminiAPICall(List<Message> history, String systemPrompt, int tokenLimit)
+    private ExtractionResult performGeminiAPICall(List<Message> history, String systemPrompt, int tokenLimit,
+            CancellableCompletableFuture<String> future)
             throws java.io.IOException {
         try {
             // Manage conversation history to prevent context overflow
@@ -729,6 +841,12 @@ public class GeminiLLMClient extends LLMClient {
             }
 
             ensureModelIsSet();
+
+            // Check for cancellation before setting up connection
+            if (future.isCancelled()) {
+                Log.d(TAG, "Request cancelled before setting up connection");
+                throw new CancellationException("Request was cancelled");
+            }
 
             URL url = new URL(API_BASE_URL + "/models/" + currentModel + ":generateContent?key=" + apiKey);
             Log.d(TAG, "Calling Gemini API with URL: " + url.toString().replace(apiKey, "***API_KEY***"));
@@ -829,6 +947,12 @@ public class GeminiLLMClient extends LLMClient {
                 os.write(input, 0, input.length);
             }
 
+            // Check for cancellation after writing request
+            if (future.isCancelled()) {
+                Log.d(TAG, "Request cancelled after writing request");
+                throw new CancellationException("Request was cancelled");
+            }
+
             Log.d(TAG, "\n" +
                     "╔══════════════════════════╗\n" +
                     "║ START GEMINI API REQUEST ║\n" +
@@ -857,6 +981,12 @@ public class GeminiLLMClient extends LLMClient {
                     "║ STOP GEMINI API REQUEST ║\n" +
                     "╚═════════════════════════╝");
 
+            // Check for cancellation before getting response
+            if (future.isCancelled()) {
+                Log.d(TAG, "Request cancelled before getting response");
+                throw new CancellationException("Request was cancelled");
+            }
+
             int responseCode = conn.getResponseCode();
             Log.d(TAG, "Gemini API response code: " + responseCode);
 
@@ -866,7 +996,13 @@ public class GeminiLLMClient extends LLMClient {
                         new InputStreamReader(conn.getInputStream(), "utf-8"))) {
                     StringBuilder response = new StringBuilder();
                     String responseLine;
+                    int lineCount = 0;
                     while ((responseLine = br.readLine()) != null) {
+                        // Check for cancellation every 10 lines during response reading
+                        if (++lineCount % 10 == 0 && future.isCancelled()) {
+                            Log.d(TAG, "Request cancelled during response reading");
+                            throw new CancellationException("Request was cancelled");
+                        }
                         response.append(responseLine.trim());
                     }
                     Log.d(TAG, "Raw HTTP response length: " + response.length());
@@ -921,6 +1057,13 @@ public class GeminiLLMClient extends LLMClient {
             // Re-throw IOException to allow retry logic to handle it
             throw e;
         } catch (Exception e) {
+            // Check if this is a cancellation exception, which is expected behavior
+            if (e instanceof CancellationException ||
+                    (e instanceof RuntimeException && e.getCause() instanceof CancellationException)) {
+                Log.d(TAG, "Gemini API call was cancelled during execution - this is expected behavior");
+                throw new RuntimeException("Request was cancelled", e); // Wrap to avoid JSONException issues
+            }
+
             Log.e(TAG, "Error calling Gemini API", e);
             throw new RuntimeException("Failed to call Gemini API", e);
         }
