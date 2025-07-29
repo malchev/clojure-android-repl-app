@@ -1774,146 +1774,152 @@ public class ClojureAppDesignActivity extends AppCompatActivity
      * Creates a view for regular messages (user/assistant)
      */
     private void createMessageView(LinearLayout container, LLMClient.Message message, int messageIndex) {
-        // Check if message contains logcat output
-        String content = message.content;
-        int logcatIndex = content.indexOf("Logcat output:");
+        // Check if this is a user message with logcat output
+        if (message.role == LLMClient.MessageRole.USER) {
+            LLMClient.UserMessage userMsg = (LLMClient.UserMessage) message;
+            String logcat = userMsg.getLogcat();
 
-        if (logcatIndex != -1) {
-            // Message contains logcat output, split it
-            String beforeLogcat = content.substring(0, logcatIndex).trim();
-            String logcatSection = content.substring(logcatIndex);
+            if (logcat != null && !logcat.isEmpty()) {
+                // Remove logcat content from the main message content
+                String cleanContent = message.content;
+                if (cleanContent.contains(logcat)) {
+                    int logcatIndex = cleanContent.indexOf(logcat);
+                    cleanContent = cleanContent.substring(0, logcatIndex).trim();
+                }
 
-            // Show text before logcat
-            if (!beforeLogcat.isEmpty()) {
+                // Show the cleaned message content (feedback without logcat)
+                if (!cleanContent.isEmpty()) {
+                    TextView feedbackView = new TextView(this);
+                    feedbackView.setLayoutParams(new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT));
+                    feedbackView.setTextSize(14);
+                    feedbackView.setPadding(0, 4, 0, 4);
+                    feedbackView.setText(cleanContent);
+                    container.addView(feedbackView);
+                }
+
+                // Create clickable button for logcat
+                Button logcatButton = new Button(this);
+                logcatButton.setLayoutParams(new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+                logcatButton.setTextAlignment(View.TEXT_ALIGNMENT_TEXT_START);
+                logcatButton.setBackgroundResource(android.R.color.transparent);
+                logcatButton.setTextColor(getResources().getColor(android.R.color.holo_blue_dark));
+                logcatButton.setPadding(0, 8, 0, 8);
+
+                if (expandedLogcatSections.contains(messageIndex)) {
+                    logcatButton.setText("📋 [Click to hide logcat output]");
+                } else {
+                    logcatButton.setText("📋 [Click to show logcat output]");
+                }
+
+                logcatButton.setOnClickListener(v -> {
+                    if (expandedLogcatSections.contains(messageIndex)) {
+                        expandedLogcatSections.remove(messageIndex);
+                    } else {
+                        expandedLogcatSections.add(messageIndex);
+                    }
+                    updateChatHistoryDisplay();
+                });
+                container.addView(logcatButton);
+
+                // Add logcat content if expanded
+                if (expandedLogcatSections.contains(messageIndex)) {
+                    TextView logcatView = new TextView(this);
+                    logcatView.setLayoutParams(new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT));
+                    logcatView.setTextSize(10);
+                    logcatView.setTypeface(android.graphics.Typeface.MONOSPACE);
+                    logcatView.setPadding(16, 8, 16, 8);
+                    logcatView.setBackgroundColor(getResources().getColor(android.R.color.white));
+                    logcatView.setText("Logcat output:\n" + logcat);
+                    container.addView(logcatView);
+                }
+                return; // Exit early since we handled the logcat case
+            }
+        }
+
+        // No logcat found, check for code
+        ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
+                .extractClojureCode(message.content);
+
+        if (result.success && result.code != null && !result.code.isEmpty()) {
+            // Show text before code
+            if (result.textBeforeCode != null && !result.textBeforeCode.isEmpty()) {
                 TextView beforeTextView = new TextView(this);
                 beforeTextView.setLayoutParams(new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT));
                 beforeTextView.setTextSize(14);
                 beforeTextView.setPadding(0, 4, 0, 4);
-                beforeTextView.setText(beforeLogcat);
+                beforeTextView.setText(result.textBeforeCode);
                 container.addView(beforeTextView);
             }
 
-            // Create clickable button for logcat
-            Button logcatButton = new Button(this);
-            logcatButton.setLayoutParams(new LinearLayout.LayoutParams(
+            // Create clickable button for code
+            Button codeButton = new Button(this);
+            codeButton.setLayoutParams(new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT));
-            logcatButton.setTextAlignment(View.TEXT_ALIGNMENT_TEXT_START);
-            logcatButton.setBackgroundResource(android.R.color.transparent);
-            logcatButton.setTextColor(getResources().getColor(android.R.color.holo_blue_dark));
-            logcatButton.setPadding(0, 8, 0, 8);
+            codeButton.setTextAlignment(View.TEXT_ALIGNMENT_TEXT_START);
+            codeButton.setBackgroundResource(android.R.color.transparent);
+            codeButton.setTextColor(getResources().getColor(android.R.color.holo_blue_dark));
+            codeButton.setPadding(0, 8, 0, 8);
 
-            if (expandedLogcatSections.contains(messageIndex)) {
-                logcatButton.setText("📋 [Click to hide logcat output]");
+            if (expandedCodeSections.contains(messageIndex)) {
+                codeButton.setText("📄 [Click to hide Clojure code]");
             } else {
-                logcatButton.setText("📋 [Click to show logcat output]");
+                codeButton.setText("📄 [Click to show Clojure code]");
             }
 
-            logcatButton.setOnClickListener(v -> {
-                if (expandedLogcatSections.contains(messageIndex)) {
-                    expandedLogcatSections.remove(messageIndex);
+            codeButton.setOnClickListener(v -> {
+                if (expandedCodeSections.contains(messageIndex)) {
+                    expandedCodeSections.remove(messageIndex);
                 } else {
-                    expandedLogcatSections.add(messageIndex);
+                    expandedCodeSections.add(messageIndex);
                 }
                 updateChatHistoryDisplay();
             });
-            container.addView(logcatButton);
+            container.addView(codeButton);
 
-            // Add logcat content if expanded
-            if (expandedLogcatSections.contains(messageIndex)) {
-                TextView logcatView = new TextView(this);
-                logcatView.setLayoutParams(new LinearLayout.LayoutParams(
+            // Add code content if expanded
+            if (expandedCodeSections.contains(messageIndex)) {
+                TextView codeView = new TextView(this);
+                codeView.setLayoutParams(new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT));
-                logcatView.setTextSize(10);
-                logcatView.setTypeface(android.graphics.Typeface.MONOSPACE);
-                logcatView.setPadding(16, 8, 16, 8);
-                logcatView.setBackgroundColor(getResources().getColor(android.R.color.white));
-                logcatView.setText(logcatSection);
-                container.addView(logcatView);
+                codeView.setTextSize(12);
+                codeView.setTypeface(android.graphics.Typeface.MONOSPACE);
+                codeView.setPadding(16, 8, 16, 8);
+                codeView.setBackgroundColor(getResources().getColor(android.R.color.white));
+                codeView.setText("```clojure\n" + result.code + "\n```");
+                container.addView(codeView);
+            }
+
+            // Show text after code
+            if (result.textAfterCode != null && !result.textAfterCode.isEmpty()) {
+                TextView afterTextView = new TextView(this);
+                afterTextView.setLayoutParams(new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+                afterTextView.setTextSize(14);
+                afterTextView.setPadding(0, 4, 0, 4);
+                afterTextView.setText(result.textAfterCode);
+                container.addView(afterTextView);
             }
         } else {
-            // No logcat found, check for code
-            ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
-                    .extractClojureCode(message.content);
-
-            if (result.success && result.code != null && !result.code.isEmpty()) {
-                // Show text before code
-                if (result.textBeforeCode != null && !result.textBeforeCode.isEmpty()) {
-                    TextView beforeTextView = new TextView(this);
-                    beforeTextView.setLayoutParams(new LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT));
-                    beforeTextView.setTextSize(14);
-                    beforeTextView.setPadding(0, 4, 0, 4);
-                    beforeTextView.setText(result.textBeforeCode);
-                    container.addView(beforeTextView);
-                }
-
-                // Create clickable button for code
-                Button codeButton = new Button(this);
-                codeButton.setLayoutParams(new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT));
-                codeButton.setTextAlignment(View.TEXT_ALIGNMENT_TEXT_START);
-                codeButton.setBackgroundResource(android.R.color.transparent);
-                codeButton.setTextColor(getResources().getColor(android.R.color.holo_blue_dark));
-                codeButton.setPadding(0, 8, 0, 8);
-
-                if (expandedCodeSections.contains(messageIndex)) {
-                    codeButton.setText("📄 [Click to hide Clojure code]");
-                } else {
-                    codeButton.setText("📄 [Click to show Clojure code]");
-                }
-
-                codeButton.setOnClickListener(v -> {
-                    if (expandedCodeSections.contains(messageIndex)) {
-                        expandedCodeSections.remove(messageIndex);
-                    } else {
-                        expandedCodeSections.add(messageIndex);
-                    }
-                    updateChatHistoryDisplay();
-                });
-                container.addView(codeButton);
-
-                // Add code content if expanded
-                if (expandedCodeSections.contains(messageIndex)) {
-                    TextView codeView = new TextView(this);
-                    codeView.setLayoutParams(new LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT));
-                    codeView.setTextSize(12);
-                    codeView.setTypeface(android.graphics.Typeface.MONOSPACE);
-                    codeView.setPadding(16, 8, 16, 8);
-                    codeView.setBackgroundColor(getResources().getColor(android.R.color.white));
-                    codeView.setText("```clojure\n" + result.code + "\n```");
-                    container.addView(codeView);
-                }
-
-                // Show text after code
-                if (result.textAfterCode != null && !result.textAfterCode.isEmpty()) {
-                    TextView afterTextView = new TextView(this);
-                    afterTextView.setLayoutParams(new LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT));
-                    afterTextView.setTextSize(14);
-                    afterTextView.setPadding(0, 4, 0, 4);
-                    afterTextView.setText(result.textAfterCode);
-                    container.addView(afterTextView);
-                }
-            } else {
-                // No code found, show full message
-                TextView contentView = new TextView(this);
-                contentView.setLayoutParams(new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT));
-                contentView.setTextSize(14);
-                contentView.setPadding(0, 4, 0, 4);
-                contentView.setText(message.content);
-                container.addView(contentView);
-            }
+            // No code found, show full message
+            TextView contentView = new TextView(this);
+            contentView.setLayoutParams(new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            contentView.setTextSize(14);
+            contentView.setPadding(0, 4, 0, 4);
+            contentView.setText(message.content);
+            container.addView(contentView);
         }
     }
 
