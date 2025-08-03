@@ -35,7 +35,7 @@ import android.content.ComponentName;
 import android.text.InputType;
 import android.text.method.LinkMovementMethod;
 import android.view.ViewGroup;
-import android.widget.ListView;
+
 import com.example.clojurerepl.session.DesignSession;
 import com.example.clojurerepl.session.SessionManager;
 import android.widget.ScrollView;
@@ -1444,57 +1444,17 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Provide Feedback");
 
-        // Define feedback options with automatic index calculation
-        final String[] standardOptions = {};
+        // Build dialog with simplified layout
+        View dialogView = getLayoutInflater().inflate(R.layout.dialog_feedback_simple, null);
+        EditText feedbackInput = dialogView.findViewById(R.id.feedback_input);
 
-        final String customFeedbackOption = "Custom feedback...";
-        final String useErrorFeedbackOption = "Use the error feedback below...";
-
-        // Build the complete options array dynamically
-        final String[] options;
-        final int customFeedbackIndex;
-        final int useErrorFeedbackIndex;
-
-        // Determine if we have prefilled feedback to display
+        // Pre-populate with error feedback if available
         boolean hasFeedback = finalFeedback != null && !finalFeedback.isEmpty();
-
         if (hasFeedback) {
-            // Include the "Use error feedback" option when there's feedback
-            options = new String[standardOptions.length + 2];
-            System.arraycopy(standardOptions, 0, options, 0, standardOptions.length);
-            options[standardOptions.length] = customFeedbackOption;
-            options[standardOptions.length + 1] = useErrorFeedbackOption;
-
-            customFeedbackIndex = standardOptions.length;
-            useErrorFeedbackIndex = standardOptions.length + 1;
-        } else {
-            // Only include standard options and custom feedback when no error feedback
-            options = new String[standardOptions.length + 1];
-            System.arraycopy(standardOptions, 0, options, 0, standardOptions.length);
-            options[standardOptions.length] = customFeedbackOption;
-
-            customFeedbackIndex = standardOptions.length;
-            useErrorFeedbackIndex = -1; // Not available
-        }
-
-        // Create list adapter for dialog
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
-                android.R.layout.simple_list_item_single_choice, options);
-
-        // Build dialog
-        View dialogView = getLayoutInflater().inflate(R.layout.dialog_feedback, null);
-        ListView listView = dialogView.findViewById(R.id.feedback_options_list);
-        listView.setAdapter(adapter);
-        listView.setChoiceMode(ListView.CHOICE_MODE_SINGLE);
-
-        // Add error text view if we have feedback
-        if (hasFeedback) {
-            TextView errorTextView = dialogView.findViewById(R.id.error_text);
-            errorTextView.setText(finalFeedback);
-            errorTextView.setVisibility(View.VISIBLE);
-            errorTextView.setTextIsSelectable(true);
-        } else {
-            dialogView.findViewById(R.id.error_container).setVisibility(View.GONE);
+            // Include the visually distinctive error text as-is
+            feedbackInput.setText(finalFeedback);
+            // Position cursor at the end for easy editing
+            feedbackInput.setSelection(finalFeedback.length());
         }
 
         // Set up screenshot checkbox
@@ -1528,42 +1488,18 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         final AlertDialog dialog = builder.create();
         dialog.show();
 
-        // Set up item selection behavior
-        listView.setOnItemClickListener((parent, view, position, id) -> {
-            // Enable Submit button once an item is selected
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true);
-        });
-
         // Override the positive button to handle submission
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            int selectedPosition = listView.getCheckedItemPosition();
-            Log.d(TAG, "Submit clicked with selection: " + selectedPosition);
+            String feedback = feedbackInput.getText().toString().trim();
 
-            if (selectedPosition == ListView.INVALID_POSITION) {
-                Toast.makeText(this, "Please select an option", Toast.LENGTH_SHORT).show();
+            if (feedback.isEmpty()) {
+                Toast.makeText(this, "Please enter some feedback", Toast.LENGTH_SHORT).show();
                 return;
             }
 
             // We need to check if iterationManager is null here to avoid NPE
             if (iterationManager == null) {
-                // Save the feedback for later use if the model is not yet selected
-                String selectedFeedback = null;
-
-                if (selectedPosition == useErrorFeedbackIndex && hasFeedback) {
-                    // "Use the error feedback below..." option
-                    selectedFeedback = finalFeedback;
-                } else if (selectedPosition == customFeedbackIndex) {
-                    // "Custom feedback..." option
-                    dialog.dismiss();
-                    showCustomFeedbackDialog();
-                    return;
-                } else {
-                    // Standard options
-                    selectedFeedback = options[selectedPosition];
-                }
-
                 dialog.dismiss();
-
                 // Show a toast message informing user to select an AI model
                 Toast.makeText(this,
                         "Feedback saved. Please select an AI model first, then click 'Improve App' again.",
@@ -1571,57 +1507,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 return;
             }
 
-            // Normal feedback submission with a valid iterationManager
-            if (selectedPosition == useErrorFeedbackIndex && hasFeedback) {
-                // "Use the error feedback below..." option (only available when there's
-                // feedback)
-                submitFeedbackWithText(finalFeedback);
-                dialog.dismiss();
-            } else if (selectedPosition == customFeedbackIndex) {
-                // "Custom feedback..." option
-                dialog.dismiss();
-                showCustomFeedbackDialog();
-            } else {
-                // Standard options
-                submitFeedbackWithText(options[selectedPosition]);
-                dialog.dismiss();
-            }
+            // Submit the feedback
+            submitFeedbackWithText(feedback);
+            dialog.dismiss();
         });
-
-        // Disable submit button until an option is selected
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
-    }
-
-    /**
-     * Shows a dialog for entering custom feedback, optionally with pre-filled text
-     */
-    private void showCustomFeedbackDialog() {
-        AlertDialog.Builder customBuilder = new AlertDialog.Builder(this);
-        customBuilder.setTitle("Enter Feedback");
-
-        final EditText input = new EditText(this);
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        input.setMinLines(3);
-        input.setMaxLines(5);
-
-        customBuilder.setView(input);
-
-        customBuilder.setPositiveButton("Submit", (dialogInterface, i) -> {
-            String feedback = input.getText().toString();
-            if (!feedback.isEmpty()) {
-                if (iterationManager == null) {
-                    Toast.makeText(this,
-                            "Feedback saved. Please select an AI model first, then click 'Improve App' again.",
-                            Toast.LENGTH_LONG).show();
-                } else {
-                    submitFeedbackWithText(feedback);
-                }
-            }
-        });
-
-        customBuilder.setNegativeButton("Cancel", (dialogInterface, i) -> dialogInterface.cancel());
-
-        customBuilder.show();
     }
 
     /**
