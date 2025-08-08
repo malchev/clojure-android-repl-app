@@ -102,6 +102,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     private SessionManager sessionManager;
     private DesignSession currentSession;
 
+    // Track selected chat entry
+    private int selectedChatEntryIndex = -1;
+    private LinearLayout selectedChatEntry = null;
+
     // Add a flag to track when the models are loaded
     private boolean modelsLoaded = false;
 
@@ -974,7 +978,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             }
         }
 
-        w
         // Don't auto-expand the screenshots section - let user choose when to view it
     }
 
@@ -1483,22 +1486,51 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                 int messageIndex = 0;
                 for (LLMClient.Message message : messages) {
-                    // Create message container
+                    // Create message container with margin for better separation
                     LinearLayout messageContainer = new LinearLayout(this);
-                    messageContainer.setLayoutParams(new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams containerParams = new LinearLayout.LayoutParams(
                             LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT));
+                            LinearLayout.LayoutParams.WRAP_CONTENT);
+                    containerParams.setMargins(8, 4, 8, 4); // Add margins between entries
+                    messageContainer.setLayoutParams(containerParams);
                     messageContainer.setOrientation(LinearLayout.VERTICAL);
-                    messageContainer.setPadding(0, 8, 0, 8);
+                    messageContainer.setPadding(16, 12, 16, 12);
 
-                    // Create role label
+                    // Make message container selectable
+                    messageContainer.setClickable(true);
+                    messageContainer.setFocusable(true);
+
+                    // Add alternating background colors for visual distinction
+                    boolean isEvenIndex = (messageIndex % 2 == 0);
+                    int defaultBackgroundColor = isEvenIndex ? 0xFFF8F8F8 : 0xFFFFFFFF; // Light gray vs white
+                    messageContainer.setBackgroundColor(defaultBackgroundColor);
+
+                    // Add rounded corners and subtle border effect
+                    messageContainer.setElevation(2.0f);
+
+                    // Set up selection behavior
+                    final int currentMessageIndex = messageIndex;
+                    final int defaultBgColor = defaultBackgroundColor;
+                    messageContainer.setOnClickListener(v -> {
+                        selectChatEntry(currentMessageIndex, messageContainer, defaultBgColor);
+                    });
+
+                    // Apply selection state if this entry is currently selected
+                    if (messageIndex == selectedChatEntryIndex) {
+                        messageContainer.setBackgroundColor(0x4400FF00); // Light green selection (slightly more
+                                                                         // visible)
+                        selectedChatEntry = messageContainer;
+                    }
+
+                    // Create role label with better styling
                     TextView roleLabel = new TextView(this);
                     roleLabel.setLayoutParams(new LinearLayout.LayoutParams(
                             LinearLayout.LayoutParams.WRAP_CONTENT,
                             LinearLayout.LayoutParams.WRAP_CONTENT));
-                    roleLabel.setTextSize(12);
+                    roleLabel.setTextSize(13);
                     roleLabel.setTypeface(null, android.graphics.Typeface.BOLD);
-                    roleLabel.setPadding(0, 0, 0, 4);
+                    roleLabel.setPadding(8, 4, 8, 8);
+                    roleLabel.setBackgroundColor(0x15000000); // Very light gray background
 
                     if (message.role == LLMClient.MessageRole.USER) {
                         roleLabel.setText("👤 You:");
@@ -1521,8 +1553,37 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     messageIndex++;
                 }
 
+                // Auto-select the last (most recent) entry
+                if (messages.size() > 0) {
+                    selectedChatEntryIndex = messages.size() - 1;
+                }
+
+                // Auto-scroll to bottom after updating chat history
+                chatHistoryContainer.post(() -> {
+                    chatHistoryContainer.fullScroll(View.FOCUS_DOWN);
+                });
             }
         }
+    }
+
+    /**
+     * Handles selection of a chat entry
+     */
+    private void selectChatEntry(int messageIndex, LinearLayout messageContainer, int defaultBackgroundColor) {
+        // Clear previous selection by restoring its default background
+        if (selectedChatEntry != null) {
+            // Calculate the default background for the previously selected entry
+            boolean wasEvenIndex = (selectedChatEntryIndex % 2 == 0);
+            int prevDefaultBg = wasEvenIndex ? 0xFFF8F8F8 : 0xFFFFFFFF;
+            selectedChatEntry.setBackgroundColor(prevDefaultBg);
+        }
+
+        // Set new selection
+        selectedChatEntryIndex = messageIndex;
+        selectedChatEntry = messageContainer;
+        messageContainer.setBackgroundColor(0x4400FF00); // Light green selection
+
+        Log.d(TAG, "Selected chat entry: " + messageIndex);
     }
 
     /**
