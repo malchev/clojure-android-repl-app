@@ -71,21 +71,6 @@
 
     </LinearLayout>
 
-    <!-- Selection status text -->
-    <TextView
-        android:id="@+id/selection_status_text"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:layout_marginBottom="8dp"
-        android:text="No AI response selected"
-        android:textSize="12sp"
-        android:textColor="#666666"
-        android:gravity="center"
-        android:padding="8dp"
-        android:background="#f0f0f0"
-        android:visibility="gone" />
-
     <!-- Feedback buttons container -->
     <LinearLayout
         android:id="@+id/feedback_buttons_container"
@@ -94,8 +79,8 @@
         android:orientation="horizontal"
         android:gravity="center"
         android:background="#FFFFFF"
-        android:layout_marginTop="16dp"
-        android:padding="16dp">
+        android:layout_marginTop="8dp"
+        android:padding="8dp">
 
         <Button
             android:id="@+id/run_button"
@@ -131,6 +116,21 @@
             android:backgroundTint="#FF5722"
             android:visibility="gone" />
     </LinearLayout>
+
+    <!-- Selection status text -->
+    <TextView
+        android:id="@+id/selection_status_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="8dp"
+        android:text="No AI response selected"
+        android:textSize="12sp"
+        android:textColor="#666666"
+        android:gravity="center"
+        android:padding="8dp"
+        android:background="#f0f0f0"
+        android:visibility="gone" />
 
     <!-- Legacy buttons to be removed later -->
     <Button
