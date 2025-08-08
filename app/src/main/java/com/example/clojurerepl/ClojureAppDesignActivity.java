@@ -4,11 +4,13 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Typeface;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.Spinner;
@@ -1799,16 +1801,39 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                 // Add logcat content if expanded
                 if (expandedLogcatSections.contains(messageIndex)) {
-                    TextView logcatView = new TextView(this);
-                    logcatView.setLayoutParams(new LinearLayout.LayoutParams(
+                    // Create horizontal scrollable container for logcat
+                    HorizontalScrollView logcatScrollView = new HorizontalScrollView(this);
+                    logcatScrollView.setLayoutParams(new LinearLayout.LayoutParams(
                             LinearLayout.LayoutParams.MATCH_PARENT,
                             LinearLayout.LayoutParams.WRAP_CONTENT));
+                    logcatScrollView.setBackgroundColor(getResources().getColor(android.R.color.white));
+                    logcatScrollView.setPadding(16, 8, 16, 8);
+
+                    TextView logcatView = new TextView(this);
+                    logcatView.setLayoutParams(new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT));
                     logcatView.setTextSize(10);
-                    logcatView.setTypeface(android.graphics.Typeface.MONOSPACE);
-                    logcatView.setPadding(16, 8, 16, 8);
-                    logcatView.setBackgroundColor(getResources().getColor(android.R.color.white));
+                    // Try multiple monospace fonts to ensure we get a truly fixed-width font
+                    Typeface monoTypeface = null;
+                    try {
+                        // First try Droid Sans Mono (common on Android)
+                        monoTypeface = Typeface.create("Droid Sans Mono", Typeface.NORMAL);
+                    } catch (Exception e) {
+                        try {
+                            // Fallback to Courier
+                            monoTypeface = Typeface.create("Courier", Typeface.NORMAL);
+                        } catch (Exception e2) {
+                            // Final fallback to system monospace
+                            monoTypeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL);
+                        }
+                    }
+                    logcatView.setTypeface(monoTypeface);
+                    logcatView.setPadding(0, 0, 0, 0);
                     logcatView.setText("Logcat output:\n" + logcat);
-                    container.addView(logcatView);
+
+                    logcatScrollView.addView(logcatView);
+                    container.addView(logcatScrollView);
                 }
                 return; // Exit early since we handled the logcat case
             }
@@ -1889,16 +1914,37 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
             // Add code content if expanded
             if (expandedCodeSections.contains(messageIndex)) {
-                TextView codeView = new TextView(this);
-                codeView.setLayoutParams(new LinearLayout.LayoutParams(
+                // Create horizontal scrollable container for code
+                HorizontalScrollView codeScrollView = new HorizontalScrollView(this);
+                codeScrollView.setLayoutParams(new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT));
-                codeView.setTextSize(12);
-                codeView.setTypeface(android.graphics.Typeface.MONOSPACE);
-                codeView.setPadding(16, 8, 16, 8);
-                codeView.setBackgroundColor(getResources().getColor(android.R.color.white));
+                codeScrollView.setBackgroundColor(getResources().getColor(android.R.color.white));
+                codeScrollView.setPadding(16, 8, 16, 8);
 
-                // Show code with or without line numbers based on toggle
+                TextView codeView = new TextView(this);
+                codeView.setLayoutParams(new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+                codeView.setTextSize(12);
+                // Try multiple monospace fonts to ensure we get a truly fixed-width font
+                Typeface monoTypeface = null;
+                try {
+                    // First try Droid Sans Mono (common on Android)
+                    monoTypeface = Typeface.create("Droid Sans Mono", Typeface.NORMAL);
+                } catch (Exception e) {
+                    try {
+                        // Fallback to Courier
+                        monoTypeface = Typeface.create("Courier", Typeface.NORMAL);
+                    } catch (Exception e2) {
+                        // Final fallback to system monospace
+                        monoTypeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL);
+                    }
+                }
+                codeView.setTypeface(monoTypeface);
+                codeView.setPadding(0, 0, 0, 0);
+
+                // Show code with or without line numbers based on toggle (without backticks)
                 String displayCode;
                 if (showingLineNumbers) {
                     // Add line numbers to the code
@@ -1907,13 +1953,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     for (int i = 0; i < lines.length; i++) {
                         numberedCode.append(String.format("%3d: %s\n", i + 1, lines[i]));
                     }
-                    displayCode = "```clojure\n" + numberedCode.toString() + "```";
+                    displayCode = numberedCode.toString();
                 } else {
-                    displayCode = "```clojure\n" + result.code + "\n```";
+                    displayCode = result.code;
                 }
 
                 codeView.setText(displayCode);
-                container.addView(codeView);
+                codeScrollView.addView(codeView);
+                container.addView(codeScrollView);
             }
 
             // Show text after code
