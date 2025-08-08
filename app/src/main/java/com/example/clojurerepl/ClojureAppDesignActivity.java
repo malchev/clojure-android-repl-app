@@ -1724,7 +1724,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         systemPromptButton.setOnClickListener(v -> {
             systemPromptExpanded = !systemPromptExpanded;
-            updateChatHistoryDisplay();
+            updateChatHistoryDisplay(false, false); // Preserve selection, no auto-scroll
         });
         container.addView(systemPromptButton);
 
@@ -1958,7 +1958,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
      */
     private void toggleLineNumbersDisplay() {
         showingLineNumbers = !showingLineNumbers;
-        displayCurrentCode();
+        updateChatHistoryDisplay(false, false); // Preserve selection, no auto-scroll
     }
 
     /**
