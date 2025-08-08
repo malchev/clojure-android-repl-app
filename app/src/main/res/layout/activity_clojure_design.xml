@@ -71,7 +71,20 @@
 
     </LinearLayout>
 
-
+    <!-- Selection status text -->
+    <TextView
+        android:id="@+id/selection_status_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="8dp"
+        android:text="No AI response selected"
+        android:textSize="12sp"
+        android:textColor="#666666"
+        android:gravity="center"
+        android:padding="8dp"
+        android:background="#f0f0f0"
+        android:visibility="gone" />
 
     <!-- Feedback buttons container -->
     <LinearLayout

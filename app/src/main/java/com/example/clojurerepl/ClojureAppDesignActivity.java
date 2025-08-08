@@ -55,6 +55,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     private LinearLayout feedbackButtonsContainer;
     private Button thumbsUpButton;
     private Button runButton;
+    private TextView selectionStatusText;
 
     // Legacy buttons
     private Button confirmSuccessButton;
@@ -224,6 +225,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         thumbsUpButton = findViewById(R.id.thumbs_up_button);
         runButton = findViewById(R.id.run_button);
         cancelIterationButton = findViewById(R.id.cancel_iteration_button);
+        selectionStatusText = findViewById(R.id.selection_status_text);
 
         // Legacy buttons to maintain compatibility
         confirmSuccessButton = findViewById(R.id.confirm_success_button);
@@ -310,7 +312,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         Button submitFeedbackButton = findViewById(R.id.submit_feedback_button);
         submitFeedbackButton.setOnClickListener(v -> handleSubmitFeedbackClick());
         thumbsUpButton.setOnClickListener(v -> acceptApp());
-        runButton.setOnClickListener(v -> runCurrentCode(false));
+        runButton.setOnClickListener(v -> runSelectedCode(false));
         cancelIterationButton.setOnClickListener(v -> cancelCurrentIteration());
 
         // Set up paperclip button for screenshot attachment
@@ -573,7 +575,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                         // Only launch RenderActivity after we have the code
                         if (code != null && !code.isEmpty()) {
-                            runCurrentCode(true);
+                            runSelectedCode(true);
                         }
 
                         // Re-enable the submit button
@@ -696,7 +698,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         // Update chat history
                         updateChatHistoryDisplay();
 
-                        runCurrentCode(true);
+                        runSelectedCode(true);
                     });
                 })
                 .exceptionally(throwable -> {
@@ -739,12 +741,34 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         thumbsUpButton.setEnabled(true);
         runButton.setEnabled(true);
 
-        // Here we encode the current code using base64 before sending
-        String currentCode = currentSession.getCurrentCode();
-        if (currentCode.isEmpty()) {
-            Toast.makeText(this, "No code to accept", Toast.LENGTH_SHORT).show();
+        // Get code from the selected AI response
+        if (selectedChatEntryIndex < 0 || currentSession == null) {
+            Toast.makeText(this, "No AI response selected", Toast.LENGTH_SHORT).show();
             return;
         }
+
+        List<LLMClient.Message> messages = currentSession.getChatHistory();
+        if (selectedChatEntryIndex >= messages.size()) {
+            Toast.makeText(this, "Selected response not found", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
+        if (selectedMessage.role != LLMClient.MessageRole.ASSISTANT) {
+            Toast.makeText(this, "Selected message is not an AI response", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Extract code from the selected AI response
+        ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
+                .extractClojureCode(selectedMessage.content);
+
+        if (!result.success || result.code == null || result.code.isEmpty()) {
+            Toast.makeText(this, "No code found in selected response", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String currentCode = result.code;
 
         // Base64 encode the code
         String encodedCode;
@@ -1288,35 +1312,51 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     }
 
     /**
-     * Runs the current code without accepting it
+     * Runs the code from the selected AI response
      */
-    private void runCurrentCode(boolean returnOnError) {
-        String currentCode = currentSession.getCurrentCode();
-        if (currentCode == null || currentCode.isEmpty()) {
-            Toast.makeText(this, "No code to run", Toast.LENGTH_SHORT).show();
+    private void runSelectedCode(boolean returnOnError) {
+        if (selectedChatEntryIndex < 0 || currentSession == null) {
+            Toast.makeText(this, "No AI response selected", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        // Start the activity
+        List<LLMClient.Message> messages = currentSession.getChatHistory();
+        if (selectedChatEntryIndex >= messages.size()) {
+            Toast.makeText(this, "Selected response not found", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
+        if (selectedMessage.role != LLMClient.MessageRole.ASSISTANT) {
+            Toast.makeText(this, "Selected message is not an AI response", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Extract code from the selected AI response
+        ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
+                .extractClojureCode(selectedMessage.content);
+
+        if (!result.success || result.code == null || result.code.isEmpty()) {
+            Toast.makeText(this, "No code found in selected response", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Start the activity with the selected code
         RenderActivity.launch(this, ClojureAppDesignActivity.class,
                 new RenderActivity.ExitCallback() {
                     @Override
                     public void onExit(String logcat) {
                         runOnUiThread(() -> {
-                            // Note: Logcat output now handled in chat history, no separate view
-
                             // Save logcat to session
                             if (currentSession != null && logcat != null && !logcat.isEmpty()) {
                                 currentSession.setLastLogcat(logcat);
                                 sessionManager.updateSession(currentSession);
                                 Log.d(TAG, "Saved logcat to session");
-
-                                // Don't auto-expand the logcat section - let user choose when to view it
                             }
                         });
                     }
                 },
-                currentCode,
+                result.code,
                 currentSession.getId().toString(),
                 currentSession.getIterationCount(),
                 true,
@@ -1446,6 +1486,17 @@ public class ClojureAppDesignActivity extends AppCompatActivity
      * Updates the chat history display
      */
     private void updateChatHistoryDisplay() {
+        updateChatHistoryDisplay(true, true); // Default: auto-select last and auto-scroll
+    }
+
+    /**
+     * Updates the chat history display with control over selection and scrolling
+     * behavior
+     * 
+     * @param autoSelectLast Whether to auto-select the last AI response
+     * @param autoScroll     Whether to auto-scroll to bottom
+     */
+    private void updateChatHistoryDisplay(boolean autoSelectLast, boolean autoScroll) {
         if (currentSession != null) {
             List<LLMClient.Message> messages = currentSession.getChatHistory();
             if (messages != null && !messages.isEmpty()) {
@@ -1464,9 +1515,18 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     messageContainer.setOrientation(LinearLayout.VERTICAL);
                     messageContainer.setPadding(16, 12, 16, 12);
 
-                    // Make message container selectable
-                    messageContainer.setClickable(true);
-                    messageContainer.setFocusable(true);
+                    // Only make AI responses selectable
+                    boolean isAIResponse = (message.role == LLMClient.MessageRole.ASSISTANT);
+                    if (isAIResponse) {
+                        messageContainer.setClickable(true);
+                        messageContainer.setFocusable(true);
+
+                        // Set up selection behavior for AI responses only
+                        final int currentMessageIndex = messageIndex;
+                        messageContainer.setOnClickListener(v -> {
+                            selectChatEntry(currentMessageIndex, messageContainer);
+                        });
+                    }
 
                     // Add alternating background colors for visual distinction
                     boolean isEvenIndex = (messageIndex % 2 == 0);
@@ -1476,17 +1536,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     // Add rounded corners and subtle border effect
                     messageContainer.setElevation(2.0f);
 
-                    // Set up selection behavior
-                    final int currentMessageIndex = messageIndex;
-                    final int defaultBgColor = defaultBackgroundColor;
-                    messageContainer.setOnClickListener(v -> {
-                        selectChatEntry(currentMessageIndex, messageContainer, defaultBgColor);
-                    });
-
-                    // Apply selection state if this entry is currently selected
-                    if (messageIndex == selectedChatEntryIndex) {
-                        messageContainer.setBackgroundColor(0x4400FF00); // Light green selection (slightly more
-                                                                         // visible)
+                    // Apply selection state if this entry is currently selected (and it's an AI
+                    // response)
+                    if (messageIndex == selectedChatEntryIndex && isAIResponse) {
+                        messageContainer.setBackgroundColor(0x4400FF00); // Light green selection
                         selectedChatEntry = messageContainer;
                     }
 
@@ -1521,23 +1574,37 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     messageIndex++;
                 }
 
-                // Auto-select the last (most recent) entry
-                if (messages.size() > 0) {
-                    selectedChatEntryIndex = messages.size() - 1;
+                // Auto-select the last (most recent) AI response only if requested
+                if (autoSelectLast) {
+                    selectedChatEntryIndex = -1; // Reset selection
+                    for (int i = messages.size() - 1; i >= 0; i--) {
+                        if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
+                            selectedChatEntryIndex = i;
+                            break;
+                        }
+                    }
                 }
 
-                // Auto-scroll to bottom after updating chat history
-                chatHistoryContainer.post(() -> {
-                    chatHistoryContainer.fullScroll(View.FOCUS_DOWN);
-                });
+                // Update action buttons based on initial selection
+                updateActionButtonsForSelection();
+
+                // Update selection status text
+                updateSelectionStatusText();
+
+                // Auto-scroll to bottom after updating chat history only if requested
+                if (autoScroll) {
+                    chatHistoryContainer.post(() -> {
+                        chatHistoryContainer.fullScroll(View.FOCUS_DOWN);
+                    });
+                }
             }
         }
     }
 
     /**
-     * Handles selection of a chat entry
+     * Handles selection of a chat entry (AI responses only)
      */
-    private void selectChatEntry(int messageIndex, LinearLayout messageContainer, int defaultBackgroundColor) {
+    private void selectChatEntry(int messageIndex, LinearLayout messageContainer) {
         // Clear previous selection by restoring its default background
         if (selectedChatEntry != null) {
             // Calculate the default background for the previously selected entry
@@ -1551,7 +1618,79 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         selectedChatEntry = messageContainer;
         messageContainer.setBackgroundColor(0x4400FF00); // Light green selection
 
-        Log.d(TAG, "Selected chat entry: " + messageIndex);
+        Log.d(TAG, "Selected AI response at index: " + messageIndex);
+
+        // Update button states based on selected response
+        updateActionButtonsForSelection();
+
+        // Update selection status text
+        updateSelectionStatusText();
+    }
+
+    /**
+     * Updates action buttons based on the currently selected AI response
+     */
+    private void updateActionButtonsForSelection() {
+        if (selectedChatEntryIndex >= 0 && currentSession != null) {
+            List<LLMClient.Message> messages = currentSession.getChatHistory();
+            if (selectedChatEntryIndex < messages.size()) {
+                LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
+                if (selectedMessage.role == LLMClient.MessageRole.ASSISTANT) {
+                    // Extract code from the selected AI response
+                    ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
+                            .extractClojureCode(selectedMessage.content);
+
+                    // Enable/disable buttons based on whether the selected response has code
+                    boolean hasCode = result.success && result.code != null && !result.code.isEmpty();
+                    runButton.setEnabled(hasCode);
+                    thumbsUpButton.setEnabled(hasCode);
+
+                    Log.d(TAG, "Updated action buttons for selected response. Has code: " + hasCode);
+                }
+            }
+        } else {
+            // No selection, disable buttons
+            runButton.setEnabled(false);
+            thumbsUpButton.setEnabled(false);
+        }
+    }
+
+    /**
+     * Updates the selection status text to show which AI response is selected
+     */
+    private void updateSelectionStatusText() {
+        if (currentSession == null || selectionStatusText == null) {
+            return;
+        }
+
+        List<LLMClient.Message> messages = currentSession.getChatHistory();
+        if (messages == null) {
+            return;
+        }
+
+        // Count total AI responses
+        int totalAiResponses = 0;
+        int selectedResponseNumber = 0;
+
+        for (int i = 0; i < messages.size(); i++) {
+            if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
+                totalAiResponses++;
+                if (i == selectedChatEntryIndex) {
+                    selectedResponseNumber = totalAiResponses;
+                }
+            }
+        }
+
+        if (totalAiResponses == 0) {
+            selectionStatusText.setText("No AI responses available");
+            selectionStatusText.setVisibility(View.GONE);
+        } else if (selectedChatEntryIndex >= 0 && selectedResponseNumber > 0) {
+            selectionStatusText.setText("Selected AI response " + selectedResponseNumber + " of " + totalAiResponses);
+            selectionStatusText.setVisibility(View.VISIBLE);
+        } else {
+            selectionStatusText.setText("No AI response selected (" + totalAiResponses + " available)");
+            selectionStatusText.setVisibility(View.VISIBLE);
+        }
     }
 
     /**
@@ -1654,7 +1793,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     } else {
                         expandedLogcatSections.add(messageIndex);
                     }
-                    updateChatHistoryDisplay();
+                    updateChatHistoryDisplay(false, false); // Preserve selection, no auto-scroll
                 });
                 container.addView(logcatButton);
 
@@ -1722,7 +1861,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 } else {
                     expandedCodeSections.add(messageIndex);
                 }
-                updateChatHistoryDisplay();
+                updateChatHistoryDisplay(false, false); // Preserve selection, no auto-scroll
             });
 
             // Add line numbers toggle button (only show when code is expanded)
@@ -1740,7 +1879,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                 lineNumbersButton.setOnClickListener(v -> {
                     showingLineNumbers = !showingLineNumbers;
-                    updateChatHistoryDisplay();
+                    updateChatHistoryDisplay(false, false); // Preserve selection, no auto-scroll
                 });
                 codeControlsContainer.addView(lineNumbersButton);
             }
@@ -1811,7 +1950,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         }
 
         // Code is now displayed inline in chat history, just update the chat display
-        updateChatHistoryDisplay();
+        updateChatHistoryDisplay(); // Use default behavior (auto-select last, auto-scroll)
     }
 
     /**
@@ -2161,7 +2300,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         updateChatHistoryDisplay();
 
                         // Automatically run the fixed code
-                        runCurrentCode(true);
+                        runSelectedCode(true);
                     });
                 })
                 .exceptionally(throwable -> {
