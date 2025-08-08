@@ -47,12 +47,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         implements ClojureIterationManager.ExtractionErrorCallback {
     private static final String TAG = "ClojureAppDesign";
 
-    private TextView currentCodeView;
     private ScrollView chatHistoryContainer;
     private LinearLayout chatHistoryLayout;
     private EditText feedbackInput;
+    private Button paperclipButton;
     private ImageView screenshotView;
-    private TextView logcatOutput;
     private LinearLayout feedbackButtonsContainer;
     private Button thumbsUpButton;
     private Button runButton;
@@ -65,18 +64,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
     private ClojureIterationManager iterationManager;
 
-    // Add a field for the screenshots container
-    private LinearLayout screenshotsContainer;
+    // Note: screenshotsContainer removed - screenshots handled via paperclip button
 
-    // Toggle buttons for expandable sections
-    private Button codeToggleButton;
-    private Button screenshotsToggleButton;
-    private Button logcatToggleButton;
-
-    // Container views for expandable sections
-    private LinearLayout codeContainer;
-    private LinearLayout screenshotsContainerWrapper;
-    private LinearLayout logcatContainer;
+    // Note: Toggle buttons and containers removed - functionality moved to chat
+    // history
 
     // Track expansion state
     private boolean codeExpanded = false;
@@ -219,12 +210,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity
      */
     private void initializeViews() {
         // Initialize views
-        currentCodeView = findViewById(R.id.current_code_view);
         chatHistoryContainer = findViewById(R.id.chat_history_container);
         chatHistoryLayout = findViewById(R.id.chat_history_layout);
         feedbackInput = findViewById(R.id.feedback_input);
+        paperclipButton = findViewById(R.id.paperclip_button);
         screenshotView = findViewById(R.id.screenshot_view);
-        logcatOutput = findViewById(R.id.logcat_output);
+
+        // Note: currentCodeView and logcatOutput removed as they're now handled in chat
+        // history
 
         // New feedback UI
         feedbackButtonsContainer = findViewById(R.id.feedback_buttons_container);
@@ -235,14 +228,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         // Legacy buttons to maintain compatibility
         confirmSuccessButton = findViewById(R.id.confirm_success_button);
 
-        // Initialize toggle buttons and containers
-        codeToggleButton = findViewById(R.id.code_toggle_button);
-        screenshotsToggleButton = findViewById(R.id.screenshots_toggle_button);
-        logcatToggleButton = findViewById(R.id.logcat_toggle_button);
-
-        codeContainer = findViewById(R.id.code_container);
-        screenshotsContainerWrapper = findViewById(R.id.screenshots_container_wrapper);
-        logcatContainer = findViewById(R.id.logcat_container);
+        // Note: Toggle buttons and containers removed - functionality moved to chat
+        // history
 
         // Add LLM type spinner
         llmTypeSpinner = findViewById(R.id.llm_type_spinner);
@@ -326,10 +313,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         runButton.setOnClickListener(v -> runCurrentCode(false));
         cancelIterationButton.setOnClickListener(v -> cancelCurrentIteration());
 
-        // Set up toggle button listeners
-        codeToggleButton.setOnClickListener(v -> toggleCodeSection());
-        screenshotsToggleButton.setOnClickListener(v -> toggleScreenshotsSection());
-        logcatToggleButton.setOnClickListener(v -> toggleLogcatSection());
+        // Set up paperclip button for screenshot attachment
+        paperclipButton.setOnClickListener(v -> showScreenshotSelectionForChat());
+
+        // Initialize paperclip button state
+        updatePaperclipButtonState();
 
         // Legacy button listeners
         confirmSuccessButton.setOnClickListener(v -> acceptApp());
@@ -341,13 +329,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         // Make feedback input always visible for chat-like interface
         feedbackInput.setVisibility(View.VISIBLE);
 
-        // Get the screenshots container
-        screenshotsContainer = findViewById(R.id.screenshots_container);
+        // Note: screenshotsContainer no longer needed as screenshots are handled via
+        // paperclip button
 
-        // Make sure screenshots container is initially visible
-        if (screenshotsContainer != null) {
-            screenshotsContainer.setVisibility(View.VISIBLE);
-        }
+        // Note: Screenshots now handled via paperclip button in chat input
 
         // Make sure screenshot view is initially visible
         if (screenshotView != null) {
@@ -419,13 +404,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             Log.d(TAG, "Session restore: LLM type not set");
         }
 
-        // Restore logcat output if available
-        if (currentSession.getLastLogcat() != null && !currentSession.getLastLogcat().isEmpty()) {
-            logcatOutput.setText(currentSession.getLastLogcat());
-            Log.d(TAG, "Restored logcat output from session");
-
-            // Don't auto-expand the logcat section - let user choose when to view it
-        }
+        // Note: Logcat output now shown in chat history, no separate display needed
 
         // Restore latest screenshot set if available
         List<String> paths = currentSession.getLatestScreenshotSet();
@@ -495,7 +474,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         if (hasExistingCode) {
             // We have existing code, so this is feedback for improvement
             Log.d(TAG, "Submitting feedback for existing code: " + feedbackText);
-            submitFeedbackWithText(feedbackText);
+            submitFeedbackWithText(feedbackText, selectedScreenshot);
+
+            // Clear selected screenshot and reset paperclip button
+            selectedScreenshot = null;
+            paperclipButton.setText("📎");
         } else {
             // No existing code, so this is initial app description
             Log.d(TAG, "Starting new design with description: " + feedbackText);
@@ -549,6 +532,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         iterationManager = new ClojureIterationManager(this, currentSession);
         iterationManager.setExtractionErrorCallback(this);
+
+        // Update paperclip button state for new iteration manager
+        updatePaperclipButtonState();
 
         // Check if we have existing code to use as a starting point
         String initialCode = currentSession.getInitialCode();
@@ -662,8 +648,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             currentScreenshot = currentScreenshots.get(currentScreenshots.size() - 1);
         }
 
-        // Get the current logcat output
-        String logcatText = logcatOutput.getText().toString();
+        // Get the current logcat output from session
+        String logcatText = currentSession.getLastLogcat() != null ? currentSession.getLastLogcat() : "";
 
         // Disable buttons during generation
         thumbsUpButton.setEnabled(false);
@@ -814,7 +800,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         // Make sure view containers are visible
         screenshotView.setVisibility(View.VISIBLE);
-        screenshotsContainer.setVisibility(View.VISIBLE);
+        // Note: screenshotsContainer removed - handled via paperclip
 
         boolean doUpdateSession = false;
         // First check for screenshot data (existing functionality)
@@ -935,50 +921,29 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
     // New method to display multiple screenshots
     private void displayScreenshots(String[] screenshotPaths) {
-        // Clear existing screenshots
-        screenshotsContainer.removeAllViews();
+        // Screenshots are now handled via paperclip button in chat input
+        // Just save them to currentScreenshots for selection via paperclip
 
         if (screenshotPaths == null || screenshotPaths.length == 0) {
-            Log.d(TAG, "No screenshots to display");
+            Log.d(TAG, "No screenshots to save");
             return;
         }
 
-        Log.d(TAG, "Displaying " + screenshotPaths.length + " screenshots");
+        Log.d(TAG, "Saving " + screenshotPaths.length + " screenshots for paperclip selection");
 
-        // Make the container visible
-        screenshotsContainer.setVisibility(View.VISIBLE);
-
-        // Add each screenshot to the container
+        // Clear and populate current screenshots list
+        currentScreenshots.clear();
         for (String path : screenshotPaths) {
             File screenshotFile = new File(path);
             if (screenshotFile.exists()) {
-                try {
-                    // Create an ImageView for each screenshot
-                    ImageView imageView = new ImageView(this);
-                    imageView.setLayoutParams(new LinearLayout.LayoutParams(
-                            dpToPx(180), // Fixed width per screenshot
-                            LinearLayout.LayoutParams.MATCH_PARENT));
-                    imageView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-                    imageView.setPadding(dpToPx(2), dpToPx(2), dpToPx(2), dpToPx(2));
-
-                    // Load bitmap directly
-                    Bitmap bitmap = BitmapFactory.decodeFile(screenshotFile.getAbsolutePath());
-                    if (bitmap != null) {
-                        imageView.setImageBitmap(bitmap);
-                        screenshotsContainer.addView(imageView);
-
-                        Log.d(TAG, "Added screenshot " + screenshotFile.getName() +
-                                " to reel, dimensions: " + bitmap.getWidth() + "x" + bitmap.getHeight());
-                    }
-                } catch (Exception e) {
-                    Log.e(TAG, "Error displaying screenshot " + path, e);
-                }
+                currentScreenshots.add(screenshotFile);
+                Log.d(TAG, "Saved screenshot for paperclip selection: " + path);
             } else {
                 Log.e(TAG, "Screenshot file doesn't exist: " + path);
             }
         }
 
-        // Don't auto-expand the screenshots section - let user choose when to view it
+        Log.d(TAG, "Total screenshots available for selection: " + currentScreenshots.size());
     }
 
     // Helper method to convert dp to pixels
@@ -1140,8 +1105,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     iterationManager = new ClojureIterationManager(ClojureAppDesignActivity.this,
                             currentSession);
                     iterationManager.setExtractionErrorCallback(ClojureAppDesignActivity.this);
+
+                    // Update paperclip button state for new model
+                    updatePaperclipButtonState();
                 } else if (sessionRestoreModel != null && selectedModel.equals(sessionRestoreModel)) {
                     Log.d(TAG, "Skipping client creation - already using session model: " + sessionRestoreModel);
+
+                    // Still update paperclip button state in case it wasn't set before
+                    updatePaperclipButtonState();
                 }
             }
 
@@ -1332,10 +1303,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     @Override
                     public void onExit(String logcat) {
                         runOnUiThread(() -> {
-                            // Update the logcat output view if it exists
-                            if (logcatOutput != null) {
-                                logcatOutput.setText(logcat);
-                            }
+                            // Note: Logcat output now handled in chat history, no separate view
 
                             // Save logcat to session
                             if (currentSession != null && logcat != null && !logcat.isEmpty()) {
@@ -1724,11 +1692,19 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 container.addView(beforeTextView);
             }
 
+            // Create container for code controls
+            LinearLayout codeControlsContainer = new LinearLayout(this);
+            codeControlsContainer.setLayoutParams(new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            codeControlsContainer.setOrientation(LinearLayout.HORIZONTAL);
+
             // Create clickable button for code
             Button codeButton = new Button(this);
             codeButton.setLayoutParams(new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT));
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1.0f));
             codeButton.setTextAlignment(View.TEXT_ALIGNMENT_TEXT_START);
             codeButton.setBackgroundResource(android.R.color.transparent);
             codeButton.setTextColor(getResources().getColor(android.R.color.holo_blue_dark));
@@ -1748,7 +1724,29 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 }
                 updateChatHistoryDisplay();
             });
-            container.addView(codeButton);
+
+            // Add line numbers toggle button (only show when code is expanded)
+            if (expandedCodeSections.contains(messageIndex)) {
+                Button lineNumbersButton = new Button(this);
+                lineNumbersButton.setLayoutParams(new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+                lineNumbersButton.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
+                lineNumbersButton.setBackgroundResource(android.R.color.transparent);
+                lineNumbersButton.setTextColor(getResources().getColor(android.R.color.holo_blue_dark));
+                lineNumbersButton.setTextSize(12);
+                lineNumbersButton.setPadding(8, 8, 8, 8);
+                lineNumbersButton.setText(showingLineNumbers ? "🔢-" : "🔢+");
+
+                lineNumbersButton.setOnClickListener(v -> {
+                    showingLineNumbers = !showingLineNumbers;
+                    updateChatHistoryDisplay();
+                });
+                codeControlsContainer.addView(lineNumbersButton);
+            }
+
+            codeControlsContainer.addView(codeButton);
+            container.addView(codeControlsContainer);
 
             // Add code content if expanded
             if (expandedCodeSections.contains(messageIndex)) {
@@ -1760,7 +1758,22 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 codeView.setTypeface(android.graphics.Typeface.MONOSPACE);
                 codeView.setPadding(16, 8, 16, 8);
                 codeView.setBackgroundColor(getResources().getColor(android.R.color.white));
-                codeView.setText("```clojure\n" + result.code + "\n```");
+
+                // Show code with or without line numbers based on toggle
+                String displayCode;
+                if (showingLineNumbers) {
+                    // Add line numbers to the code
+                    String[] lines = result.code.split("\n");
+                    StringBuilder numberedCode = new StringBuilder();
+                    for (int i = 0; i < lines.length; i++) {
+                        numberedCode.append(String.format("%3d: %s\n", i + 1, lines[i]));
+                    }
+                    displayCode = "```clojure\n" + numberedCode.toString() + "```";
+                } else {
+                    displayCode = "```clojure\n" + result.code + "\n```";
+                }
+
+                codeView.setText(displayCode);
                 container.addView(codeView);
             }
 
@@ -1789,28 +1802,15 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     }
 
     /**
-     * Displays the code in the current DesignSession with line numbers
-     * depending on the toggle.
+     * Updates the chat history display (code now shown inline in chat)
      */
     private void displayCurrentCode() {
         if (currentSession == null || currentSession.getCurrentCode() == null) {
-            Toast.makeText(this, "No code available", Toast.LENGTH_SHORT).show();
+            Log.d(TAG, "No code available to display");
             return;
         }
 
-        if (showingLineNumbers) {
-            // Display code with line numbers
-            currentCodeView.setText(currentSession.getCodeWithLineNumbers());
-            Toast.makeText(this, "Showing code with line numbers", Toast.LENGTH_SHORT).show();
-        } else {
-            // Display regular code
-            currentCodeView.setText(currentSession.getCurrentCode());
-            Toast.makeText(this, "Showing code without line numbers", Toast.LENGTH_SHORT).show();
-        }
-
-        // Don't auto-expand the code section - let user choose when to view it
-
-        // Update chat history display
+        // Code is now displayed inline in chat history, just update the chat display
         updateChatHistoryDisplay();
     }
 
@@ -1938,44 +1938,103 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     }
 
     /**
-     * Toggles the visibility of the source code section
+     * Shows screenshot selection dialog for chat input
      */
-    private void toggleCodeSection() {
-        codeExpanded = !codeExpanded;
-        if (codeExpanded) {
-            codeContainer.setVisibility(View.VISIBLE);
-            codeToggleButton.setText(R.string.hide_source_code);
-        } else {
-            codeContainer.setVisibility(View.GONE);
-            codeToggleButton.setText(R.string.show_source_code);
+    private void showScreenshotSelectionForChat() {
+        // Check if current model supports images
+        boolean isMultimodal = false;
+        if (iterationManager != null) {
+            LLMClient.ModelProperties props = iterationManager.getModelProperties();
+            isMultimodal = props != null && props.isMultimodal;
         }
+
+        if (!isMultimodal) {
+            Toast.makeText(this, "Current model does not support images. Please select a multimodal model.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        if (currentScreenshots.isEmpty()) {
+            Toast.makeText(this, "No screenshots available", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Select Screenshot to Attach");
+
+        // Create a horizontal scrollable layout for screenshots
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.HORIZONTAL);
+        container.setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16));
+
+        // Create the dialog first so we can reference it in the click listeners
+        final AlertDialog[] dialogRef = new AlertDialog[1];
+
+        for (int i = 0; i < currentScreenshots.size(); i++) {
+            File screenshot = currentScreenshots.get(i);
+            final int index = i;
+
+            ImageView imageView = new ImageView(this);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    dpToPx(100), dpToPx(150));
+            params.setMargins(dpToPx(8), 0, dpToPx(8), 0);
+            imageView.setLayoutParams(params);
+            imageView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            imageView.setBackgroundResource(android.R.drawable.btn_default);
+
+            try {
+                Bitmap bitmap = BitmapFactory.decodeFile(screenshot.getAbsolutePath());
+                if (bitmap != null) {
+                    imageView.setImageBitmap(bitmap);
+                } else {
+                    imageView.setImageResource(android.R.drawable.ic_menu_gallery);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error loading screenshot: " + screenshot.getAbsolutePath(), e);
+                imageView.setImageResource(android.R.drawable.ic_menu_gallery);
+            }
+
+            imageView.setOnClickListener(v -> {
+                selectedScreenshot = screenshot;
+                paperclipButton.setText("📎✓"); // Visual feedback that screenshot is selected
+                dialogRef[0].dismiss();
+                Toast.makeText(this, "Screenshot selected for next message", Toast.LENGTH_SHORT).show();
+            });
+
+            container.addView(imageView);
+        }
+
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.addView(container);
+        builder.setView(scrollView);
+        builder.setNegativeButton("Cancel", (d, which) -> d.dismiss());
+
+        dialogRef[0] = builder.create();
+        dialogRef[0].show();
     }
 
     /**
-     * Toggles the visibility of the screenshots section
+     * Updates the paperclip button state based on current model's multimodal
+     * capability
      */
-    private void toggleScreenshotsSection() {
-        screenshotsExpanded = !screenshotsExpanded;
-        if (screenshotsExpanded) {
-            screenshotsContainerWrapper.setVisibility(View.VISIBLE);
-            screenshotsToggleButton.setText(R.string.hide_app_preview);
-        } else {
-            screenshotsContainerWrapper.setVisibility(View.GONE);
-            screenshotsToggleButton.setText(R.string.show_app_preview);
+    private void updatePaperclipButtonState() {
+        boolean isMultimodal = false;
+        if (iterationManager != null) {
+            LLMClient.ModelProperties props = iterationManager.getModelProperties();
+            isMultimodal = props != null && props.isMultimodal;
         }
-    }
 
-    /**
-     * Toggles the visibility of the logcat section
-     */
-    private void toggleLogcatSection() {
-        logcatExpanded = !logcatExpanded;
-        if (logcatExpanded) {
-            logcatContainer.setVisibility(View.VISIBLE);
-            logcatToggleButton.setText(R.string.hide_logcat_output);
+        if (isMultimodal) {
+            paperclipButton.setEnabled(true);
+            paperclipButton.setTextColor(0xFF666666); // Dark gray when enabled
+            paperclipButton.setAlpha(1.0f);
         } else {
-            logcatContainer.setVisibility(View.GONE);
-            logcatToggleButton.setText(R.string.show_logcat_output);
+            paperclipButton.setEnabled(false);
+            paperclipButton.setTextColor(0xFFCCCCCC); // Light gray when disabled
+            paperclipButton.setAlpha(0.5f);
+            // Clear any selected screenshot since we can't use it
+            selectedScreenshot = null;
+            paperclipButton.setText("📎");
         }
     }
 
@@ -2049,8 +2108,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             currentScreenshot = currentScreenshots.get(currentScreenshots.size() - 1);
         }
 
-        // Get the current logcat output
-        String logcatText = logcatOutput.getText().toString();
+        // Get the current logcat output from session
+        String logcatText = currentSession.getLastLogcat() != null ? currentSession.getLastLogcat() : "";
 
         // Create an IterationResult with the current state
         ClojureIterationManager.IterationResult result = new ClojureIterationManager.IterationResult(

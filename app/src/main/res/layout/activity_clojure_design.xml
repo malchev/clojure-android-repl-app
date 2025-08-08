@@ -49,6 +49,16 @@
             android:layout_marginEnd="8dp" />
 
         <Button
+            android:id="@+id/paperclip_button"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:text="📎"
+            android:textSize="16sp"
+            android:textColor="#666666"
+            android:background="@android:color/transparent"
+            android:layout_marginEnd="8dp" />
+
+        <Button
             android:id="@+id/submit_feedback_button"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -61,115 +71,7 @@
 
     </LinearLayout>
 
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1">
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
-
-            <!-- Source Code Section -->
-            <Button
-                android:id="@+id/code_toggle_button"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/show_source_code"
-                android:textAlignment="textStart"
-                android:background="@android:color/transparent"
-                android:textColor="#2196F3"
-                android:layout_marginTop="16dp"
-                android:padding="12dp" />
-
-            <LinearLayout
-                android:id="@+id/code_container"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <TextView
-                    android:id="@+id/current_code_view"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="monospace"
-                    android:textSize="12sp"
-                    android:textColor="#000000"
-                    android:background="#f5f5f5"
-                    android:padding="8dp" />
-
-            </LinearLayout>
-
-            <!-- Screenshots Section -->
-            <Button
-                android:id="@+id/screenshots_toggle_button"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/show_app_preview"
-                android:textAlignment="textStart"
-                android:background="@android:color/transparent"
-                android:textColor="#2196F3"
-                android:layout_marginTop="16dp"
-                android:padding="12dp" />
-
-            <LinearLayout
-                android:id="@+id/screenshots_container_wrapper"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <HorizontalScrollView
-                    android:layout_width="match_parent"
-                    android:layout_height="200dp"
-                    android:background="#eaeaea">
-
-                    <LinearLayout
-                        android:id="@+id/screenshots_container"
-                        android:layout_width="wrap_content"
-                        android:layout_height="match_parent"
-                        android:orientation="horizontal"
-                        android:padding="2dp"/>
-
-                </HorizontalScrollView>
-
-            </LinearLayout>
-
-            <!-- Logcat Section -->
-            <Button
-                android:id="@+id/logcat_toggle_button"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/show_logcat_output"
-                android:textAlignment="textStart"
-                android:background="@android:color/transparent"
-                android:textColor="#2196F3"
-                android:layout_marginTop="16dp"
-                android:padding="12dp" />
-
-            <LinearLayout
-                android:id="@+id/logcat_container"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <TextView
-                    android:id="@+id/logcat_output"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="monospace"
-                    android:textSize="10sp"
-                    android:textColor="#000000"
-                    android:background="#f5f5f5"
-                    android:padding="8dp" />
-
-            </LinearLayout>
-
-        </LinearLayout>
-    </ScrollView>
 
     <!-- Feedback buttons container -->
     <LinearLayout
