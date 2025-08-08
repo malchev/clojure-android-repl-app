@@ -6,15 +6,7 @@
     android:padding="16dp"
     android:background="#FFFFFF">
 
-    <EditText
-        android:id="@+id/app_description_input"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Describe the app you want to create"
-        android:minLines="2"
-        android:textColor="#000000"
-        android:textColorHint="#808080"
-        android:inputType="textMultiLine" />
+
 
     <ScrollView
         android:id="@+id/chat_history_container"
@@ -33,11 +25,41 @@
 
     </ScrollView>
 
-    <Button
-        android:id="@+id/generate_button"
+    <!-- Chat input area at the bottom -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/generate_app" />
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp"
+        android:background="#f8f8f8"
+        android:padding="8dp">
+
+        <EditText
+            android:id="@+id/feedback_input"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="Type your message here..."
+            android:minLines="1"
+            android:maxLines="4"
+            android:inputType="textMultiLine|textCapSentences"
+            android:background="@android:drawable/edit_text"
+            android:padding="12dp"
+            android:textSize="14sp"
+            android:layout_marginEnd="8dp" />
+
+        <Button
+            android:id="@+id/submit_feedback_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Send"
+            android:textSize="14sp"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#2196F3"
+            android:minWidth="60dp"
+            android:padding="12dp" />
+
+    </LinearLayout>
 
     <ScrollView
         android:layout_width="match_parent"
@@ -149,16 +171,6 @@
         </LinearLayout>
     </ScrollView>
 
-    <!-- Hidden by default, shown after app is generated -->
-    <EditText
-        android:id="@+id/feedback_input"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Enter feedback for improvement"
-        android:minLines="2"
-        android:visibility="gone"
-        android:inputType="textMultiLine" />
-
     <!-- Feedback buttons container -->
     <LinearLayout
         android:id="@+id/feedback_buttons_container"
@@ -206,13 +218,6 @@
     </LinearLayout>
 
     <!-- Legacy buttons to be removed later -->
-    <Button
-        android:id="@+id/submit_feedback_button"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Submit Feedback"
-        android:visibility="gone" />
-
     <Button
         android:id="@+id/confirm_success_button"
         android:layout_width="match_parent"

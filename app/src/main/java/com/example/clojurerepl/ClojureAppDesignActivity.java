@@ -35,7 +35,7 @@ import android.content.ComponentName;
 import android.text.InputType;
 import android.text.method.LinkMovementMethod;
 import android.view.ViewGroup;
-
+import android.widget.ListView;
 import com.example.clojurerepl.session.DesignSession;
 import com.example.clojurerepl.session.SessionManager;
 import android.widget.ScrollView;
@@ -47,8 +47,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         implements ClojureIterationManager.ExtractionErrorCallback {
     private static final String TAG = "ClojureAppDesign";
 
-    private EditText appDescriptionInput;
-    private Button generateButton;
     private TextView currentCodeView;
     private ScrollView chatHistoryContainer;
     private LinearLayout chatHistoryLayout;
@@ -60,7 +58,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     private Button runButton;
 
     // Legacy buttons
-    private Button submitFeedbackButton;
     private Button confirmSuccessButton;
 
     // Add a field for the clear chat history button
@@ -218,8 +215,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
      */
     private void initializeViews() {
         // Initialize views
-        appDescriptionInput = findViewById(R.id.app_description_input);
-        generateButton = findViewById(R.id.generate_button);
         currentCodeView = findViewById(R.id.current_code_view);
         chatHistoryContainer = findViewById(R.id.chat_history_container);
         chatHistoryLayout = findViewById(R.id.chat_history_layout);
@@ -234,7 +229,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         cancelIterationButton = findViewById(R.id.cancel_iteration_button);
 
         // Legacy buttons to maintain compatibility
-        submitFeedbackButton = findViewById(R.id.submit_feedback_button);
         confirmSuccessButton = findViewById(R.id.confirm_success_button);
 
         // Initialize toggle buttons and containers
@@ -322,7 +316,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         llmSpinner.setVisibility(View.VISIBLE);
 
         // Set up click listeners
-        generateButton.setOnClickListener(v -> handleGenerateButtonClick());
+        Button submitFeedbackButton = findViewById(R.id.submit_feedback_button);
+        submitFeedbackButton.setOnClickListener(v -> handleSubmitFeedbackClick());
         thumbsUpButton.setOnClickListener(v -> acceptApp());
         runButton.setOnClickListener(v -> runCurrentCode(false));
         cancelIterationButton.setOnClickListener(v -> cancelCurrentIteration());
@@ -333,19 +328,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         logcatToggleButton.setOnClickListener(v -> toggleLogcatSection());
 
         // Legacy button listeners
-        submitFeedbackButton.setOnClickListener(v -> {
-            String feedback = feedbackInput.getText().toString();
-            if (feedback.isEmpty()) {
-                feedbackInput.setError("Please enter feedback");
-                return;
-            }
-            submitFeedbackWithText(feedback);
-        });
         confirmSuccessButton.setOnClickListener(v -> acceptApp());
 
         // Hide feedback buttons initially - they should only be visible after
         // generation
         feedbackButtonsContainer.setVisibility(View.GONE);
+
+        // Make feedback input always visible for chat-like interface
+        feedbackInput.setVisibility(View.VISIBLE);
 
         // Get the screenshots container
         screenshotsContainer = findViewById(R.id.screenshots_container);
@@ -360,10 +350,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             screenshotView.setVisibility(View.VISIBLE);
         }
 
-        appDescriptionInput.setText(currentSession.getDescription());
-
-        // Enable the description input field for new sessions
-        appDescriptionInput.setEnabled(true);
     }
 
     /**
@@ -381,7 +367,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     ", llmType=" + (currentSession.getLlmType() != null ? currentSession.getLlmType() : "null") +
                     ", llmModel=" + (currentSession.getLlmModel() != null ? currentSession.getLlmModel() : "null"));
 
-            appDescriptionInput.setText(currentSession.getDescription());
+            // Pre-populate the feedback input with the session description only for
+            // completely new sessions
+            if (currentSession.getCurrentCode() == null && currentSession.getInitialCode() == null) {
+                feedbackInput.setText(currentSession.getDescription());
+                // Select all text so user can easily delete or modify it
+                feedbackInput.setSelection(0, currentSession.getDescription().length());
+            }
 
             if (currentSession.getCurrentCode() != null) {
                 String currentCode = currentSession.getCurrentCode();
@@ -393,26 +385,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 thumbsUpButton.setVisibility(View.VISIBLE);
                 runButton.setVisibility(View.VISIBLE);
 
-                // Update generate button text for iteration
-                generateButton.setText(R.string.improve_app);
-
-                // Disable the description input field since we already have code
-                appDescriptionInput.setEnabled(false);
-
                 // Show chat history
-                appDescriptionInput.setVisibility(View.GONE);
                 chatHistoryContainer.setVisibility(View.VISIBLE);
                 updateChatHistoryDisplay();
-            } else {
-                // We have a session but no current code yet - keep description input enabled
-                // This handles the case where we have initial code from MainActivity but
-                // haven't started generation
-                appDescriptionInput.setEnabled(true);
             }
-        } else {
-            // No session or no description - keep description input enabled for new
-            // sessions
-            appDescriptionInput.setEnabled(true);
         }
 
         // Set the LLM type and model in the UI if they exist
@@ -495,47 +471,43 @@ public class ClojureAppDesignActivity extends AppCompatActivity
      * - Initial click: generates the first version
      * - Subsequent clicks: shows feedback dialog for iteration
      */
-    private void handleGenerateButtonClick() {
-        // Always get the latest description text from the input field
-        String currentDescriptionText = appDescriptionInput.getText().toString().trim();
-        String currentDescription = currentSession.getDescription();
-        if (!currentDescriptionText.isEmpty() && !currentDescriptionText.equals(currentDescription)) {
-            Log.d(TAG, "Description updated from: '" + currentDescription + "' to: '" + currentDescriptionText + "'");
-            // Update the session if it exists
-            assert currentSession != null;
-            currentSession.setDescription(currentDescriptionText);
-            sessionManager.updateSession(currentSession);
-        }
+    private void handleSubmitFeedbackClick() {
+        // Get the feedback text from the input field
+        String feedbackText = feedbackInput.getText().toString().trim();
 
-        String initialCode = currentSession.getInitialCode();
-        String currentCode = currentSession.getCurrentCode();
-
-        // Log the current state for debugging
-        Log.d(TAG, "handleGenerateButtonClick: currentCode=" +
-                (currentCode != null ? "present (len=" + currentCode.length() + ")" : "null") +
-                ", initialCode=" + (initialCode != null ? "present (len=" + initialCode.length() + ")" : "null"));
-
-        assert currentSession != null;
-        assert currentSession.getIterationCount() >= 0;
-        // If this is the first iteration, you can't have currentCode (though you can
-        // have initialCode)
-        assert currentSession.getIterationCount() > 0 || currentCode == null;
-
-        // If we already have code generated and generation has started, show the
-        // feedback dialog
-        if (currentCode != null && !currentCode.isEmpty() && currentSession.getIterationCount() > 0) {
-            Log.d(TAG, "Showing feedback dialog for existing code");
-            showFeedbackDialog();
+        if (feedbackText.isEmpty()) {
+            feedbackInput.setError("Please enter some text");
             return;
         }
 
-        // Start a new design (potentially with initial code).
-        startNewDesign();
+        // Clear the input field
+        feedbackInput.setText("");
+
+        // Check if we have existing code and iteration to provide feedback on
+        String currentCode = currentSession.getCurrentCode();
+        boolean hasExistingCode = currentCode != null && !currentCode.isEmpty()
+                && currentSession.getIterationCount() > 0;
+
+        if (hasExistingCode) {
+            // We have existing code, so this is feedback for improvement
+            Log.d(TAG, "Submitting feedback for existing code: " + feedbackText);
+            submitFeedbackWithText(feedbackText);
+        } else {
+            // No existing code, so this is initial app description
+            Log.d(TAG, "Starting new design with description: " + feedbackText);
+
+            // Update the session description
+            currentSession.setDescription(feedbackText);
+            sessionManager.updateSession(currentSession);
+
+            // Start a new design
+            startNewDesign();
+        }
     }
 
     private void startNewDesign() {
-        String description = appDescriptionInput.getText().toString();
-        if (description.isEmpty()) {
+        String description = currentSession.getDescription();
+        if (description == null || description.isEmpty()) {
             Toast.makeText(this, "Please enter a description", Toast.LENGTH_SHORT).show();
             return;
         }
@@ -561,7 +533,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 "║         STARTING NEW APP DESIGN           ║\n" +
                 "╚═══════════════════════════════════════════╝");
 
-        generateButton.setEnabled(false);
+        // Disable the submit button during generation
+        Button submitFeedbackButton = findViewById(R.id.submit_feedback_button);
+        submitFeedbackButton.setEnabled(false);
 
         if (iterationManager != null) {
             Log.d(TAG, "Shutting down existing iterationManager before creating a new one");
@@ -603,14 +577,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         thumbsUpButton.setVisibility(View.VISIBLE);
                         runButton.setVisibility(View.VISIBLE);
 
-                        // Change generate button text to "Improve App" for subsequent clicks
-                        generateButton.setText(R.string.improve_app);
-
-                        // Disable the description input field after first generation
-                        appDescriptionInput.setEnabled(false);
-
                         // Show chat history
-                        appDescriptionInput.setVisibility(View.GONE);
                         chatHistoryContainer.setVisibility(View.VISIBLE);
                         updateChatHistoryDisplay();
 
@@ -619,7 +586,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                             runCurrentCode(true);
                         }
 
-                        generateButton.setEnabled(true);
+                        // Re-enable the submit button
+                        submitFeedbackButton.setEnabled(true);
                     });
                 })
                 .exceptionally(throwable -> {
@@ -630,7 +598,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                         showLLMErrorDialog("Code Generation Error",
                                 "Error generating code: " + throwable.getMessage());
-                        generateButton.setEnabled(true);
+                        submitFeedbackButton.setEnabled(true);
                     });
                     return null;
                 });
@@ -660,21 +628,19 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             return;
         }
 
+        // Get the submit feedback button reference
+        Button submitFeedbackButton = findViewById(R.id.submit_feedback_button);
+
         // Make sure buttons are enabled
         thumbsUpButton.setEnabled(true);
         runButton.setEnabled(true);
-        generateButton.setEnabled(true);
+        submitFeedbackButton.setEnabled(true);
 
         // Ensure we have a valid description
         String currentDescription = currentSession.getDescription();
         if (currentDescription == null || currentDescription.isEmpty()) {
-            currentDescription = appDescriptionInput.getText().toString();
-            if (currentDescription.isEmpty()) {
-                Toast.makeText(this, "Please enter a description", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            currentSession.setDescription(currentDescription);
-            sessionManager.updateSession(currentSession);
+            Toast.makeText(this, "No description available. Please start a new session.", Toast.LENGTH_SHORT).show();
+            return;
         }
 
         assert iterationManager != null : "iterationManager should not be null";
@@ -698,7 +664,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         // Disable buttons during generation
         thumbsUpButton.setEnabled(false);
         runButton.setEnabled(false);
-        generateButton.setEnabled(false); // Also disable the generate button
+        submitFeedbackButton.setEnabled(false);
 
         // Show a progress dialog
         ProgressDialog progressDialog = new ProgressDialog(this);
@@ -735,7 +701,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         // Make sure buttons are enabled after response
                         thumbsUpButton.setEnabled(true);
                         runButton.setEnabled(true);
-                        generateButton.setEnabled(true); // Re-enable the generate button
+                        submitFeedbackButton.setEnabled(true);
 
                         // Update chat history
                         updateChatHistoryDisplay();
@@ -756,7 +722,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                             // Make sure buttons are enabled after cancellation
                             thumbsUpButton.setEnabled(true);
                             runButton.setEnabled(true);
-                            generateButton.setEnabled(true);
+                            submitFeedbackButton.setEnabled(true);
                         });
                         return null;
                     }
@@ -772,7 +738,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         // Make sure buttons are enabled on error
                         thumbsUpButton.setEnabled(true);
                         runButton.setEnabled(true);
-                        generateButton.setEnabled(true); // Re-enable the generate button
+                        submitFeedbackButton.setEnabled(true);
                     });
                     return null;
                 });
@@ -838,8 +804,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         super.onNewIntent(intent);
         Log.d(TAG, "onNewIntent called with intent: " + intent);
 
-        // Ensure generate button is enabled when returning from RenderActivity
-        generateButton.setEnabled(true);
+        // Ensure submit button is enabled when returning from RenderActivity
+        Button submitFeedbackButton = findViewById(R.id.submit_feedback_button);
+        submitFeedbackButton.setEnabled(true);
 
         // Make sure view containers are visible
         screenshotView.setVisibility(View.VISIBLE);
@@ -908,14 +875,19 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 Log.d(TAG, "Auto-iterating on error");
                 startAutomaticIteration(errorFeedback);
             } else {
-                // Show the feedback dialog
-                showFeedbackDialog();
+                // Note: showFeedbackDialog() removed - feedback is now handled through the chat
+                // input
             }
         } else {
             Log.d(TAG, "RenderActivity returned with no error status");
             currentSession.setLastErrorFeedback(null);
             currentSession.setHasError(false);
             doUpdateSession = true;
+
+            // Clear the input field since there's no error
+            if (feedbackInput != null) {
+                feedbackInput.setText("");
+            }
         }
 
         if (doUpdateSession) {
@@ -1002,6 +974,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             }
         }
 
+        w
         // Don't auto-expand the screenshots section - let user choose when to view it
     }
 
@@ -1434,84 +1407,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     /**
      * Shows the feedback dialog, optionally with pre-filled error text
      */
-    private void showFeedbackDialog() {
-        // Add extra logging to diagnose the issue
-        Log.d(TAG, "showFeedbackDialog called, iterationManager=" + (iterationManager != null ? "present" : "null"));
-
-        // Store in a final variable for lambda usage
-        final String finalFeedback = currentSession.getLastErrorFeedback();
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Provide Feedback");
-
-        // Build dialog with simplified layout
-        View dialogView = getLayoutInflater().inflate(R.layout.dialog_feedback_simple, null);
-        EditText feedbackInput = dialogView.findViewById(R.id.feedback_input);
-
-        // Pre-populate with error feedback if available
-        boolean hasFeedback = finalFeedback != null && !finalFeedback.isEmpty();
-        if (hasFeedback) {
-            // Include the visually distinctive error text as-is
-            feedbackInput.setText(finalFeedback);
-            // Position cursor at the end for easy editing
-            feedbackInput.setSelection(finalFeedback.length());
-        }
-
-        // Set up screenshot checkbox
-        CheckBox screenshotCheckbox = dialogView.findViewById(R.id.include_screenshot_checkbox);
-
-        // Check if current model is multimodal
-        boolean isMultimodal = false;
-        if (iterationManager != null) {
-            LLMClient.ModelProperties props = iterationManager.getModelProperties();
-            isMultimodal = props != null && props.isMultimodal;
-        }
-
-        // Enable/disable checkbox based on multimodal capability
-        screenshotCheckbox.setEnabled(isMultimodal && !currentScreenshots.isEmpty());
-
-        // Set up checkbox listener
-        screenshotCheckbox.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (isChecked) {
-                showScreenshotSelectionDialog(screenshotCheckbox);
-            } else {
-                selectedScreenshot = null;
-            }
-        });
-
-        // Set up dialog
-        builder.setView(dialogView);
-        builder.setPositiveButton("Submit", null); // We'll override this below
-        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.dismiss());
-
-        // Create and show dialog
-        final AlertDialog dialog = builder.create();
-        dialog.show();
-
-        // Override the positive button to handle submission
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            String feedback = feedbackInput.getText().toString().trim();
-
-            if (feedback.isEmpty()) {
-                Toast.makeText(this, "Please enter some feedback", Toast.LENGTH_SHORT).show();
-                return;
-            }
-
-            // We need to check if iterationManager is null here to avoid NPE
-            if (iterationManager == null) {
-                dialog.dismiss();
-                // Show a toast message informing user to select an AI model
-                Toast.makeText(this,
-                        "Feedback saved. Please select an AI model first, then click 'Improve App' again.",
-                        Toast.LENGTH_LONG).show();
-                return;
-            }
-
-            // Submit the feedback
-            submitFeedbackWithText(feedback);
-            dialog.dismiss();
-        });
-    }
 
     /**
      * Clears the chat history for the current LLM client session and reinitializes
@@ -1567,34 +1462,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     @Override
     protected void onPause() {
         super.onPause();
-
-        // Save the current description in case it was edited
-        if (currentSession != null && appDescriptionInput != null) {
-            String updatedDescription = appDescriptionInput.getText().toString().trim();
-            if (!updatedDescription.isEmpty() &&
-                    (currentSession.getDescription() == null ||
-                            !updatedDescription.equals(currentSession.getDescription()))) {
-
-                Log.d(TAG, "Saving updated description before exiting: " + updatedDescription);
-                currentSession.setDescription(updatedDescription);
-                sessionManager.updateSession(currentSession);
-            }
-        }
+        // Note: Description is now managed through chat input and saved when submitted
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-
-        // Ensure the description field matches the session if it exists
-        if (currentSession != null && appDescriptionInput != null && currentSession.getDescription() != null) {
-            // Only update if they're different to avoid resetting cursor position
-            String currentText = appDescriptionInput.getText().toString().trim();
-            if (!currentText.equals(currentSession.getDescription())) {
-                Log.d(TAG, "Updating description field to match session on resume");
-                appDescriptionInput.setText(currentSession.getDescription());
-            }
-        }
+        // Note: Description is now managed through chat input
     }
 
     /**
@@ -1916,7 +1790,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     public void onExtractionError(String errorMessage) {
         runOnUiThread(() -> {
             // Re-enable buttons since the operation was cancelled
-            generateButton.setEnabled(true);
+            Button submitFeedbackButton = findViewById(R.id.submit_feedback_button);
+            submitFeedbackButton.setEnabled(true);
             thumbsUpButton.setEnabled(true);
             runButton.setEnabled(true);
 
@@ -2054,7 +1929,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         if (iterationManager == null) {
             Log.w(TAG, "No iteration manager available for automatic iteration");
-            showFeedbackDialog();
+            // Note: showFeedbackDialog() removed - feedback is now handled through the chat
+            // input
             return;
         }
 
@@ -2103,7 +1979,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         runButton.setVisibility(View.GONE);
 
         // Disable other buttons during iteration
-        generateButton.setEnabled(false);
+        Button submitFeedbackButton = findViewById(R.id.submit_feedback_button);
+        submitFeedbackButton.setEnabled(false);
 
         // Get the current screenshot if any
         File currentScreenshot = null;
@@ -2139,6 +2016,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         assert currentSession != null;
 
                         currentSession.setCurrentCode(code);
+
+                        // Clear error state since automatic iteration succeeded
+                        currentSession.setLastErrorFeedback(null);
+                        currentSession.setHasError(false);
+
                         sessionManager.updateSession(currentSession);
 
                         displayCurrentCode();
@@ -2148,7 +2030,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         cancelIterationButton.setVisibility(View.GONE);
                         thumbsUpButton.setVisibility(View.VISIBLE);
                         runButton.setVisibility(View.VISIBLE);
-                        generateButton.setEnabled(true);
+                        submitFeedbackButton.setEnabled(true);
+
+                        // Clear the input field since the error was automatically fixed
+                        if (feedbackInput != null) {
+                            feedbackInput.setText("");
+                        }
 
                         // Update chat history
                         updateChatHistoryDisplay();
@@ -2175,11 +2062,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                             cancelIterationButton.setVisibility(View.GONE);
                             thumbsUpButton.setVisibility(View.VISIBLE);
                             runButton.setVisibility(View.VISIBLE);
-                            generateButton.setEnabled(true);
+                            submitFeedbackButton.setEnabled(true);
 
                             // Show feedback dialog for manual feedback since automatic iteration was
                             // cancelled
-                            showFeedbackDialog();
+                            // Note: showFeedbackDialog() removed - feedback is now handled through the chat
+                            // input
                         });
                         return null;
                     }
@@ -2198,7 +2086,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         cancelIterationButton.setVisibility(View.GONE);
                         thumbsUpButton.setVisibility(View.VISIBLE);
                         runButton.setVisibility(View.VISIBLE);
-                        generateButton.setEnabled(true);
+                        submitFeedbackButton.setEnabled(true);
 
                         showLLMErrorDialog("Automatic Iteration Error",
                                 "Error during automatic iteration: " + throwable.getMessage());
@@ -2235,10 +2123,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         cancelIterationButton.setVisibility(View.GONE);
         thumbsUpButton.setVisibility(View.VISIBLE);
         runButton.setVisibility(View.VISIBLE);
-        generateButton.setEnabled(true);
+        Button submitFeedbackButton = findViewById(R.id.submit_feedback_button);
+        submitFeedbackButton.setEnabled(true);
 
-        // Show feedback dialog for manual feedback
-        showFeedbackDialog();
+        // Note: showFeedbackDialog() removed - feedback is now handled through the chat
+        // input
 
         Toast.makeText(this, "Iteration cancelled", Toast.LENGTH_SHORT).show();
     }
