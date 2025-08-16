@@ -634,15 +634,26 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         String currentDescription = currentSession.getDescription();
         if (currentDescription == null || currentDescription.isEmpty()) {
             Toast.makeText(this, "No description available. Please start a new session.", Toast.LENGTH_SHORT).show();
+            // Keep the text in the input field by restoring it
+            feedbackInput.setText(feedback);
             return;
         }
 
-        assert iterationManager != null : "iterationManager should not be null";
+        // Check if iterationManager is available
+        if (iterationManager == null) {
+            Toast.makeText(this, "No iteration manager available. Please select a model first.", Toast.LENGTH_SHORT)
+                    .show();
+            // Keep the text in the input field by restoring it
+            feedbackInput.setText(feedback);
+            return;
+        }
 
         // Ensure we have current code
         String currentCode = currentSession.getCurrentCode();
         if (currentCode == null || currentCode.isEmpty()) {
             Toast.makeText(this, "No code to improve. Please generate initial code first.", Toast.LENGTH_SHORT).show();
+            // Keep the text in the input field by restoring it
+            feedbackInput.setText(feedback);
             return;
         }
 
