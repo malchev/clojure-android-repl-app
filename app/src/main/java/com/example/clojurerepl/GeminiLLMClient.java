@@ -573,7 +573,10 @@ public class GeminiLLMClient extends LLMClient {
 
         Log.d(TAG, "Generating initial code for description: " + description);
 
-        ChatSession chatSession = preparePromptForInitialCode(sessionId, description);
+        // Queue system prompt and format initial prompt
+        chatSession.queueSystemPrompt(getSystemPrompt());
+        String prompt = formatInitialPrompt(description, null);
+        chatSession.queueUserMessage(prompt, null, null, null);
 
         // Send all messages and get the response
         CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
@@ -609,8 +612,10 @@ public class GeminiLLMClient extends LLMClient {
         Log.d(TAG, "Generating initial code for description: " + description +
                 ", using initial code: " + (initialCode != null ? "yes" : "no"));
 
-        // Use the overloaded method that accepts initial code
-        ChatSession chatSession = preparePromptForInitialCode(sessionId, description, initialCode);
+        // Queue system prompt and format initial prompt with existing code as base
+        chatSession.queueSystemPrompt(getSystemPrompt());
+        String prompt = formatInitialPrompt(description, initialCode);
+        chatSession.queueUserMessage(prompt, null, null, initialCode);
 
         // Send all messages and get the response
         CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();

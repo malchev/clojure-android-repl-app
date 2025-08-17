@@ -174,11 +174,14 @@ public class ClaudeLLMClient extends LLMClient {
                             ? (description.length() > 50 ? description.substring(0, 50) + "..." : description)
                             : "null"));
 
-            ChatSession session = preparePromptForInitialCode(sessionId, description);
+            // Queue system prompt and format initial prompt
+            chatSession.queueSystemPrompt(getSystemPrompt());
+            String prompt = formatInitialPrompt(description, null);
+            chatSession.queueUserMessage(prompt, null, null, null);
             Log.d(TAG, "DEBUG: Created chat session, about to send messages to Claude API");
 
             CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
-            sendMessages(session).handle((response, ex) -> {
+            sendMessages(chatSession).handle((response, ex) -> {
                 if (ex != null) {
                     // Check if this is a cancellation exception, which is expected behavior
                     if (ex instanceof CancellationException ||
@@ -222,11 +225,14 @@ public class ClaudeLLMClient extends LLMClient {
                             ? (description.length() > 50 ? description.substring(0, 50) + "..." : description)
                             : "null"));
 
-            ChatSession session = preparePromptForInitialCode(sessionId, description, initialCode);
+            // Queue system prompt and format initial prompt
+            chatSession.queueSystemPrompt(getSystemPrompt());
+            String prompt = formatInitialPrompt(description, initialCode);
+            chatSession.queueUserMessage(prompt, null, null, initialCode);
             Log.d(TAG, "DEBUG: Created chat session with template, about to send messages to Claude API");
 
             CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
-            sendMessages(session).handle((response, ex) -> {
+            sendMessages(chatSession).handle((response, ex) -> {
                 if (ex != null) {
                     // Check if this is a cancellation exception, which is expected behavior
                     if (ex instanceof CancellationException ||

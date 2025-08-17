@@ -101,8 +101,10 @@ public class StubLLMClient extends LLMClient {
     public CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description) {
         Log.d(TAG, "Generating initial code for description: " + description + " using stub client");
 
-        // Prepare the prompt for initial code generation
-        preparePromptForInitialCode(sessionId, description);
+        // Queue system prompt and format initial prompt
+        chatSession.queueSystemPrompt(getSystemPrompt());
+        String prompt = formatInitialPrompt(description, null);
+        chatSession.queueUserMessage(prompt, null, null, null);
 
         // Send all messages and get the response
         return sendMessages(chatSession);
@@ -114,8 +116,10 @@ public class StubLLMClient extends LLMClient {
         Log.d(TAG, "Generating initial code for description: " + description +
                 " using stub client, with initial code: " + (initialCode != null ? "yes" : "no"));
 
-        // Prepare the prompt for initial code generation
-        preparePromptForInitialCode(sessionId, description, initialCode);
+        // Queue system prompt and format initial prompt with existing code as base
+        chatSession.queueSystemPrompt(getSystemPrompt());
+        String prompt = formatInitialPrompt(description, initialCode);
+        chatSession.queueUserMessage(prompt, null, null, initialCode);
 
         // Send all messages and get the response
         return sendMessages(chatSession);

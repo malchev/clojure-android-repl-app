@@ -297,7 +297,10 @@ public class OpenAIChatClient extends LLMClient {
         Log.d(TAG, "│         GENERATING INITIAL CODE           │");
         Log.d(TAG, "└───────────────────────────────────────────┘");
 
-        preparePromptForInitialCode(sessionId, description);
+        // Queue system prompt and format initial prompt
+        chatSession.queueSystemPrompt(getSystemPrompt());
+        String prompt = formatInitialPrompt(description, null);
+        chatSession.queueUserMessage(prompt, null, null, null);
         CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
         sendMessages(chatSession)
                 .thenAccept(response -> {
@@ -328,7 +331,10 @@ public class OpenAIChatClient extends LLMClient {
         Log.d(TAG, "│       WITH EXISTING CODE AS BASE          │");
         Log.d(TAG, "└───────────────────────────────────────────┘");
 
-        preparePromptForInitialCode(sessionId, description, initialCode);
+        // Queue system prompt and format initial prompt with existing code as base
+        chatSession.queueSystemPrompt(getSystemPrompt());
+        String prompt = formatInitialPrompt(description, initialCode);
+        chatSession.queueUserMessage(prompt, null, null, initialCode);
         CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
         sendMessages(chatSession)
                 .thenAccept(response -> {

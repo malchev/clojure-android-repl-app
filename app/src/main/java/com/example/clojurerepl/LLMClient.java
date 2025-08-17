@@ -193,34 +193,6 @@ public abstract class LLMClient {
         return promptTemplate + "\n\nAlways respond with Clojure code in a markdown code block.";
     }
 
-    public ChatSession preparePromptForInitialCode(UUID sessionId, String description) {
-        return preparePromptForInitialCode(sessionId, description, null);
-    }
-
-    /**
-     * Prepares a prompt for initial code generation with optional starting code
-     * 
-     * @param sessionId   The session UUID
-     * @param description The app description
-     * @param initialCode Optional initial code to use as a starting point (may be
-     *                    null)
-     * @return The prepared ChatSession
-     */
-    public ChatSession preparePromptForInitialCode(UUID sessionId, String description, String initialCode) {
-        // Reset session to start fresh
-        chatSession.reset();
-
-        // Make sure we have a system message at the beginning
-        chatSession.queueSystemPrompt(getSystemPrompt());
-
-        // Format the prompt using the helper from LLMClient with initial code
-        String prompt = formatInitialPrompt(description, initialCode);
-
-        // Queue the user message and send all messages
-        chatSession.queueUserMessage(prompt, null, null, initialCode);
-        return chatSession;
-    }
-
     public abstract CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description);
 
     /**
