@@ -636,6 +636,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             Toast.makeText(this, "No description available. Please start a new session.", Toast.LENGTH_SHORT).show();
             // Keep the text in the input field by restoring it
             feedbackInput.setText(feedback);
+            feedbackInput.setSelection(feedback.length()); // Move cursor to end
             return;
         }
 
@@ -645,6 +646,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     .show();
             // Keep the text in the input field by restoring it
             feedbackInput.setText(feedback);
+            feedbackInput.setSelection(feedback.length()); // Move cursor to end
             return;
         }
 
@@ -654,6 +656,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             Toast.makeText(this, "No code to improve. Please generate initial code first.", Toast.LENGTH_SHORT).show();
             // Keep the text in the input field by restoring it
             feedbackInput.setText(feedback);
+            feedbackInput.setSelection(feedback.length()); // Move cursor to end
             return;
         }
 
@@ -724,6 +727,16 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                             // Dismiss progress dialog
                             progressDialog.dismiss();
 
+                            // Restore the user's input text since the operation was cancelled
+                            feedbackInput.setText(feedback);
+                            feedbackInput.setSelection(feedback.length()); // Move cursor to end
+
+                            // Restore the selected screenshot if one was attached
+                            if (image != null) {
+                                selectedScreenshot = image;
+                                paperclipButton.setText("📎✓"); // Visual feedback that screenshot is selected
+                            }
+
                             // Make sure buttons are enabled after cancellation
                             thumbsUpButton.setEnabled(true);
                             runButton.setEnabled(true);
@@ -737,6 +750,16 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
                         progressDialog.dismiss();
+
+                        // Restore the user's input text since the operation failed
+                        feedbackInput.setText(feedback);
+                        feedbackInput.setSelection(feedback.length()); // Move cursor to end
+
+                        // Restore the selected screenshot if one was attached
+                        if (image != null) {
+                            selectedScreenshot = image;
+                            paperclipButton.setText("📎✓"); // Visual feedback that screenshot is selected
+                        }
 
                         showLLMErrorDialog("Iteration Error",
                                 "Error generating next iteration: " + throwable.getMessage());
