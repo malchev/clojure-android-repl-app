@@ -36,6 +36,8 @@ public class DesignSession {
     private String lastErrorFeedback;
     private boolean hasError;
     private List<List<String>> screenshotSets;
+    private String currentInputText;
+    private String selectedImagePath;
 
     public DesignSession() {
         this.id = UUID.randomUUID();
@@ -196,6 +198,22 @@ public class DesignSession {
         this.hasError = hasError;
     }
 
+    public String getCurrentInputText() {
+        return currentInputText;
+    }
+
+    public void setCurrentInputText(String currentInputText) {
+        this.currentInputText = currentInputText;
+    }
+
+    public String getSelectedImagePath() {
+        return selectedImagePath;
+    }
+
+    public void setSelectedImagePath(String selectedImagePath) {
+        this.selectedImagePath = selectedImagePath;
+    }
+
     /**
      * Gets the code with line numbers formatted
      *
@@ -330,6 +348,14 @@ public class DesignSession {
         }
 
         json.put("hasError", hasError);
+
+        if (currentInputText != null) {
+            json.put("currentInputText", currentInputText);
+        }
+
+        if (selectedImagePath != null) {
+            json.put("selectedImagePath", selectedImagePath);
+        }
 
         return json;
     }
@@ -499,6 +525,14 @@ public class DesignSession {
 
         if (json.has("hasError")) {
             session.hasError = json.getBoolean("hasError");
+        }
+
+        if (json.has("currentInputText")) {
+            session.currentInputText = json.getString("currentInputText");
+        }
+
+        if (json.has("selectedImagePath")) {
+            session.selectedImagePath = json.getString("selectedImagePath");
         }
 
         return session;

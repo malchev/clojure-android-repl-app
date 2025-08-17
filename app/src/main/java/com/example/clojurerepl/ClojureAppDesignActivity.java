@@ -450,6 +450,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         if (currentSession.hasError() && currentSession.getLastErrorFeedback() != null) {
             feedbackInput.setText(currentSession.getLastErrorFeedback());
             Log.d(TAG, "Restored error feedback from session");
+        } else {
+            // Restore saved input state if no error feedback
+            restoreCurrentInputState();
         }
     }
 
@@ -469,6 +472,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         // Clear the input field
         feedbackInput.setText("");
+
+        // Clear saved input state since feedback was successfully submitted
+        currentSession.setCurrentInputText(null);
+        currentSession.setSelectedImagePath(null);
+        selectedScreenshot = null;
+        paperclipButton.setText("📎"); // Reset paperclip button
 
         // Check if we have existing code and iteration to provide feedback on
         String currentCode = currentSession.getCurrentCode();
@@ -835,6 +844,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     @Override
     protected void onDestroy() {
         super.onDestroy();
+
+        // Save current input state before destroying
+        saveCurrentInputState();
 
         if (iterationManager != null) {
             iterationManager.shutdown();
@@ -1509,7 +1521,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     @Override
     protected void onPause() {
         super.onPause();
-        // Note: Description is now managed through chat input and saved when submitted
+        // Save current input state to session
+        saveCurrentInputState();
     }
 
     @Override
@@ -2470,5 +2483,62 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         // input
 
         Toast.makeText(this, "Iteration cancelled", Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * Saves the current input state (text and selected image) to the session
+     */
+    private void saveCurrentInputState() {
+        if (currentSession == null) {
+            return;
+        }
+
+        // Save current input text
+        String inputText = feedbackInput != null ? feedbackInput.getText().toString() : null;
+        currentSession.setCurrentInputText(inputText);
+
+        // Save selected image path
+        String imagePath = selectedScreenshot != null ? selectedScreenshot.getAbsolutePath() : null;
+        currentSession.setSelectedImagePath(imagePath);
+
+        // Update the session in storage
+        sessionManager.updateSession(currentSession);
+
+        Log.d(TAG,
+                "Saved input state: text=" + (inputText != null ? "present (len=" + inputText.length() + ")" : "null") +
+                        ", image=" + (imagePath != null ? imagePath : "null"));
+    }
+
+    /**
+     * Restores the current input state (text and selected image) from the session
+     */
+    private void restoreCurrentInputState() {
+        if (currentSession == null) {
+            return;
+        }
+
+        // Restore input text
+        String inputText = currentSession.getCurrentInputText();
+        if (inputText != null && feedbackInput != null) {
+            feedbackInput.setText(inputText);
+            feedbackInput.setSelection(inputText.length()); // Move cursor to end
+            Log.d(TAG, "Restored input text: " + inputText);
+        }
+
+        // Restore selected image
+        String imagePath = currentSession.getSelectedImagePath();
+        if (imagePath != null) {
+            File imageFile = new File(imagePath);
+            if (imageFile.exists()) {
+                selectedScreenshot = imageFile;
+                paperclipButton.setText("📎✓"); // Visual feedback that screenshot is selected
+                Log.d(TAG, "Restored selected image: " + imagePath);
+            } else {
+                // Image file no longer exists, clear the saved path
+                currentSession.setSelectedImagePath(null);
+                sessionManager.updateSession(currentSession);
+                Log.w(TAG, "Saved image no longer exists: " + imagePath);
+            }
+        }
     }
 }
