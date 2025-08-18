@@ -219,7 +219,7 @@ public class SessionManager {
             for (int i = 0; i < jsonArray.length(); i++) {
                 try {
                     JSONObject sessionJson = jsonArray.getJSONObject(i);
-                    DesignSession session = DesignSession.fromJson(sessionJson);
+                    DesignSession session = DesignSession.fromJson(sessionJson, context);
                     sessions.add(session);
                     successCount++;
                     Log.v(TAG, "Loaded session ID: " + session.getId() + ", Description: " +

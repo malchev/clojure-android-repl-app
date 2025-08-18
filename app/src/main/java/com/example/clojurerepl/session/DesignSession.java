@@ -17,6 +17,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Date;
 import java.util.UUID;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Collections;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 /**
  * Represents a Clojure app design session.
@@ -36,6 +41,7 @@ public class DesignSession {
     private String lastErrorFeedback;
     private boolean hasError;
     private List<List<String>> screenshotSets;
+    private List<Integer> screenshotSetIterations; // Tracks which iteration each screenshot set belongs to
     private String currentInputText;
     private String selectedImagePath;
 
@@ -43,6 +49,7 @@ public class DesignSession {
         this.id = UUID.randomUUID();
         this.createdAt = new Date();
         this.screenshotSets = new ArrayList<>();
+        this.screenshotSetIterations = new ArrayList<>();
         this.hasError = false;
         this.chatSession = new LLMClient.ChatSession(this.id.toString());
     }
@@ -159,15 +166,40 @@ public class DesignSession {
     }
 
     /**
+     * Gets the iteration numbers corresponding to each screenshot set.
+     *
+     * @return The list of iteration numbers, parallel to screenshotSets.
+     */
+    public List<Integer> getScreenshotSetIterations() {
+        return screenshotSetIterations;
+    }
+
+    /**
      * Adds a set of screenshots to the session.
+     *
+     * @param screenshotSet A list of paths to screenshot files.
+     * @param iteration     The iteration number this screenshot set belongs to.
+     */
+    public void addScreenshotSet(List<String> screenshotSet, int iteration) {
+        if (this.screenshotSets == null) {
+            this.screenshotSets = new ArrayList<>();
+        }
+        if (this.screenshotSetIterations == null) {
+            this.screenshotSetIterations = new ArrayList<>();
+        }
+        this.screenshotSets.add(new ArrayList<>(screenshotSet));
+        this.screenshotSetIterations.add(iteration);
+    }
+
+    /**
+     * Adds a set of screenshots to the session (legacy method for backward
+     * compatibility).
+     * Uses the current iteration count as the iteration number.
      *
      * @param screenshotSet A list of paths to screenshot files.
      */
     public void addScreenshotSet(List<String> screenshotSet) {
-        if (this.screenshotSets == null) {
-            this.screenshotSets = new ArrayList<>();
-        }
-        this.screenshotSets.add(new ArrayList<>(screenshotSet));
+        addScreenshotSet(screenshotSet, getIterationCount());
     }
 
     /**
@@ -264,6 +296,98 @@ public class DesignSession {
     }
 
     /**
+     * Scans the filesystem for screenshots belonging to this session and
+     * reconstructs
+     * screenshot sets organized by iteration number.
+     *
+     * @param context Android context to access cache directory
+     */
+    private void reconstructScreenshotSetsFromFilesystem(Context context) {
+        // Clear existing screenshot sets since we're reconstructing from filesystem
+        this.screenshotSets = new ArrayList<>();
+        this.screenshotSetIterations = new ArrayList<>();
+
+        // Get the screenshots directory
+        File screenshotDir = new File(context.getCacheDir(), "screenshots");
+        if (!screenshotDir.exists() || !screenshotDir.isDirectory()) {
+            Log.d(TAG, "Screenshots directory does not exist: " + screenshotDir.getAbsolutePath());
+            return;
+        }
+
+        // Pattern to match screenshot files:
+        // session_{sessionId}_iter_{iteration}_{timestamp}.png
+        String sessionIdStr = this.id.toString();
+        Pattern screenshotPattern = Pattern
+                .compile("session_" + Pattern.quote(sessionIdStr) + "_iter_(\\d+)_\\d+\\.png");
+
+        // Map to group screenshots by iteration number
+        Map<Integer, List<String>> iterationScreenshots = new HashMap<>();
+
+        // Scan all files in the screenshots directory
+        File[] files = screenshotDir.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.isFile()) {
+                    Matcher matcher = screenshotPattern.matcher(file.getName());
+                    if (matcher.matches()) {
+                        try {
+                            int iteration = Integer.parseInt(matcher.group(1));
+                            String absolutePath = file.getAbsolutePath();
+
+                            // Add to the appropriate iteration group
+                            iterationScreenshots.computeIfAbsent(iteration, k -> new ArrayList<>()).add(absolutePath);
+
+                            Log.d(TAG, "Found screenshot for session " + sessionIdStr +
+                                    ", iteration " + iteration + ": " + file.getName());
+                        } catch (NumberFormatException e) {
+                            Log.w(TAG, "Invalid iteration number in screenshot filename: " + file.getName());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Convert the map to a list of screenshot sets, ordered by iteration number
+        if (!iterationScreenshots.isEmpty()) {
+            List<Integer> sortedIterations = new ArrayList<>(iterationScreenshots.keySet());
+            Collections.sort(sortedIterations);
+
+            for (Integer iteration : sortedIterations) {
+                List<String> screenshots = iterationScreenshots.get(iteration);
+                if (screenshots != null && !screenshots.isEmpty()) {
+                    // Sort screenshots within each iteration by timestamp (extracted from filename)
+                    screenshots.sort((path1, path2) -> {
+                        try {
+                            String name1 = new File(path1).getName();
+                            String name2 = new File(path2).getName();
+
+                            // Extract timestamp from filename
+                            String timestamp1 = name1.substring(name1.lastIndexOf('_') + 1, name1.lastIndexOf('.'));
+                            String timestamp2 = name2.substring(name2.lastIndexOf('_') + 1, name2.lastIndexOf('.'));
+
+                            long ts1 = Long.parseLong(timestamp1);
+                            long ts2 = Long.parseLong(timestamp2);
+
+                            return Long.compare(ts1, ts2);
+                        } catch (Exception e) {
+                            Log.w(TAG, "Error sorting screenshots by timestamp", e);
+                            return 0;
+                        }
+                    });
+
+                    this.screenshotSets.add(new ArrayList<>(screenshots));
+                    this.screenshotSetIterations.add(iteration);
+                    Log.d(TAG, "Added " + screenshots.size() + " screenshots for iteration " + iteration);
+                }
+            }
+
+            Log.d(TAG, "Reconstructed " + this.screenshotSets.size() + " screenshot sets from filesystem");
+        } else {
+            Log.d(TAG, "No screenshots found for session " + sessionIdStr);
+        }
+    }
+
+    /**
      * Converts this session to a JSONObject
      */
     public JSONObject toJson() throws JSONException {
@@ -330,18 +454,9 @@ public class DesignSession {
             json.put("lastLogcat", lastLogcat);
         }
 
-        // Add screenshot sets to JSON
-        if (screenshotSets != null && !screenshotSets.isEmpty()) {
-            JSONArray setsJson = new JSONArray();
-            for (List<String> set : screenshotSets) {
-                JSONArray setJson = new JSONArray();
-                for (String path : set) {
-                    setJson.put(path);
-                }
-                setsJson.put(setJson);
-            }
-            json.put("screenshotSets", setsJson);
-        }
+        // Note: Screenshot sets are no longer saved to JSON.
+        // They will be reconstructed from the filesystem during deserialization
+        // based on the session ID and iteration numbers in the screenshot filenames.
 
         if (lastErrorFeedback != null) {
             json.put("lastErrorFeedback", lastErrorFeedback);
@@ -362,8 +477,12 @@ public class DesignSession {
 
     /**
      * Creates a DesignSession from a JSONObject
+     *
+     * @param json    The JSON object containing session data
+     * @param context Android context needed to scan for screenshots in cache
+     *                directory
      */
-    public static DesignSession fromJson(JSONObject json) throws JSONException {
+    public static DesignSession fromJson(JSONObject json, Context context) throws JSONException {
         DesignSession session = new DesignSession();
         session.id = UUID.fromString(json.getString("id"));
         session.description = json.getString("description");
@@ -505,19 +624,8 @@ public class DesignSession {
             session.lastLogcat = json.getString("lastLogcat");
         }
 
-        // Load screenshot sets
-        session.screenshotSets = new ArrayList<>();
-        if (json.has("screenshotSets")) {
-            JSONArray setsJson = json.getJSONArray("screenshotSets");
-            for (int i = 0; i < setsJson.length(); i++) {
-                JSONArray setJson = setsJson.getJSONArray(i);
-                List<String> set = new ArrayList<>();
-                for (int j = 0; j < setJson.length(); j++) {
-                    set.add(setJson.getString(j));
-                }
-                session.screenshotSets.add(set);
-            }
-        }
+        // Reconstruct screenshot sets from filesystem instead of loading from JSON
+        session.reconstructScreenshotSetsFromFilesystem(context);
 
         if (json.has("lastErrorFeedback")) {
             session.lastErrorFeedback = json.getString("lastErrorFeedback");

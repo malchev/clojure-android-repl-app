@@ -100,6 +100,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     private int selectedChatEntryIndex = -1;
     private LinearLayout selectedChatEntry = null;
 
+    // Track the iteration number for the currently running code
+    private int currentRunningIteration = -1;
+
     // Add a flag to track when the models are loaded
     private boolean modelsLoaded = false;
 
@@ -413,7 +416,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         // Restore latest screenshot set if available
         List<String> paths = currentSession.getLatestScreenshotSet();
         if (paths != null && !paths.isEmpty()) {
-            Log.d(TAG, "Restoring " + paths.size() + " screenshots from session");
+            Log.d(TAG, "Restoring " + paths.size() + " screenshots from latest iteration");
 
             // Convert paths to File objects for currentScreenshots
             currentScreenshots.clear();
@@ -444,6 +447,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             } else {
                 Log.w(TAG, "No valid screenshots to display");
             }
+        } else {
+            // No screenshots in latest set, clear currentScreenshots
+            currentScreenshots.clear();
+            Log.d(TAG, "No screenshots available in latest iteration");
         }
 
         // Restore error feedback if available
@@ -918,12 +925,20 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             if (currentSession != null && screenshotPaths.length > 0) {
                 List<String> paths = new ArrayList<>(Arrays.asList(screenshotPaths));
 
-                // Use the new API to add the screenshot set
-                currentSession.addScreenshotSet(paths);
+                // Use the correct iteration number for the screenshot set
+                if (currentRunningIteration > 0) {
+                    currentSession.addScreenshotSet(paths, currentRunningIteration);
+                    Log.d(TAG, "Added a new set of " + paths.size() + " screenshots to session for iteration "
+                            + currentRunningIteration);
+                } else {
+                    // Fallback to legacy method if iteration number not available
+                    currentSession.addScreenshotSet(paths);
+                    Log.w(TAG, "Added screenshots using legacy method (iteration number not available)");
+                }
                 doUpdateSession = true;
 
-                // Log the addition of the new screenshot set
-                Log.d(TAG, "Added a new set of " + paths.size() + " screenshots to session");
+                // Reset the running iteration after use
+                currentRunningIteration = -1;
             }
 
             // Update paperclip button state now that we have screenshots
@@ -1435,6 +1450,15 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             return;
         }
 
+        // Calculate the correct iteration number for the selected message
+        int selectedIteration = getIterationNumberForMessage(selectedChatEntryIndex);
+
+        // Store the iteration number for use when screenshots are returned
+        currentRunningIteration = selectedIteration;
+
+        Log.d(TAG,
+                "Running code from iteration " + selectedIteration + " (message index " + selectedChatEntryIndex + ")");
+
         // Start the activity with the selected code
         RenderActivity.launch(this, ClojureAppDesignActivity.class,
                 new RenderActivity.ExitCallback() {
@@ -1452,9 +1476,74 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 },
                 result.code,
                 currentSession.getId().toString(),
-                currentSession.getIterationCount(),
+                selectedIteration, // Use the correct iteration number
                 true,
                 returnOnError); // Enable return_on_error flag
+    }
+
+    /**
+     * Calculates the iteration number for a given message index.
+     * Assistant messages with code are numbered starting from 1.
+     *
+     * @param messageIndex The index of the message in the chat history
+     * @return The iteration number (1-based) for the message
+     */
+    private int getIterationNumberForMessage(int messageIndex) {
+
+        assert currentSession != null;
+
+        List<LLMClient.Message> messages = currentSession.getChatHistory();
+        assert messages != null && messageIndex >= 0 && messageIndex < messages.size();
+
+        // Count assistant messages with code up to and including the selected message
+        int iterationNumber = 0;
+        for (int i = 0; i <= messageIndex; i++) {
+            LLMClient.Message message = messages.get(i);
+            if (message.role == LLMClient.MessageRole.ASSISTANT) {
+                // Check if this assistant message contains code
+                ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
+                        .extractClojureCode(message.content);
+                if (result.success && result.code != null && !result.code.isEmpty()) {
+                    iterationNumber++;
+                }
+            }
+        }
+
+        assert iterationNumber > 0;
+        return iterationNumber;
+    }
+
+    /**
+     * Gets the screenshots for a specific iteration number.
+     * 
+     * @param iterationNumber The iteration number (1-based)
+     * @return List of screenshot file paths for that iteration, or empty list if
+     *         none found
+     */
+    private List<String> getScreenshotsForIteration(int iterationNumber) {
+        assert currentSession != null;
+
+        List<List<String>> screenshotSets = currentSession.getScreenshotSets();
+        List<Integer> screenshotSetIterations = currentSession.getScreenshotSetIterations();
+
+        if (screenshotSets == null || screenshotSets.isEmpty() ||
+                screenshotSetIterations == null || screenshotSetIterations.isEmpty()) {
+            Log.d(TAG, "No screenshot sets available");
+            return new ArrayList<>();
+        }
+
+        // Find the index of the requested iteration in our iteration tracking list
+        int setIndex = screenshotSetIterations.indexOf(iterationNumber);
+
+        if (setIndex >= 0 && setIndex < screenshotSets.size()) {
+            Log.d(TAG, "Found " + screenshotSets.get(setIndex).size() + " screenshots for iteration " + iterationNumber
+                    + " at set index " + setIndex);
+            return new ArrayList<>(screenshotSets.get(setIndex));
+        } else {
+            Log.d(TAG, "No screenshots found for iteration " + iterationNumber + ". Available iterations: "
+                    + screenshotSetIterations);
+            return new ArrayList<>();
+        }
     }
 
     private void clearChatSession() {
@@ -2233,13 +2322,34 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             return;
         }
 
-        if (currentScreenshots.isEmpty()) {
-            Toast.makeText(this, "No screenshots available", Toast.LENGTH_SHORT).show();
+        // Get screenshots from the selected iteration, not all current screenshots
+        List<String> availableScreenshots;
+        String iterationInfo;
+
+        if (selectedChatEntryIndex >= 0) {
+            // Show screenshots from the selected iteration
+            int selectedIteration = getIterationNumberForMessage(selectedChatEntryIndex);
+            availableScreenshots = getScreenshotsForIteration(selectedIteration);
+            iterationInfo = " (Iteration " + selectedIteration + ")";
+        } else {
+            // No message selected, show latest screenshots
+            availableScreenshots = new ArrayList<>();
+            for (File screenshot : currentScreenshots) {
+                availableScreenshots.add(screenshot.getAbsolutePath());
+            }
+            iterationInfo = " (Latest)";
+        }
+
+        if (availableScreenshots.isEmpty()) {
+            String message = selectedChatEntryIndex >= 0
+                    ? "No screenshots available for selected iteration"
+                    : "No screenshots available";
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
             return;
         }
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Select Screenshot to Attach");
+        builder.setTitle("Select Screenshot to Attach" + iterationInfo);
 
         // Create a horizontal scrollable layout for screenshots
         LinearLayout container = new LinearLayout(this);
@@ -2249,8 +2359,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         // Create the dialog first so we can reference it in the click listeners
         final AlertDialog[] dialogRef = new AlertDialog[1];
 
-        for (int i = 0; i < currentScreenshots.size(); i++) {
-            File screenshot = currentScreenshots.get(i);
+        for (int i = 0; i < availableScreenshots.size(); i++) {
+            String screenshotPath = availableScreenshots.get(i);
+            File screenshot = new File(screenshotPath);
             final int index = i;
 
             ImageView imageView = new ImageView(this);
