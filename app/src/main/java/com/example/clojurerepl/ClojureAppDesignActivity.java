@@ -1164,9 +1164,27 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
 
-                // Ignore the prompt selection (position 0)
+                // Handle the prompt selection (position 0) - clear the model
                 if (position == 0) {
-                    Log.d(TAG, "Prompt item selected, not creating LLM client");
+                    Log.d(TAG, "Prompt item selected, clearing LLM model");
+
+                    // Shut down existing iteration manager
+                    if (iterationManager != null) {
+                        Log.d(TAG, "Shutting down existing iterationManager due to model deselection");
+                        iterationManager.shutdown();
+                        iterationManager = null;
+                    }
+
+                    // Clear the model from the session
+                    if (currentSession != null) {
+                        currentSession.setLlmModel(null);
+                        sessionManager.updateSession(currentSession);
+                        Log.d(TAG, "Cleared LLM model from session");
+                    }
+
+                    // Update paperclip button state since no model is selected
+                    updatePaperclipButtonState();
+
                     return;
                 }
 
