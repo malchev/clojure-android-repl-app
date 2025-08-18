@@ -2290,8 +2290,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             }
         }
 
-        // Create a ScrollView to make it scrollable
-        ScrollView scrollView = new ScrollView(this);
+        // Create a HorizontalScrollView to make it horizontally scrollable
+        HorizontalScrollView scrollView = new HorizontalScrollView(this);
         scrollView.addView(container);
 
         builder.setView(scrollView);
@@ -2394,7 +2394,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             container.addView(imageView);
         }
 
-        ScrollView scrollView = new ScrollView(this);
+        HorizontalScrollView scrollView = new HorizontalScrollView(this);
         scrollView.addView(container);
         builder.setView(scrollView);
         builder.setNegativeButton("Cancel", (d, which) -> d.dismiss());
