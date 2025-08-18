@@ -454,6 +454,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             // Restore saved input state if no error feedback
             restoreCurrentInputState();
         }
+
+        // Update paperclip button state after session restoration is complete
+        updatePaperclipButtonState();
     }
 
     /**
@@ -922,6 +925,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 // Log the addition of the new screenshot set
                 Log.d(TAG, "Added a new set of " + paths.size() + " screenshots to session");
             }
+
+            // Update paperclip button state now that we have screenshots
+            updatePaperclipButtonState();
         }
 
         // Save the current code when returning from RenderActivity
