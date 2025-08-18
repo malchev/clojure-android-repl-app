@@ -586,6 +586,11 @@ public class GeminiLLMClient extends LLMClient {
                     future.complete(response);
                 })
                 .exceptionally(ex -> {
+                    // Remove the messages we added before sendMessages (system prompt + user
+                    // message = 2 messages)
+                    chatSession.removeLastMessages(2);
+                    Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
+
                     // Check if this is a cancellation exception, which is expected behavior
                     if (ex instanceof CancellationException ||
                             (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
@@ -625,6 +630,11 @@ public class GeminiLLMClient extends LLMClient {
                     future.complete(response);
                 })
                 .exceptionally(ex -> {
+                    // Remove the messages we added before sendMessages (system prompt + user
+                    // message = 2 messages)
+                    chatSession.removeLastMessages(2);
+                    Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
+
                     // Check if this is a cancellation exception, which is expected behavior
                     if (ex instanceof CancellationException ||
                             (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
@@ -688,6 +698,10 @@ public class GeminiLLMClient extends LLMClient {
                     future.complete(response);
                 })
                 .exceptionally(ex -> {
+                    // Remove the user message we added before sendMessages (1 message)
+                    chatSession.removeLastMessages(1);
+                    Log.d(TAG, "Removed 1 message (user message) due to failure in generateNextIteration");
+
                     // Check if this is a cancellation exception, which is expected behavior
                     if (ex instanceof CancellationException ||
                             (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {

@@ -556,6 +556,23 @@ public abstract class LLMClient {
         public boolean hasSystemPrompt() {
             return systemPrompt != null && !systemPrompt.trim().isEmpty();
         }
+
+        /**
+         * Removes the last N messages from the chat session
+         * Used for rollback in case of failures after adding multiple messages
+         *
+         * @param count Number of messages to remove from the end
+         * @return List of removed messages (in reverse order - last removed first)
+         */
+        public List<Message> removeLastMessages(int count) {
+            List<Message> removed = new ArrayList<>();
+            for (int i = 0; i < count && !messages.isEmpty(); i++) {
+                Message msg = messages.remove(messages.size() - 1);
+                removed.add(msg);
+                Log.d(TAG, "Removed message " + (i+1) + "/" + count + " from session: " + sessionId + ", message role: " + msg.role);
+            }
+            return removed;
+        }
     }
 
     /**

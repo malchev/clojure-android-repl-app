@@ -183,6 +183,11 @@ public class ClaudeLLMClient extends LLMClient {
             CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
             sendMessages(chatSession).handle((response, ex) -> {
                 if (ex != null) {
+                    // Remove the messages we added before sendMessages (system prompt + user
+                    // message = 2 messages)
+                    chatSession.removeLastMessages(2);
+                    Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
+
                     // Check if this is a cancellation exception, which is expected behavior
                     if (ex instanceof CancellationException ||
                             (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
@@ -234,6 +239,11 @@ public class ClaudeLLMClient extends LLMClient {
             CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
             sendMessages(chatSession).handle((response, ex) -> {
                 if (ex != null) {
+                    // Remove the messages we added before sendMessages (system prompt + user
+                    // message = 2 messages)
+                    chatSession.removeLastMessages(2);
+                    Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
+
                     // Check if this is a cancellation exception, which is expected behavior
                     if (ex instanceof CancellationException ||
                             (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
@@ -336,7 +346,22 @@ public class ClaudeLLMClient extends LLMClient {
         Log.d(TAG, recentMessages.toString());
 
         // Send all messages and get the response
-        return sendMessages(chatSession);
+        CancellableCompletableFuture<String> future = sendMessages(chatSession);
+        CancellableCompletableFuture<String> wrappedFuture = new CancellableCompletableFuture<>();
+
+        future.handle((response, ex) -> {
+            if (ex != null) {
+                // Remove the user message we added before sendMessages (1 message)
+                chatSession.removeLastMessages(1);
+                Log.d(TAG, "Removed 1 message (user message) due to failure in generateNextIteration");
+                wrappedFuture.completeExceptionally(ex);
+            } else {
+                wrappedFuture.complete(response);
+            }
+            return null;
+        });
+
+        return wrappedFuture;
     }
 
     @Override
