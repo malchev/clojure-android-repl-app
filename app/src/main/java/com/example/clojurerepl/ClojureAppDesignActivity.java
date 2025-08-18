@@ -470,15 +470,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             return;
         }
 
-        // Clear the input field
-        feedbackInput.setText("");
-
-        // Clear saved input state since feedback was successfully submitted
-        currentSession.setCurrentInputText(null);
-        currentSession.setSelectedImagePath(null);
-        selectedScreenshot = null;
-        paperclipButton.setText("📎"); // Reset paperclip button
-
         // Check if we have existing code and iteration to provide feedback on
         String currentCode = currentSession.getCurrentCode();
         boolean hasExistingCode = currentCode != null && !currentCode.isEmpty()
@@ -487,6 +478,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         if (hasExistingCode) {
             // We have existing code, so this is feedback for improvement
             Log.d(TAG, "Submitting feedback for existing code: " + feedbackText);
+
+            // Clear the input field and saved state for existing code feedback
+            feedbackInput.setText("");
+            currentSession.setCurrentInputText(null);
+            currentSession.setSelectedImagePath(null);
+            selectedScreenshot = null;
+            paperclipButton.setText("📎"); // Reset paperclip button
+
             submitFeedbackWithText(feedbackText, selectedScreenshot);
 
             // Clear selected screenshot and reset paperclip button
@@ -496,16 +495,24 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             // No existing code, so this is initial app description
             Log.d(TAG, "Starting new design with description: " + feedbackText);
 
+            // Save current input state before attempting to start new design
+            // in case validation fails and we need to restore the text
+            saveCurrentInputState();
+
             // Update the session description
             currentSession.setDescription(feedbackText);
             sessionManager.updateSession(currentSession);
 
-            // Start a new design
-            startNewDesign();
+            // Clear the input field optimistically
+            feedbackInput.setText("");
+
+            // Start a new design - if this fails due to validation,
+            // the text will be restored in startNewDesign()
+            startNewDesign(feedbackText);
         }
     }
 
-    private void startNewDesign() {
+    private void startNewDesign(String originalFeedbackText) {
         String description = currentSession.getDescription();
         if (description == null || description.isEmpty()) {
             Toast.makeText(this, "Please enter a description", Toast.LENGTH_SHORT).show();
@@ -519,12 +526,16 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         // Check if a model has been selected
         if (selectedModel == null) {
             Toast.makeText(this, "Please select a model before generating code", Toast.LENGTH_SHORT).show();
+            // Restore the user's input text and selected screenshot since validation failed
+            restoreCurrentInputState();
             return;
         }
 
         // Check if the selected model is the prompt item
         if (selectedModel.equals("-- Select a model --")) {
             Toast.makeText(this, "Please select a specific model from the dropdown", Toast.LENGTH_SHORT).show();
+            // Restore the user's input text and selected screenshot since validation failed
+            restoreCurrentInputState();
             return;
         }
 
@@ -532,6 +543,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 "╔═══════════════════════════════════════════╗\n" +
                 "║         STARTING NEW APP DESIGN           ║\n" +
                 "╚═══════════════════════════════════════════╝");
+
+        // Clear saved input state since we successfully passed validation
+        // and are now starting the generation
+        currentSession.setCurrentInputText(null);
+        currentSession.setSelectedImagePath(null);
+        selectedScreenshot = null;
+        paperclipButton.setText("📎"); // Reset paperclip button
 
         // Disable the submit button during generation
         Button submitFeedbackButton = findViewById(R.id.submit_feedback_button);
@@ -598,6 +616,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
                         progressDialog.dismiss();
+
+                        // Restore the user's input text since the operation failed
+                        feedbackInput.setText(originalFeedbackText);
+                        feedbackInput.setSelection(originalFeedbackText.length()); // Move cursor to end
 
                         showLLMErrorDialog("Code Generation Error",
                                 "Error generating code: " + throwable.getMessage());
