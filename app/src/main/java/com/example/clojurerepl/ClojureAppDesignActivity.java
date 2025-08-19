@@ -489,6 +489,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             // We have existing code, so this is feedback for improvement
             Log.d(TAG, "Submitting feedback for existing code: " + feedbackText);
 
+            // Save the selected screenshot before clearing it
+            File imageToSubmit = selectedScreenshot;
+
             // Clear the input field and saved state for existing code feedback
             feedbackInput.setText("");
             currentSession.setCurrentInputText(null);
@@ -496,11 +499,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             selectedScreenshot = null;
             paperclipButton.setText("📎"); // Reset paperclip button
 
-            submitFeedbackWithText(feedbackText, selectedScreenshot);
-
-            // Clear selected screenshot and reset paperclip button
-            selectedScreenshot = null;
-            paperclipButton.setText("📎");
+            submitFeedbackWithText(feedbackText, imageToSubmit);
         } else {
             // No existing code, so this is initial app description
             Log.d(TAG, "Starting new design with description: " + feedbackText);
@@ -2368,6 +2367,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
             imageView.setOnClickListener(v -> {
                 selectedScreenshot = screenshot;
+                Log.d(TAG, "Screenshot attached to paperclip: " + screenshot.getAbsolutePath());
                 paperclipButton.setText("📎✓"); // Visual feedback that screenshot is selected
                 dialogRef[0].dismiss();
                 Toast.makeText(this, "Screenshot selected for next message", Toast.LENGTH_SHORT).show();
