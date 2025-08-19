@@ -163,7 +163,6 @@ public class StubLLMClient extends LLMClient {
             String description,
             String currentCode,
             String logcat,
-            File screenshot,
             String feedback,
             File image) {
         Log.d(TAG, "Generating next iteration for description: " + description + " using stub client");
@@ -180,7 +179,7 @@ public class StubLLMClient extends LLMClient {
         }
 
         // Format the iteration prompt
-        String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback, image != null);
+        String prompt = formatIterationPrompt(description, currentCode, logcat, feedback, image != null);
 
         // Queue the user message (with image attachment if provided)
         chatSession.queueUserMessageWithImage(prompt, image, logcat, feedback, null);

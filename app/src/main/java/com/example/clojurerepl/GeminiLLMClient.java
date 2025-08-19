@@ -655,7 +655,6 @@ public class GeminiLLMClient extends LLMClient {
             String description,
             String currentCode,
             String logcat,
-            File screenshot,
             String feedback,
             File image) {
 
@@ -680,12 +679,11 @@ public class GeminiLLMClient extends LLMClient {
         Log.d(TAG, "Current code length: " + (currentCode != null ? currentCode.length() : 0));
         Log.d(TAG,
                 "=== Logcat Content Being Sent === (" + (logcat != null ? logcat.split("\n").length : 0) + " lines)");
-        Log.d(TAG, "Screenshot present: " + (screenshot != null ? screenshot.getPath() : "null"));
         Log.d(TAG, "Image present: " + (image != null ? image.getPath() : "null"));
         Log.d(TAG, "Feedback: " + feedback);
 
         // Format the iteration prompt
-        String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback, image != null);
+        String prompt = formatIterationPrompt(description, currentCode, logcat, feedback, image != null);
 
         // Queue the user message (with image attachment if provided)
         chatSession.queueUserMessageWithImage(prompt, image, logcat, feedback, null);

@@ -308,7 +308,6 @@ public class ClojureIterationManager {
                         description, // Pass the original description now
                         lastResult.code,
                         lastResult.logcat,
-                        lastResult.screenshot,
                         feedback,
                         image); // Pass the selected image parameter
 

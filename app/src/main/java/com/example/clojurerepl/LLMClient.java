@@ -210,10 +210,8 @@ public abstract class LLMClient {
     protected String formatIterationPrompt(String description,
             String currentCode,
             String logcat,
-            File screenshot,
             String feedback, boolean hasImage) {
         Log.d(TAG, "Formatting iteration prompt with description: " + description +
-                ", screenshot: " + (screenshot != null ? screenshot.getPath() : "null") +
                 ", feedback: " + feedback +
                 ", hasImage: " + hasImage);
         boolean hasLogcat = logcat != null && !logcat.isEmpty();
@@ -240,7 +238,6 @@ public abstract class LLMClient {
             String description,
             String currentCode,
             String logcat,
-            File screenshot,
             String feedback,
             File image);
 
@@ -569,7 +566,8 @@ public abstract class LLMClient {
             for (int i = 0; i < count && !messages.isEmpty(); i++) {
                 Message msg = messages.remove(messages.size() - 1);
                 removed.add(msg);
-                Log.d(TAG, "Removed message " + (i+1) + "/" + count + " from session: " + sessionId + ", message role: " + msg.role);
+                Log.d(TAG, "Removed message " + (i + 1) + "/" + count + " from session: " + sessionId
+                        + ", message role: " + msg.role);
             }
             return removed;
         }

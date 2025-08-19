@@ -371,7 +371,7 @@ public class OpenAIChatClient extends LLMClient {
     public CancellableCompletableFuture<String> generateNextIteration(UUID sessionId, String description,
             String currentCode,
             String logcat,
-            File screenshot, String feedback, File image) {
+            String feedback, File image) {
         ensureModelIsSet();
         Log.d(TAG, "┌───────────────────────────────────────────┐");
         Log.d(TAG, "│         GENERATING NEXT ITERATION         │");
@@ -389,7 +389,7 @@ public class OpenAIChatClient extends LLMClient {
         }
 
         // Format the iteration prompt
-        String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback, image != null);
+        String prompt = formatIterationPrompt(description, currentCode, logcat, feedback, image != null);
 
         // Queue the user message (with image attachment if provided)
         chatSession.queueUserMessageWithImage(prompt, image, logcat, feedback, null);

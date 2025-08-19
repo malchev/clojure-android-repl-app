@@ -275,7 +275,6 @@ public class ClaudeLLMClient extends LLMClient {
             String description,
             String currentCode,
             String logcat,
-            File screenshot,
             String feedback,
             File image) {
         Log.d(TAG, "\n" +
@@ -312,7 +311,7 @@ public class ClaudeLLMClient extends LLMClient {
                 userCount + " user, and " + assistantCount + " assistant messages");
 
         // Format the iteration prompt (now includes currentCode)
-        String prompt = formatIterationPrompt(description, currentCode, logcat, screenshot, feedback, image != null);
+        String prompt = formatIterationPrompt(description, currentCode, logcat, feedback, image != null);
 
         // Queue the user message (with image attachment if provided)
         chatSession.queueUserMessageWithImage(prompt, image, logcat, feedback, null);
