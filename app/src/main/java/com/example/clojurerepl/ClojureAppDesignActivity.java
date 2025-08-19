@@ -414,9 +414,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         // Note: Logcat output now shown in chat history, no separate display needed
 
         // Restore latest screenshot set if available
-        List<String> paths = currentSession.getLatestScreenshotSet();
+        List<String> paths = currentSession.getCurrentIterationScreenshots();
         if (paths != null && !paths.isEmpty()) {
-            Log.d(TAG, "Restoring " + paths.size() + " screenshots from latest iteration");
+            Log.d(TAG, "Restoring " + paths.size() + " screenshots from current iteration");
 
             // Convert paths to File objects for currentScreenshots
             currentScreenshots.clear();
@@ -450,7 +450,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         } else {
             // No screenshots in latest set, clear currentScreenshots
             currentScreenshots.clear();
-            Log.d(TAG, "No screenshots available in latest iteration");
+            Log.d(TAG, "No screenshots available in current iteration");
         }
 
         // Restore error feedback if available
@@ -913,7 +913,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             Log.d(TAG, "Received " + screenshotPaths.length + " screenshots in onNewIntent");
 
             // Save the screenshots for future reference
-            currentScreenshots.clear();
+            // Don't clear if we're adding to the same iteration
             for (String path : screenshotPaths) {
                 currentScreenshots.add(new File(path));
             }
@@ -1046,8 +1046,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         Log.d(TAG, "Saving " + screenshotPaths.length + " screenshots for paperclip selection");
 
-        // Clear and populate current screenshots list
-        currentScreenshots.clear();
+        // Add new screenshots to current screenshots list (don't clear to accumulate
+        // within iteration)
         for (String path : screenshotPaths) {
             File screenshotFile = new File(path);
             if (screenshotFile.exists()) {
@@ -1523,27 +1523,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     private List<String> getScreenshotsForIteration(int iterationNumber) {
         assert currentSession != null;
 
-        List<List<String>> screenshotSets = currentSession.getScreenshotSets();
-        List<Integer> screenshotSetIterations = currentSession.getScreenshotSetIterations();
-
-        if (screenshotSets == null || screenshotSets.isEmpty() ||
-                screenshotSetIterations == null || screenshotSetIterations.isEmpty()) {
-            Log.d(TAG, "No screenshot sets available");
-            return new ArrayList<>();
-        }
-
-        // Find the index of the requested iteration in our iteration tracking list
-        int setIndex = screenshotSetIterations.indexOf(iterationNumber);
-
-        if (setIndex >= 0 && setIndex < screenshotSets.size()) {
-            Log.d(TAG, "Found " + screenshotSets.get(setIndex).size() + " screenshots for iteration " + iterationNumber
-                    + " at set index " + setIndex);
-            return new ArrayList<>(screenshotSets.get(setIndex));
-        } else {
-            Log.d(TAG, "No screenshots found for iteration " + iterationNumber + ". Available iterations: "
-                    + screenshotSetIterations);
-            return new ArrayList<>();
-        }
+        List<String> screenshots = currentSession.getScreenshotsForIteration(iterationNumber);
+        Log.d(TAG, "Found " + screenshots.size() + " screenshots for iteration " + iterationNumber);
+        return screenshots;
     }
 
     private void clearChatSession() {

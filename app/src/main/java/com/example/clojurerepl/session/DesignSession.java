@@ -214,6 +214,47 @@ public class DesignSession {
         return this.screenshotSets.get(this.screenshotSets.size() - 1);
     }
 
+    /**
+     * Gets all screenshots for a specific iteration number.
+     *
+     * @param iterationNumber The iteration number to get screenshots for
+     * @return A list of all screenshot paths for that iteration.
+     */
+    public List<String> getScreenshotsForIteration(int iterationNumber) {
+        if (this.screenshotSets == null || this.screenshotSets.isEmpty() ||
+                this.screenshotSetIterations == null || this.screenshotSetIterations.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // Collect all screenshots for the requested iteration
+        List<String> iterationScreenshots = new ArrayList<>();
+        for (int i = 0; i < this.screenshotSetIterations.size(); i++) {
+            if (this.screenshotSetIterations.get(i) == iterationNumber) {
+                iterationScreenshots.addAll(this.screenshotSets.get(i));
+            }
+        }
+
+        return iterationScreenshots;
+    }
+
+    /**
+     * Gets all screenshots from the current iteration (the iteration with the
+     * highest number).
+     *
+     * @return A list of all screenshot paths from the current iteration.
+     */
+    public List<String> getCurrentIterationScreenshots() {
+        if (this.screenshotSets == null || this.screenshotSets.isEmpty() ||
+                this.screenshotSetIterations == null || this.screenshotSetIterations.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // Find the highest iteration number (current iteration)
+        int currentIteration = Collections.max(this.screenshotSetIterations);
+
+        return getScreenshotsForIteration(currentIteration);
+    }
+
     public String getLastErrorFeedback() {
         return lastErrorFeedback;
     }
