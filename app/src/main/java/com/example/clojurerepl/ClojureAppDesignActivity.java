@@ -2332,10 +2332,15 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Select Screenshot to Attach" + iterationInfo);
 
+        // Create main container with vertical layout for screenshots and clear button
+        LinearLayout mainContainer = new LinearLayout(this);
+        mainContainer.setOrientation(LinearLayout.VERTICAL);
+        mainContainer.setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16));
+
         // Create a horizontal scrollable layout for screenshots
-        LinearLayout container = new LinearLayout(this);
-        container.setOrientation(LinearLayout.HORIZONTAL);
-        container.setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16));
+        LinearLayout screenshotContainer = new LinearLayout(this);
+        screenshotContainer.setOrientation(LinearLayout.HORIZONTAL);
+        screenshotContainer.setPadding(0, 0, 0, dpToPx(16)); // Bottom padding before clear button
 
         // Create the dialog first so we can reference it in the click listeners
         final AlertDialog[] dialogRef = new AlertDialog[1];
@@ -2351,7 +2356,19 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             params.setMargins(dpToPx(8), 0, dpToPx(8), 0);
             imageView.setLayoutParams(params);
             imageView.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            imageView.setBackgroundResource(android.R.drawable.btn_default);
+
+            // Check if this is the currently selected screenshot
+            boolean isCurrentlySelected = selectedScreenshot != null &&
+                    screenshot.getAbsolutePath().equals(selectedScreenshot.getAbsolutePath());
+
+            if (isCurrentlySelected) {
+                // Highlight the currently selected screenshot with a green border
+                imageView.setBackgroundColor(0xFF4CAF50); // Green background
+                imageView.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4)); // Padding to show border
+            } else {
+                imageView.setBackgroundResource(android.R.drawable.btn_default);
+                imageView.setPadding(0, 0, 0, 0);
+            }
 
             try {
                 Bitmap bitmap = BitmapFactory.decodeFile(screenshot.getAbsolutePath());
@@ -2366,19 +2383,51 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             }
 
             imageView.setOnClickListener(v -> {
-                selectedScreenshot = screenshot;
-                Log.d(TAG, "Screenshot attached to paperclip: " + screenshot.getAbsolutePath());
-                paperclipButton.setText("📎✓"); // Visual feedback that screenshot is selected
+                if (isCurrentlySelected) {
+                    // Clear the current selection if tapping the already selected screenshot
+                    selectedScreenshot = null;
+                    paperclipButton.setText("📎"); // Reset paperclip button
+                    Log.d(TAG, "Screenshot attachment cleared by tapping selected image");
+                    Toast.makeText(this, "Screenshot attachment cleared", Toast.LENGTH_SHORT).show();
+                } else {
+                    // Select this screenshot
+                    selectedScreenshot = screenshot;
+                    Log.d(TAG, "Screenshot attached to paperclip: " + screenshot.getAbsolutePath());
+                    paperclipButton.setText("📎✓"); // Visual feedback that screenshot is selected
+                    Toast.makeText(this, "Screenshot selected for next message", Toast.LENGTH_SHORT).show();
+                }
                 dialogRef[0].dismiss();
-                Toast.makeText(this, "Screenshot selected for next message", Toast.LENGTH_SHORT).show();
             });
 
-            container.addView(imageView);
+            screenshotContainer.addView(imageView);
         }
 
+        // Create horizontal scroll view for screenshots
         HorizontalScrollView scrollView = new HorizontalScrollView(this);
-        scrollView.addView(container);
-        builder.setView(scrollView);
+        scrollView.addView(screenshotContainer);
+
+        // Add screenshots scroll view to main container
+        mainContainer.addView(scrollView);
+
+        // Add clear attachment button at the bottom
+        Button clearButton = new Button(this);
+        clearButton.setText("Clear Attachment");
+        clearButton.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        clearButton.setBackgroundResource(android.R.drawable.btn_default); // Default button style
+        clearButton.setTextColor(getResources().getColor(android.R.color.black)); // Standard text color
+        clearButton.setOnClickListener(v -> {
+            selectedScreenshot = null;
+            paperclipButton.setText("📎"); // Reset paperclip button
+            Log.d(TAG, "Screenshot attachment cleared via clear button");
+            Toast.makeText(this, "Screenshot attachment cleared", Toast.LENGTH_SHORT).show();
+            dialogRef[0].dismiss();
+        });
+
+        mainContainer.addView(clearButton);
+
+        builder.setView(mainContainer);
         builder.setNegativeButton("Cancel", (d, which) -> d.dismiss());
 
         dialogRef[0] = builder.create();
