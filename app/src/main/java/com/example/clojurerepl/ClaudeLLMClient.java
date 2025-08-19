@@ -276,19 +276,19 @@ public class ClaudeLLMClient extends LLMClient {
             String currentCode,
             String logcat,
             String feedback,
-            File image) {
+            List<File> images) {
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +
                 "│         GENERATING NEXT ITERATION         │\n" +
                 "└───────────────────────────────────────────┘");
 
-        // Check if image is provided and model is multimodal
-        if (image != null) {
+        // Check if images are provided and model is multimodal
+        if (images != null && !images.isEmpty()) {
             ModelProperties props = getModelProperties(getModel());
             if (props == null || !props.isMultimodal) {
                 CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
                 future.completeExceptionally(
-                        new UnsupportedOperationException("Image parameter provided but model is not multimodal"));
+                        new UnsupportedOperationException("Images parameter provided but model is not multimodal"));
                 return future;
             }
         }
@@ -311,10 +311,11 @@ public class ClaudeLLMClient extends LLMClient {
                 userCount + " user, and " + assistantCount + " assistant messages");
 
         // Format the iteration prompt (now includes currentCode)
-        String prompt = formatIterationPrompt(description, currentCode, logcat, feedback, image != null);
+        String prompt = formatIterationPrompt(description, currentCode, logcat, feedback,
+                images != null && !images.isEmpty());
 
-        // Queue the user message (with image attachment if provided)
-        chatSession.queueUserMessageWithImage(prompt, image, logcat, feedback, null);
+        // Queue the user message (with images attachment if provided)
+        chatSession.queueUserMessageWithImages(prompt, images, logcat, feedback, null);
 
         Log.d(TAG, "After queueing new user message, session now has " +
                 chatSession.getMessages().size() + " messages");
@@ -500,8 +501,8 @@ public class ClaudeLLMClient extends LLMClient {
                 messageObj.put("role", claudeRole);
 
                 // For Claude API, we need to handle both text and image content
-                if (msg.role == LLMClient.MessageRole.USER && ((LLMClient.UserMessage) msg).hasImage()) {
-                    // Create content array with both text and image
+                if (msg.role == LLMClient.MessageRole.USER && ((LLMClient.UserMessage) msg).hasImages()) {
+                    // Create content array with text and multiple images
                     JSONArray contentArray = new JSONArray();
 
                     // Add text content if present
@@ -512,52 +513,54 @@ public class ClaudeLLMClient extends LLMClient {
                         contentArray.put(textContent);
                     }
 
-                    // Add image content
-                    try {
-                        // Cast to UserMessage to access image fields
-                        LLMClient.UserMessage userMsg = (LLMClient.UserMessage) msg;
+                    // Add all images
+                    LLMClient.UserMessage userMsg = (LLMClient.UserMessage) msg;
+                    List<File> validImages = userMsg.getValidImageFiles();
+                    List<String> validMimes = userMsg.getValidMimeTypes();
 
-                        // Verify image file exists and is readable
-                        if (!userMsg.imageFile.exists()) {
-                            Log.e(TAG, "Image file does not exist: " + userMsg.imageFile.getAbsolutePath());
-                            throw new IOException("Image file does not exist: " + userMsg.imageFile.getAbsolutePath());
-                        }
+                    for (int imgIndex = 0; imgIndex < validImages.size() && imgIndex < validMimes.size(); imgIndex++) {
+                        try {
+                            File imageFile = validImages.get(imgIndex);
+                            String mimeType = validMimes.get(imgIndex);
 
-                        if (!userMsg.imageFile.canRead()) {
-                            Log.e(TAG, "Image file is not readable: " + userMsg.imageFile.getAbsolutePath());
-                            throw new IOException("Image file is not readable: " + userMsg.imageFile.getAbsolutePath());
-                        }
+                            // Verify image file exists and is readable
+                            if (!imageFile.exists()) {
+                                Log.e(TAG, "Image file " + (imgIndex + 1) + " does not exist: "
+                                        + imageFile.getAbsolutePath());
+                                continue; // Skip this image
+                            }
 
-                        Log.d(TAG, "Processing image: " + userMsg.imageFile.getAbsolutePath() +
-                                ", size: " + userMsg.imageFile.length() + " bytes");
+                            if (!imageFile.canRead()) {
+                                Log.e(TAG, "Image file " + (imgIndex + 1) + " is not readable: "
+                                        + imageFile.getAbsolutePath());
+                                continue; // Skip this image
+                            }
 
-                        String base64Image = encodeImageToBase64(userMsg.imageFile);
-                        JSONObject imageContent = new JSONObject();
-                        imageContent.put("type", "image");
-                        JSONObject imageSource = new JSONObject();
-                        imageSource.put("type", "base64");
-                        imageSource.put("media_type", userMsg.mimeType);
-                        imageSource.put("data", base64Image);
-                        imageContent.put("source", imageSource);
-                        contentArray.put(imageContent);
+                            Log.d(TAG, "Processing image " + (imgIndex + 1) + "/" + validImages.size() + ": " +
+                                    imageFile.getAbsolutePath() + ", size: " + imageFile.length() + " bytes");
 
-                        Log.d(TAG, "Added message with image, text length: " +
-                                (msg.content != null ? msg.content.length() : 0) +
-                                ", image base64 length: " + base64Image.length() +
-                                ", MIME type: " + userMsg.mimeType);
-                    } catch (IOException e) {
-                        LLMClient.UserMessage userMsg = (LLMClient.UserMessage) msg;
-                        Log.e(TAG, "Failed to encode image for message: " + userMsg.imageFile.getAbsolutePath(), e);
-                        // Continue without the image, just add text content
-                        if (msg.content != null && !msg.content.trim().isEmpty()) {
-                            messageObj.put("content", msg.content);
-                        }
-                    } catch (Exception e) {
-                        LLMClient.UserMessage userMsg = (LLMClient.UserMessage) msg;
-                        Log.e(TAG, "Unexpected error processing image: " + userMsg.imageFile.getAbsolutePath(), e);
-                        // Continue without the image, just add text content
-                        if (msg.content != null && !msg.content.trim().isEmpty()) {
-                            messageObj.put("content", msg.content);
+                            String base64Image = encodeImageToBase64(imageFile);
+                            JSONObject imageContent = new JSONObject();
+                            imageContent.put("type", "image");
+                            JSONObject imageSource = new JSONObject();
+                            imageSource.put("type", "base64");
+                            imageSource.put("media_type", mimeType);
+                            imageSource.put("data", base64Image);
+                            imageContent.put("source", imageSource);
+                            contentArray.put(imageContent);
+
+                            Log.d(TAG, "Added image " + (imgIndex + 1) + "/" + validImages.size() +
+                                    ", text length: " + (msg.content != null ? msg.content.length() : 0) +
+                                    ", image base64 length: " + base64Image.length() +
+                                    ", MIME type: " + mimeType);
+                        } catch (IOException e) {
+                            Log.e(TAG, "Failed to encode image " + (imgIndex + 1) + " for message: " +
+                                    validImages.get(imgIndex).getAbsolutePath(), e);
+                            // Continue with next image
+                        } catch (Exception e) {
+                            Log.e(TAG, "Unexpected error processing image " + (imgIndex + 1) + ": " +
+                                    validImages.get(imgIndex).getAbsolutePath(), e);
+                            // Continue with next image
                         }
                     }
 

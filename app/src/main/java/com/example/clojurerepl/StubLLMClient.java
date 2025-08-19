@@ -164,25 +164,26 @@ public class StubLLMClient extends LLMClient {
             String currentCode,
             String logcat,
             String feedback,
-            File image) {
+            List<File> images) {
         Log.d(TAG, "Generating next iteration for description: " + description + " using stub client");
 
-        // Check if image is provided and model is multimodal
-        if (image != null) {
+        // Check if images are provided and model is multimodal
+        if (images != null && !images.isEmpty()) {
             ModelProperties props = getModelProperties(getModel());
             if (props == null || !props.isMultimodal) {
                 CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
                 future.completeExceptionally(
-                        new UnsupportedOperationException("Image parameter provided but model is not multimodal"));
+                        new UnsupportedOperationException("Images parameter provided but model is not multimodal"));
                 return future;
             }
         }
 
         // Format the iteration prompt
-        String prompt = formatIterationPrompt(description, currentCode, logcat, feedback, image != null);
+        String prompt = formatIterationPrompt(description, currentCode, logcat, feedback,
+                images != null && !images.isEmpty());
 
-        // Queue the user message (with image attachment if provided)
-        chatSession.queueUserMessageWithImage(prompt, image, logcat, feedback, null);
+        // Queue the user message (with images attachment if provided)
+        chatSession.queueUserMessageWithImages(prompt, images, logcat, feedback, null);
 
         // Send all messages and get the response
         CancellableCompletableFuture<String> future = sendMessages(chatSession);

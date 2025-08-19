@@ -371,28 +371,23 @@ public class OpenAIChatClient extends LLMClient {
     public CancellableCompletableFuture<String> generateNextIteration(UUID sessionId, String description,
             String currentCode,
             String logcat,
-            String feedback, File image) {
+            String feedback, List<File> images) {
         ensureModelIsSet();
         Log.d(TAG, "┌───────────────────────────────────────────┐");
         Log.d(TAG, "│         GENERATING NEXT ITERATION         │");
         Log.d(TAG, "└───────────────────────────────────────────┘");
 
-        // Check if image is provided and model is multimodal
-        if (image != null) {
-            ModelProperties props = getModelProperties(getModel());
-            if (props == null || !props.isMultimodal) {
-                CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
-                future.completeExceptionally(
-                        new UnsupportedOperationException("Image parameter provided but model is not multimodal"));
-                return future;
-            }
+        // OpenAI implementation continues to ignore images as before
+        if (images != null && !images.isEmpty()) {
+            Log.w(TAG, "OpenAI implementation ignoring " + images.size() + " provided images");
         }
 
-        // Format the iteration prompt
-        String prompt = formatIterationPrompt(description, currentCode, logcat, feedback, image != null);
+        // Format the iteration prompt (ignoring images)
+        String prompt = formatIterationPrompt(description, currentCode, logcat, feedback, false);
 
-        // Queue the user message (with image attachment if provided)
-        chatSession.queueUserMessageWithImage(prompt, image, logcat, feedback, null);
+        // Queue the user message (without images, as OpenAI implementation ignores
+        // them)
+        chatSession.queueUserMessage(prompt, logcat, feedback, null);
         CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
         sendMessages(chatSession)
                 .thenAccept(response -> {

@@ -729,11 +729,17 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 feedback);
 
         // Generate next iteration using the iteration manager's method
+        // Convert single image to list
+        List<File> images = null;
+        if (image != null) {
+            images = new ArrayList<>();
+            images.add(image);
+        }
         iterationManager.generateNextIteration(
                 currentSession.getDescription(),
                 feedback,
                 result,
-                image)
+                images)
                 .thenAccept(code -> {
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
@@ -2545,7 +2551,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 currentSession.getDescription(),
                 errorFeedback,
                 result,
-                null) // No image for automatic iteration
+                null) // No images for automatic iteration
                 .thenAccept(code -> {
                     runOnUiThread(() -> {
                         // Dismiss progress dialog

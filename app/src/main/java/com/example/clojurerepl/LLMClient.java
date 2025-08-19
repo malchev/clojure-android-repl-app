@@ -210,25 +210,25 @@ public abstract class LLMClient {
     protected String formatIterationPrompt(String description,
             String currentCode,
             String logcat,
-            String feedback, boolean hasImage) {
+            String feedback, boolean hasImages) {
         Log.d(TAG, "Formatting iteration prompt with description: " + description +
                 ", feedback: " + feedback +
-                ", hasImage: " + hasImage);
+                ", hasImages: " + hasImages);
         boolean hasLogcat = logcat != null && !logcat.isEmpty();
         if (hasLogcat) {
             return String.format(
                     "The app needs work. Provide an improved version addressing the feedback%s logcat output%s.\n" +
                             "User feedback: %s\n" +
                             "Logcat output:\n```\n%s\n```\n\n",
-                    hasImage ? "," : " and",
-                    hasImage ? ", and attached image" : "",
+                    hasImages ? "," : " and",
+                    hasImages ? ", and attached images" : "",
                     feedback,
                     logcat);
         } else {
             return String.format(
                     "The app needs work. Provide an improved version addressing the feedback%s.\n" +
                             "User feedback: %s\n",
-                    hasImage ? " and attached image" : "",
+                    hasImages ? " and attached images" : "",
                     feedback);
         }
     }
@@ -239,7 +239,7 @@ public abstract class LLMClient {
             String currentCode,
             String logcat,
             String feedback,
-            File image);
+            List<File> images);
 
     // Base Message class for chat history
     public static abstract class Message {
@@ -259,27 +259,27 @@ public abstract class LLMClient {
         }
     }
 
-    // User message - can have image, logcat, feedback, initialCode
+    // User message - can have images, logcat, feedback, initialCode
     public static class UserMessage extends Message {
-        public final File imageFile;
-        public final String mimeType;
+        public final List<File> imageFiles;
+        public final List<String> mimeTypes;
         public final String logcat;
         public final String feedback;
         public final String initialCode;
 
         public UserMessage(String content) {
             super(MessageRole.USER, content);
-            this.imageFile = null;
-            this.mimeType = null;
+            this.imageFiles = new ArrayList<>();
+            this.mimeTypes = new ArrayList<>();
             this.logcat = null;
             this.feedback = null;
             this.initialCode = null;
         }
 
-        public UserMessage(String content, File imageFile, String mimeType) {
+        public UserMessage(String content, List<File> imageFiles, List<String> mimeTypes) {
             super(MessageRole.USER, content);
-            this.imageFile = imageFile;
-            this.mimeType = mimeType;
+            this.imageFiles = imageFiles != null ? new ArrayList<>(imageFiles) : new ArrayList<>();
+            this.mimeTypes = mimeTypes != null ? new ArrayList<>(mimeTypes) : new ArrayList<>();
             this.logcat = null;
             this.feedback = null;
             this.initialCode = null;
@@ -287,30 +287,82 @@ public abstract class LLMClient {
 
         public UserMessage(String content, String logcat, String feedback, String initialCode) {
             super(MessageRole.USER, content);
-            this.imageFile = null;
-            this.mimeType = null;
+            this.imageFiles = new ArrayList<>();
+            this.mimeTypes = new ArrayList<>();
             this.logcat = logcat;
             this.feedback = feedback;
             this.initialCode = initialCode;
         }
 
-        public UserMessage(String content, File imageFile, String mimeType,
+        public UserMessage(String content, List<File> imageFiles, List<String> mimeTypes,
                 String logcat, String feedback, String initialCode) {
             super(MessageRole.USER, content);
-            this.imageFile = imageFile;
-            this.mimeType = mimeType;
+            this.imageFiles = imageFiles != null ? new ArrayList<>(imageFiles) : new ArrayList<>();
+            this.mimeTypes = mimeTypes != null ? new ArrayList<>(mimeTypes) : new ArrayList<>();
             this.logcat = logcat;
             this.feedback = feedback;
             this.initialCode = initialCode;
         }
 
         /**
-         * Check if this message has an image
+         * Check if this message has any images
          * 
-         * @return true if the message has an image, false otherwise
+         * @return true if the message has at least one valid image, false otherwise
          */
         public boolean hasImage() {
-            return imageFile != null && imageFile.exists() && imageFile.canRead();
+            return hasImages();
+        }
+
+        /**
+         * Check if this message has any images
+         * 
+         * @return true if the message has at least one valid image, false otherwise
+         */
+        public boolean hasImages() {
+            if (imageFiles == null || imageFiles.isEmpty()) {
+                return false;
+            }
+            for (File imageFile : imageFiles) {
+                if (imageFile != null && imageFile.exists() && imageFile.canRead()) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * Get the list of valid image files
+         * 
+         * @return List of valid image files
+         */
+        public List<File> getValidImageFiles() {
+            List<File> validFiles = new ArrayList<>();
+            if (imageFiles != null) {
+                for (File imageFile : imageFiles) {
+                    if (imageFile != null && imageFile.exists() && imageFile.canRead()) {
+                        validFiles.add(imageFile);
+                    }
+                }
+            }
+            return validFiles;
+        }
+
+        /**
+         * Get the MIME types for valid images
+         * 
+         * @return List of MIME types corresponding to valid image files
+         */
+        public List<String> getValidMimeTypes() {
+            List<String> validMimeTypes = new ArrayList<>();
+            if (imageFiles != null && mimeTypes != null) {
+                for (int i = 0; i < Math.min(imageFiles.size(), mimeTypes.size()); i++) {
+                    File imageFile = imageFiles.get(i);
+                    if (imageFile != null && imageFile.exists() && imageFile.canRead()) {
+                        validMimeTypes.add(mimeTypes.get(i));
+                    }
+                }
+            }
+            return validMimeTypes;
         }
 
         /**
@@ -438,7 +490,7 @@ public abstract class LLMClient {
          * @param content The user message content
          */
         public void queueUserMessage(String content) {
-            queueUserMessageWithImage(content, null);
+            queueUserMessageWithImages(content, null);
         }
 
         /**
@@ -450,44 +502,51 @@ public abstract class LLMClient {
          * @param initialCode The initial code (can be null)
          */
         public void queueUserMessage(String content, String logcat, String feedback, String initialCode) {
-            queueUserMessageWithImage(content, null, logcat, feedback, initialCode);
+            queueUserMessageWithImages(content, null, logcat, feedback, initialCode);
         }
 
         /**
-         * Queues a user message with an attached image to be sent in the next API call
+         * Queues a user message with attached images to be sent in the next API call
          *
-         * @param content   The user message content
-         * @param imageFile The image file to attach (can be null for text-only
-         *                  messages)
+         * @param content    The user message content
+         * @param imageFiles The image files to attach (can be null or empty for
+         *                   text-only
+         *                   messages)
          */
-        public void queueUserMessageWithImage(String content, File imageFile) {
-            queueUserMessageWithImage(content, imageFile, null, null, null);
+        public void queueUserMessageWithImages(String content, List<File> imageFiles) {
+            queueUserMessageWithImages(content, imageFiles, null, null, null);
         }
 
         /**
-         * Queues a user message with an attached image and additional fields to be sent
+         * Queues a user message with attached images and additional fields to be sent
          * in the next API call
          *
          * @param content     The user message content
-         * @param imageFile   The image file to attach (can be null for text-only
+         * @param imageFiles  The image files to attach (can be null or empty for
+         *                    text-only
          *                    messages)
          * @param logcat      The logcat output (can be null)
          * @param feedback    The user feedback (can be null)
          * @param initialCode The initial code (can be null)
          */
-        public void queueUserMessageWithImage(String content, File imageFile, String logcat, String feedback,
+        public void queueUserMessageWithImages(String content, List<File> imageFiles, String logcat, String feedback,
                 String initialCode) {
-            Log.d(TAG, "Queuing user message with image and fields in session: " + sessionId);
+            Log.d(TAG, "Queuing user message with images and fields in session: " + sessionId);
 
-            if (imageFile != null) {
-                // Determine MIME type based on file extension
-                String mimeType = determineMimeType(imageFile);
+            if (imageFiles != null && !imageFiles.isEmpty()) {
+                // Determine MIME types for all images
+                List<String> mimeTypes = new ArrayList<>();
+                for (File imageFile : imageFiles) {
+                    if (imageFile != null) {
+                        mimeTypes.add(determineMimeType(imageFile));
+                    }
+                }
 
-                // Create message with image and fields
-                UserMessage message = new UserMessage(content, imageFile, mimeType, logcat, feedback, initialCode);
+                // Create message with images and fields
+                UserMessage message = new UserMessage(content, imageFiles, mimeTypes, logcat, feedback, initialCode);
                 messages.add(message);
 
-                Log.d(TAG, "Added message with image and fields, MIME type: " + mimeType);
+                Log.d(TAG, "Added message with " + imageFiles.size() + " images and fields");
             } else {
                 // Regular text-only message with fields
                 messages.add(new UserMessage(content, logcat, feedback, initialCode));

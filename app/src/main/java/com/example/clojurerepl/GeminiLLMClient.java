@@ -656,20 +656,20 @@ public class GeminiLLMClient extends LLMClient {
             String currentCode,
             String logcat,
             String feedback,
-            File image) {
+            List<File> images) {
 
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +
                 "│         GENERATING NEXT ITERATION         │\n" +
                 "└───────────────────────────────────────────┘");
 
-        // Check if image is provided and model is multimodal
-        if (image != null) {
+        // Check if images are provided and model is multimodal
+        if (images != null && !images.isEmpty()) {
             ModelProperties props = getModelProperties(getModel());
             if (props == null || !props.isMultimodal) {
                 CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
                 future.completeExceptionally(
-                        new UnsupportedOperationException("Image parameter provided but model is not multimodal"));
+                        new UnsupportedOperationException("Images parameter provided but model is not multimodal"));
                 return future;
             }
         }
@@ -679,14 +679,15 @@ public class GeminiLLMClient extends LLMClient {
         Log.d(TAG, "Current code length: " + (currentCode != null ? currentCode.length() : 0));
         Log.d(TAG,
                 "=== Logcat Content Being Sent === (" + (logcat != null ? logcat.split("\n").length : 0) + " lines)");
-        Log.d(TAG, "Image present: " + (image != null ? image.getPath() : "null"));
+        Log.d(TAG, "Images present: " + (images != null && !images.isEmpty() ? images.size() + " images" : "none"));
         Log.d(TAG, "Feedback: " + feedback);
 
         // Format the iteration prompt
-        String prompt = formatIterationPrompt(description, currentCode, logcat, feedback, image != null);
+        String prompt = formatIterationPrompt(description, currentCode, logcat, feedback,
+                images != null && !images.isEmpty());
 
-        // Queue the user message (with image attachment if provided)
-        chatSession.queueUserMessageWithImage(prompt, image, logcat, feedback, null);
+        // Queue the user message (with images attachment if provided)
+        chatSession.queueUserMessageWithImages(prompt, images, logcat, feedback, null);
 
         // Send all messages and get the response
         CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
@@ -842,14 +843,20 @@ public class GeminiLLMClient extends LLMClient {
                 } else {
                     geminiRole = msg.role.getApiValue();
                 }
-                Log.d(TAG, String.format("Message %d - Role: %s\nContent:\n%s\nImage: %s (MIME: %s)",
-                        i, geminiRole, contentPreview,
-                        (msg.role == LLMClient.MessageRole.USER && ((LLMClient.UserMessage) msg).hasImage())
-                                ? ((LLMClient.UserMessage) msg).imageFile.getPath()
-                                : "none",
-                        (msg.role == LLMClient.MessageRole.USER && ((LLMClient.UserMessage) msg).hasImage())
-                                ? ((LLMClient.UserMessage) msg).mimeType
-                                : "none"));
+                String imageInfo = "none";
+                String mimeInfo = "none";
+                if (msg.role == LLMClient.MessageRole.USER && ((LLMClient.UserMessage) msg).hasImages()) {
+                    LLMClient.UserMessage userMsg = (LLMClient.UserMessage) msg;
+                    List<File> validImages = userMsg.getValidImageFiles();
+                    List<String> validMimes = userMsg.getValidMimeTypes();
+                    if (!validImages.isEmpty()) {
+                        imageInfo = validImages.size() + " images: " + validImages.get(0).getPath() +
+                                (validImages.size() > 1 ? " and " + (validImages.size() - 1) + " more" : "");
+                        mimeInfo = String.join(", ", validMimes);
+                    }
+                }
+                Log.d(TAG, String.format("Message %d - Role: %s\nContent:\n%s\nImages: %s (MIME: %s)",
+                        i, geminiRole, contentPreview, imageInfo, mimeInfo));
             }
 
             String apiKey = apiKeyManager.getApiKey(LLMClientFactory.LLMType.GEMINI);
@@ -918,24 +925,33 @@ public class GeminiLLMClient extends LLMClient {
                         parts.put(textPart);
                     }
 
-                    // Add image part if image exists and is readable
-                    if (message.role == LLMClient.MessageRole.USER && ((LLMClient.UserMessage) message).hasImage()) {
-                        try {
-                            LLMClient.UserMessage userMsg = (LLMClient.UserMessage) message;
-                            String base64Image = encodeImageToBase64(userMsg.imageFile);
-                            JSONObject imagePart = new JSONObject();
-                            JSONObject inlineData = new JSONObject();
-                            inlineData.put("mime_type", userMsg.mimeType);
-                            inlineData.put("data", base64Image);
-                            imagePart.put("inline_data", inlineData);
-                            parts.put(imagePart);
+                    // Add image parts if images exist and are readable
+                    if (message.role == LLMClient.MessageRole.USER && ((LLMClient.UserMessage) message).hasImages()) {
+                        LLMClient.UserMessage userMsg = (LLMClient.UserMessage) message;
+                        List<File> validImages = userMsg.getValidImageFiles();
+                        List<String> validMimes = userMsg.getValidMimeTypes();
 
-                            Log.d(TAG, "Added message with image, text length: " +
-                                    message.content.length() + ", image base64 length: " + base64Image.length() +
-                                    ", MIME type: " + userMsg.mimeType);
-                        } catch (IOException e) {
-                            Log.e(TAG, "Failed to encode image for message", e);
-                            // Continue without the image
+                        for (int imgIndex = 0; imgIndex < validImages.size()
+                                && imgIndex < validMimes.size(); imgIndex++) {
+                            try {
+                                File imageFile = validImages.get(imgIndex);
+                                String mimeType = validMimes.get(imgIndex);
+                                String base64Image = encodeImageToBase64(imageFile);
+                                JSONObject imagePart = new JSONObject();
+                                JSONObject inlineData = new JSONObject();
+                                inlineData.put("mime_type", mimeType);
+                                inlineData.put("data", base64Image);
+                                imagePart.put("inline_data", inlineData);
+                                parts.put(imagePart);
+
+                                Log.d(TAG, "Added image " + (imgIndex + 1) + "/" + validImages.size() +
+                                        ", text length: " + message.content.length() +
+                                        ", image base64 length: " + base64Image.length() +
+                                        ", MIME type: " + mimeType);
+                            } catch (IOException e) {
+                                Log.e(TAG, "Failed to encode image " + (imgIndex + 1) + " for message", e);
+                                // Continue with next image
+                            }
                         }
                     }
 

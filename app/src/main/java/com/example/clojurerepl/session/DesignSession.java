@@ -463,12 +463,29 @@ public class DesignSession {
                 }
             }
 
-            // Add image file path and MIME type if the message has an image
+            // Add image file paths and MIME types if the message has images
             if (message.role == LLMClient.MessageRole.USER) {
                 LLMClient.UserMessage userMsg = (LLMClient.UserMessage) message;
-                if (userMsg.hasImage()) {
-                    messageJson.put("imageFile", userMsg.imageFile.getPath());
-                    messageJson.put("mimeType", userMsg.mimeType);
+                if (userMsg.hasImages()) {
+                    List<File> validImages = userMsg.getValidImageFiles();
+                    List<String> validMimes = userMsg.getValidMimeTypes();
+                    if (!validImages.isEmpty()) {
+                        // For backward compatibility, store first image in old fields
+                        messageJson.put("imageFile", validImages.get(0).getPath());
+                        messageJson.put("mimeType", validMimes.get(0));
+
+                        // Store all images in new array fields
+                        JSONArray imageFiles = new JSONArray();
+                        JSONArray mimeTypes = new JSONArray();
+                        for (File imageFile : validImages) {
+                            imageFiles.put(imageFile.getPath());
+                        }
+                        for (String mimeType : validMimes) {
+                            mimeTypes.put(mimeType);
+                        }
+                        messageJson.put("imageFiles", imageFiles);
+                        messageJson.put("mimeTypes", mimeTypes);
+                    }
                 }
             }
 
@@ -602,15 +619,52 @@ public class DesignSession {
                         messageInitialCode = messageJson.getString("initialCode");
                     }
 
-                    // Check if the message has an image
-                    if (messageJson.has("imageFile") && messageJson.has("mimeType")) {
+                    // Check if the message has images (new format with arrays)
+                    if (messageJson.has("imageFiles") && messageJson.has("mimeTypes")) {
+                        JSONArray imagePathsArray = messageJson.getJSONArray("imageFiles");
+                        JSONArray mimeTypesArray = messageJson.getJSONArray("mimeTypes");
+
+                        List<File> imageFiles = new ArrayList<>();
+                        List<String> mimeTypes = new ArrayList<>();
+
+                        // Process all images
+                        for (int imgIdx = 0; imgIdx < imagePathsArray.length()
+                                && imgIdx < mimeTypesArray.length(); imgIdx++) {
+                            String imagePath = imagePathsArray.getString(imgIdx);
+                            String mimeType = mimeTypesArray.getString(imgIdx);
+                            File imageFile = new File(imagePath);
+
+                            if (imageFile.exists()) {
+                                imageFiles.add(imageFile);
+                                mimeTypes.add(mimeType);
+                            } else {
+                                Log.w(TAG, "Image file not found during deserialization: " + imagePath);
+                            }
+                        }
+
+                        if (!imageFiles.isEmpty()) {
+                            chatHistory.add(new LLMClient.UserMessage(content, imageFiles, mimeTypes, logcat, feedback,
+                                    messageInitialCode));
+                        } else {
+                            chatHistory.add(new LLMClient.UserMessage(content, logcat, feedback, messageInitialCode));
+                        }
+                    }
+                    // Check if the message has a single image (old format for backward
+                    // compatibility)
+                    else if (messageJson.has("imageFile") && messageJson.has("mimeType")) {
                         String imagePath = messageJson.getString("imageFile");
                         String mimeType = messageJson.getString("mimeType");
                         File imageFile = new File(imagePath);
 
                         // Only create message with image if the file exists
                         if (imageFile.exists()) {
-                            chatHistory.add(new LLMClient.UserMessage(content, imageFile, mimeType, logcat, feedback,
+                            // Convert single image to list for new API
+                            List<File> singleImageList = new ArrayList<>();
+                            List<String> singleMimeList = new ArrayList<>();
+                            singleImageList.add(imageFile);
+                            singleMimeList.add(mimeType);
+                            chatHistory.add(new LLMClient.UserMessage(content, singleImageList, singleMimeList, logcat,
+                                    feedback,
                                     messageInitialCode));
                         } else {
                             // File doesn't exist, create regular message
@@ -634,9 +688,16 @@ public class DesignSession {
                 session.chatSession.queueSystemPrompt(message.content);
             } else if (LLMClient.MessageRole.USER.equals(message.role)) {
                 LLMClient.UserMessage userMsg = (LLMClient.UserMessage) message;
-                if (userMsg.hasImage()) {
-                    session.chatSession.queueUserMessageWithImage(message.content, userMsg.imageFile,
-                            userMsg.getLogcat(), userMsg.getFeedback(), userMsg.getInitialCode());
+                if (userMsg.hasImages()) {
+                    List<File> validImages = userMsg.getValidImageFiles();
+                    if (!validImages.isEmpty()) {
+                        // Use the new multi-image method
+                        session.chatSession.queueUserMessageWithImages(message.content, validImages,
+                                userMsg.getLogcat(), userMsg.getFeedback(), userMsg.getInitialCode());
+                    } else {
+                        session.chatSession.queueUserMessage(message.content, userMsg.getLogcat(),
+                                userMsg.getFeedback(), userMsg.getInitialCode());
+                    }
                 } else {
                     session.chatSession.queueUserMessage(message.content, userMsg.getLogcat(),
                             userMsg.getFeedback(), userMsg.getInitialCode());
