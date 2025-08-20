@@ -90,7 +90,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     private AlertDialog apiKeyDialog;
 
     // Add field to track selected screenshot for multimodal feedback
-    private File selectedScreenshot = null;
+    private List<File> selectedScreenshots = new ArrayList<>();
 
     // Add session support
     private SessionManager sessionManager;
@@ -489,17 +489,17 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             // We have existing code, so this is feedback for improvement
             Log.d(TAG, "Submitting feedback for existing code: " + feedbackText);
 
-            // Save the selected screenshot before clearing it
-            File imageToSubmit = selectedScreenshot;
+            // Save the selected screenshots before clearing them
+            List<File> imagesToSubmit = new ArrayList<>(selectedScreenshots);
 
             // Clear the input field and saved state for existing code feedback
             feedbackInput.setText("");
             currentSession.setCurrentInputText(null);
-            currentSession.setSelectedImagePath(null);
-            selectedScreenshot = null;
+            currentSession.setSelectedImagePaths(null);
+            selectedScreenshots.clear();
             paperclipButton.setText("📎"); // Reset paperclip button
 
-            submitFeedbackWithText(feedbackText, imageToSubmit);
+            submitFeedbackWithText(feedbackText, imagesToSubmit);
         } else {
             // No existing code, so this is initial app description
             Log.d(TAG, "Starting new design with description: " + feedbackText);
@@ -556,8 +556,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         // Clear saved input state since we successfully passed validation
         // and are now starting the generation
         currentSession.setCurrentInputText(null);
-        currentSession.setSelectedImagePath(null);
-        selectedScreenshot = null;
+        currentSession.setSelectedImagePaths(null);
+        selectedScreenshots.clear();
         paperclipButton.setText("📎"); // Reset paperclip button
 
         // Disable the submit button during generation
@@ -639,10 +639,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     }
 
     private void submitFeedbackWithText(String feedback) {
-        submitFeedbackWithText(feedback, selectedScreenshot);
+        submitFeedbackWithText(feedback, selectedScreenshots);
     }
 
-    private void submitFeedbackWithText(String feedback, File image) {
+    private void submitFeedbackWithText(String feedback, List<File> images) {
         Log.d(TAG, "\n" +
                 "╔═══════════════════════════════════════════╗\n" +
                 "║         STARTING NEXT ITERATION           ║\n" +
@@ -650,7 +650,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         Log.d(TAG, "submitFeedbackWithText: feedback=" +
                 (feedback != null ? "present (len=" + feedback.length() + ")" : "null") +
-                ", image=" + (image != null ? image.getPath() : "null") +
+                ", images=" + (images != null ? images.size() + " selected" : "none") +
                 ", iterationManager=" + (iterationManager != null ? "present" : "null") +
                 ", LLM client="
                 + (iterationManager != null && iterationManager.getLLMClient() != null ? "initialized" : "null"));
@@ -729,12 +729,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 feedback);
 
         // Generate next iteration using the iteration manager's method
-        // Convert single image to list
-        List<File> images = null;
-        if (image != null) {
-            images = new ArrayList<>();
-            images.add(image);
-        }
         iterationManager.generateNextIteration(
                 currentSession.getDescription(),
                 feedback,
@@ -777,10 +771,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                             feedbackInput.setText(feedback);
                             feedbackInput.setSelection(feedback.length()); // Move cursor to end
 
-                            // Restore the selected screenshot if one was attached
-                            if (image != null) {
-                                selectedScreenshot = image;
-                                paperclipButton.setText("📎✓"); // Visual feedback that screenshot is selected
+                            // Restore the selected screenshots if any were attached
+                            if (images != null && !images.isEmpty()) {
+                                selectedScreenshots.clear();
+                                selectedScreenshots.addAll(images);
+                                paperclipButton.setText("📎✓ (" + selectedScreenshots.size() + ")"); // Visual feedback
+                                                                                                     // that screenshots
+                                                                                                     // are selected
                             }
 
                             // Make sure buttons are enabled after cancellation
@@ -801,10 +798,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         feedbackInput.setText(feedback);
                         feedbackInput.setSelection(feedback.length()); // Move cursor to end
 
-                        // Restore the selected screenshot if one was attached
-                        if (image != null) {
-                            selectedScreenshot = image;
-                            paperclipButton.setText("📎✓"); // Visual feedback that screenshot is selected
+                        // Restore the selected screenshots if any were attached
+                        if (images != null && !images.isEmpty()) {
+                            selectedScreenshots.addAll(images);
+                            paperclipButton.setText("📎✓"); // Visual feedback that screenshots are selected
                         }
 
                         showLLMErrorDialog("Iteration Error",
@@ -2263,7 +2260,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     // Set click listener
                     final int index = i;
                     imageView.setOnClickListener(v -> {
-                        selectedScreenshot = screenshot;
+                        selectedScreenshots.clear();
+                        selectedScreenshots.add(screenshot);
                         Toast.makeText(this, "Screenshot " + (index + 1) + " selected", Toast.LENGTH_SHORT).show();
                         if (dialogRef[0] != null) {
                             dialogRef[0].dismiss();
@@ -2284,7 +2282,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         builder.setView(scrollView);
         builder.setPositiveButton("OK", (d, which) -> d.dismiss());
         builder.setNegativeButton("Cancel", (d, which) -> {
-            selectedScreenshot = null;
+            selectedScreenshots.clear();
             d.dismiss();
             screenshotCheckbox.setChecked(false);
         });
@@ -2293,7 +2291,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     }
 
     /**
-     * Shows screenshot selection dialog for chat input
+     * Shows screenshot selection dialog for chat input with multi-selection support
      */
     private void showScreenshotSelectionForChat() {
         // Check if current model supports images
@@ -2336,9 +2334,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         }
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Select Screenshot to Attach" + iterationInfo);
+        builder.setTitle("Select Screenshots" + iterationInfo + " (Multiple selection enabled)");
 
-        // Create main container with vertical layout for screenshots and clear button
+        // Create main container with vertical layout for screenshots and buttons
         LinearLayout mainContainer = new LinearLayout(this);
         mainContainer.setOrientation(LinearLayout.VERTICAL);
         mainContainer.setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16));
@@ -2346,10 +2344,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         // Create a horizontal scrollable layout for screenshots
         LinearLayout screenshotContainer = new LinearLayout(this);
         screenshotContainer.setOrientation(LinearLayout.HORIZONTAL);
-        screenshotContainer.setPadding(0, 0, 0, dpToPx(16)); // Bottom padding before clear button
+        screenshotContainer.setPadding(0, 0, 0, dpToPx(16)); // Bottom padding before buttons
 
         // Create the dialog first so we can reference it in the click listeners
         final AlertDialog[] dialogRef = new AlertDialog[1];
+
+        // Keep track of currently selected screenshots for this dialog
+        final List<File> tempSelectedScreenshots = new ArrayList<>(selectedScreenshots);
 
         for (int i = 0; i < availableScreenshots.size(); i++) {
             String screenshotPath = availableScreenshots.get(i);
@@ -2363,18 +2364,26 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             imageView.setLayoutParams(params);
             imageView.setScaleType(ImageView.ScaleType.CENTER_CROP);
 
-            // Check if this is the currently selected screenshot
-            boolean isCurrentlySelected = selectedScreenshot != null &&
-                    screenshot.getAbsolutePath().equals(selectedScreenshot.getAbsolutePath());
+            // Check if this screenshot is currently selected
+            boolean isCurrentlySelected = tempSelectedScreenshots.stream()
+                    .anyMatch(f -> f.getAbsolutePath().equals(screenshot.getAbsolutePath()));
 
-            if (isCurrentlySelected) {
-                // Highlight the currently selected screenshot with a green border
-                imageView.setBackgroundColor(0xFF4CAF50); // Green background
-                imageView.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4)); // Padding to show border
-            } else {
-                imageView.setBackgroundResource(android.R.drawable.btn_default);
-                imageView.setPadding(0, 0, 0, 0);
-            }
+            // Function to update image highlighting
+            Runnable updateHighlight = () -> {
+                boolean isSelected = tempSelectedScreenshots.stream()
+                        .anyMatch(f -> f.getAbsolutePath().equals(screenshot.getAbsolutePath()));
+                if (isSelected) {
+                    // Highlight selected screenshots with a green border
+                    imageView.setBackgroundColor(0xFF4CAF50); // Green background
+                    imageView.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4)); // Padding to show border
+                } else {
+                    imageView.setBackgroundResource(android.R.drawable.btn_default);
+                    imageView.setPadding(0, 0, 0, 0);
+                }
+            };
+
+            // Initial highlight
+            updateHighlight.run();
 
             try {
                 Bitmap bitmap = BitmapFactory.decodeFile(screenshot.getAbsolutePath());
@@ -2389,20 +2398,29 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             }
 
             imageView.setOnClickListener(v -> {
-                if (isCurrentlySelected) {
-                    // Clear the current selection if tapping the already selected screenshot
-                    selectedScreenshot = null;
-                    paperclipButton.setText("📎"); // Reset paperclip button
-                    Log.d(TAG, "Screenshot attachment cleared by tapping selected image");
-                    Toast.makeText(this, "Screenshot attachment cleared", Toast.LENGTH_SHORT).show();
+                boolean isSelected = tempSelectedScreenshots.stream()
+                        .anyMatch(f -> f.getAbsolutePath().equals(screenshot.getAbsolutePath()));
+
+                if (isSelected) {
+                    // Deselect this screenshot
+                    tempSelectedScreenshots.removeIf(f -> f.getAbsolutePath().equals(screenshot.getAbsolutePath()));
+                    Log.d(TAG, "Screenshot deselected: " + screenshot.getAbsolutePath());
                 } else {
                     // Select this screenshot
-                    selectedScreenshot = screenshot;
-                    Log.d(TAG, "Screenshot attached to paperclip: " + screenshot.getAbsolutePath());
-                    paperclipButton.setText("📎✓"); // Visual feedback that screenshot is selected
-                    Toast.makeText(this, "Screenshot selected for next message", Toast.LENGTH_SHORT).show();
+                    tempSelectedScreenshots.add(screenshot);
+                    Log.d(TAG, "Screenshot selected: " + screenshot.getAbsolutePath());
                 }
-                dialogRef[0].dismiss();
+
+                // Update highlight
+                updateHighlight.run();
+
+                // Update toast message
+                if (tempSelectedScreenshots.isEmpty()) {
+                    Toast.makeText(this, "No screenshots selected", Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(this, tempSelectedScreenshots.size() + " screenshot(s) selected", Toast.LENGTH_SHORT)
+                            .show();
+                }
             });
 
             screenshotContainer.addView(imageView);
@@ -2415,23 +2433,62 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         // Add screenshots scroll view to main container
         mainContainer.addView(scrollView);
 
-        // Add clear attachment button at the bottom
-        Button clearButton = new Button(this);
-        clearButton.setText("Clear Attachment");
-        clearButton.setLayoutParams(new LinearLayout.LayoutParams(
+        // Create button container for horizontal layout
+        LinearLayout buttonContainer = new LinearLayout(this);
+        buttonContainer.setOrientation(LinearLayout.HORIZONTAL);
+        buttonContainer.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
-        clearButton.setBackgroundResource(android.R.drawable.btn_default); // Default button style
-        clearButton.setTextColor(getResources().getColor(android.R.color.black)); // Standard text color
+
+        // Clear selection button
+        Button clearButton = new Button(this);
+        clearButton.setText("Clear Selection");
+        LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
+        clearParams.setMargins(0, 0, dpToPx(8), 0);
+        clearButton.setLayoutParams(clearParams);
+        clearButton.setBackgroundResource(android.R.drawable.btn_default);
+        clearButton.setTextColor(getResources().getColor(android.R.color.black));
         clearButton.setOnClickListener(v -> {
-            selectedScreenshot = null;
+            tempSelectedScreenshots.clear();
+            selectedScreenshots.clear();
             paperclipButton.setText("📎"); // Reset paperclip button
-            Log.d(TAG, "Screenshot attachment cleared via clear button");
-            Toast.makeText(this, "Screenshot attachment cleared", Toast.LENGTH_SHORT).show();
+            Log.d(TAG, "Screenshot selections cleared");
+            Toast.makeText(this, "Selection cleared", Toast.LENGTH_SHORT).show();
             dialogRef[0].dismiss();
         });
 
-        mainContainer.addView(clearButton);
+        // Accept button
+        Button acceptButton = new Button(this);
+        acceptButton.setText("Accept");
+        LinearLayout.LayoutParams acceptParams = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
+        acceptParams.setMargins(dpToPx(8), 0, 0, 0);
+        acceptButton.setLayoutParams(acceptParams);
+        acceptButton.setBackgroundResource(android.R.drawable.btn_default);
+        acceptButton.setTextColor(getResources().getColor(android.R.color.black));
+        acceptButton.setOnClickListener(v -> {
+            // Apply the selection
+            selectedScreenshots.clear();
+            selectedScreenshots.addAll(tempSelectedScreenshots);
+
+            // Update paperclip button
+            if (selectedScreenshots.isEmpty()) {
+                paperclipButton.setText("📎");
+            } else {
+                paperclipButton.setText("📎✓ (" + selectedScreenshots.size() + ")");
+            }
+
+            Log.d(TAG, "Accepted " + selectedScreenshots.size() + " screenshot selections");
+            String message = selectedScreenshots.isEmpty() ? "No screenshots selected"
+                    : selectedScreenshots.size() + " screenshot(s) selected for next message";
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+            dialogRef[0].dismiss();
+        });
+
+        buttonContainer.addView(clearButton);
+        buttonContainer.addView(acceptButton);
+        mainContainer.addView(buttonContainer);
 
         builder.setView(mainContainer);
         builder.setNegativeButton("Cancel", (d, which) -> d.dismiss());
@@ -2460,7 +2517,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             paperclipButton.setTextColor(0xFFCCCCCC); // Light gray when disabled
             paperclipButton.setAlpha(0.5f);
             // Clear any selected screenshot since we can't use it
-            selectedScreenshot = null;
+            selectedScreenshots.clear();
             paperclipButton.setText("📎");
         }
     }
@@ -2551,7 +2608,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 currentSession.getDescription(),
                 errorFeedback,
                 result,
-                null) // No images for automatic iteration
+                new ArrayList<>()) // No images for automatic iteration
                 .thenAccept(code -> {
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
@@ -2691,16 +2748,23 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         String inputText = feedbackInput != null ? feedbackInput.getText().toString() : null;
         currentSession.setCurrentInputText(inputText);
 
-        // Save selected image path
-        String imagePath = selectedScreenshot != null ? selectedScreenshot.getAbsolutePath() : null;
-        currentSession.setSelectedImagePath(imagePath);
+        // Save all selected image paths
+        if (!selectedScreenshots.isEmpty()) {
+            List<String> imagePaths = new ArrayList<>();
+            for (File screenshot : selectedScreenshots) {
+                imagePaths.add(screenshot.getAbsolutePath());
+            }
+            currentSession.setSelectedImagePaths(imagePaths);
+        } else {
+            currentSession.setSelectedImagePaths(null);
+        }
 
         // Update the session in storage
         sessionManager.updateSession(currentSession);
 
         Log.d(TAG,
                 "Saved input state: text=" + (inputText != null ? "present (len=" + inputText.length() + ")" : "null") +
-                        ", image=" + (imagePath != null ? imagePath : "null"));
+                        ", images=" + selectedScreenshots.size() + " selected");
     }
 
     /**
@@ -2719,19 +2783,31 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             Log.d(TAG, "Restored input text: " + inputText);
         }
 
-        // Restore selected image
-        String imagePath = currentSession.getSelectedImagePath();
-        if (imagePath != null) {
-            File imageFile = new File(imagePath);
-            if (imageFile.exists()) {
-                selectedScreenshot = imageFile;
-                paperclipButton.setText("📎✓"); // Visual feedback that screenshot is selected
-                Log.d(TAG, "Restored selected image: " + imagePath);
+        // Restore selected images (with fallback to single image for backward
+        // compatibility)
+        List<String> imagePaths = currentSession.getSelectedImagePaths();
+        if (imagePaths != null && !imagePaths.isEmpty()) {
+            selectedScreenshots.clear();
+            int restoredCount = 0;
+            for (String imagePath : imagePaths) {
+                File imageFile = new File(imagePath);
+                if (imageFile.exists()) {
+                    selectedScreenshots.add(imageFile);
+                    restoredCount++;
+                } else {
+                    Log.w(TAG, "Saved image no longer exists: " + imagePath);
+                }
+            }
+
+            if (restoredCount > 0) {
+                paperclipButton.setText("📎✓ (" + selectedScreenshots.size() + ")"); // Visual feedback that screenshots
+                                                                                     // are selected
+                Log.d(TAG, "Restored " + restoredCount + " selected images");
             } else {
-                // Image file no longer exists, clear the saved path
-                currentSession.setSelectedImagePath(null);
+                // None of the saved images exist anymore, clear the saved paths
+                currentSession.setSelectedImagePaths(null);
                 sessionManager.updateSession(currentSession);
-                Log.w(TAG, "Saved image no longer exists: " + imagePath);
+                Log.w(TAG, "None of the saved images exist anymore, cleared selection");
             }
         }
     }

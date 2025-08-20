@@ -43,7 +43,7 @@ public class DesignSession {
     private List<List<String>> screenshotSets;
     private List<Integer> screenshotSetIterations; // Tracks which iteration each screenshot set belongs to
     private String currentInputText;
-    private String selectedImagePath;
+    private List<String> selectedImagePaths; // New field for multiple image paths
 
     public DesignSession() {
         this.id = UUID.randomUUID();
@@ -279,12 +279,12 @@ public class DesignSession {
         this.currentInputText = currentInputText;
     }
 
-    public String getSelectedImagePath() {
-        return selectedImagePath;
+    public List<String> getSelectedImagePaths() {
+        return selectedImagePaths;
     }
 
-    public void setSelectedImagePath(String selectedImagePath) {
-        this.selectedImagePath = selectedImagePath;
+    public void setSelectedImagePaths(List<String> selectedImagePaths) {
+        this.selectedImagePaths = selectedImagePaths;
     }
 
     /**
@@ -526,8 +526,12 @@ public class DesignSession {
             json.put("currentInputText", currentInputText);
         }
 
-        if (selectedImagePath != null) {
-            json.put("selectedImagePath", selectedImagePath);
+        if (selectedImagePaths != null && !selectedImagePaths.isEmpty()) {
+            JSONArray imagePathsArray = new JSONArray();
+            for (String imagePath : selectedImagePaths) {
+                imagePathsArray.put(imagePath);
+            }
+            json.put("selectedImagePaths", imagePathsArray);
         }
 
         return json;
@@ -741,8 +745,23 @@ public class DesignSession {
             session.currentInputText = json.getString("currentInputText");
         }
 
+        String selectedImagePath = null;
         if (json.has("selectedImagePath")) {
-            session.selectedImagePath = json.getString("selectedImagePath");
+            selectedImagePath = json.getString("selectedImagePath");
+        }
+
+        if (json.has("selectedImagePaths")) {
+            JSONArray imagePathsArray = json.getJSONArray("selectedImagePaths");
+            List<String> imagePaths = new ArrayList<>();
+            for (int i = 0; i < imagePathsArray.length(); i++) {
+                imagePaths.add(imagePathsArray.getString(i));
+            }
+            session.selectedImagePaths = imagePaths;
+        } else if (selectedImagePath != null) {
+            // For backward compatibility: if we have a single path but no paths array,
+            // convert the single path to a list
+            session.selectedImagePaths = new ArrayList<>();
+            session.selectedImagePaths.add(selectedImagePath);
         }
 
         return session;
