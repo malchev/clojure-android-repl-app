@@ -691,7 +691,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                         // Show chat history
                         chatHistoryContainer.setVisibility(View.VISIBLE);
-                        updateChatHistoryDisplay();
+                        updateChatHistoryDisplayWithLatestSelection();
 
                         // Only launch RenderActivity after we have the code
                         if (code != null && !code.isEmpty()) {
@@ -892,8 +892,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         runButton.setEnabled(true);
                         submitFeedbackButton.setEnabled(true);
 
-                        // Update chat history
-                        updateChatHistoryDisplay();
+                        // Update chat history and force selection of the latest AI response
+                        updateChatHistoryDisplayWithLatestSelection();
 
                         runSelectedCode(true);
                     });
@@ -1828,6 +1828,20 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     }
 
     /**
+     * Updates the chat history display and forces selection of the latest AI
+     * response
+     * (ignoring any saved selection). This is used when a new AI response is
+     * generated.
+     */
+    private void updateChatHistoryDisplayWithLatestSelection() {
+        // Clear any saved selection to ensure we select the latest AI response
+        if (currentSession != null) {
+            currentSession.setSelectedMessageIndex(-1);
+        }
+        updateChatHistoryDisplay(true, true); // Auto-select last (will pick latest), auto-scroll
+    }
+
+    /**
      * Updates the chat history display with control over selection and scrolling
      * behavior
      * 
@@ -1838,6 +1852,34 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         if (currentSession != null) {
             List<LLMClient.Message> messages = currentSession.getChatHistory();
             if (messages != null && !messages.isEmpty()) {
+                // Determine the correct selection BEFORE rendering the UI
+                if (autoSelectLast) {
+                    // First try to restore saved selection from session
+                    int savedSelection = currentSession.getSelectedMessageIndex();
+                    if (savedSelection >= 0 && savedSelection < messages.size() &&
+                            messages.get(savedSelection).role == LLMClient.MessageRole.ASSISTANT) {
+                        selectedChatEntryIndex = savedSelection;
+                        Log.d(TAG, "Restored saved message selection: " + savedSelection);
+                    } else {
+                        // Fall back to selecting the last (most recent) AI response
+                        selectedChatEntryIndex = -1; // Reset selection
+                        for (int i = messages.size() - 1; i >= 0; i--) {
+                            if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
+                                selectedChatEntryIndex = i;
+                                Log.d(TAG, "Auto-selected last AI response: " + selectedChatEntryIndex);
+                                break;
+                            }
+                        }
+                    }
+
+                    // Save the selected message index to the session if we made a selection
+                    if (selectedChatEntryIndex >= 0) {
+                        currentSession.setSelectedMessageIndex(selectedChatEntryIndex);
+                        sessionManager.updateSession(currentSession);
+                        Log.d(TAG, "Saved auto-selected message index " + selectedChatEntryIndex + " to session");
+                    }
+                }
+
                 // Clear existing views
                 chatHistoryLayout.removeAllViews();
 
@@ -1912,28 +1954,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     messageIndex++;
                 }
 
-                // Auto-select based on session preference or default to last AI response
-                if (autoSelectLast) {
-                    // First try to restore saved selection from session
-                    int savedSelection = currentSession.getSelectedMessageIndex();
-                    if (savedSelection >= 0 && savedSelection < messages.size() &&
-                            messages.get(savedSelection).role == LLMClient.MessageRole.ASSISTANT) {
-                        selectedChatEntryIndex = savedSelection;
-                        Log.d(TAG, "Restored saved message selection: " + savedSelection);
-                    } else {
-                        // Fall back to selecting the last (most recent) AI response
-                        selectedChatEntryIndex = -1; // Reset selection
-                        for (int i = messages.size() - 1; i >= 0; i--) {
-                            if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
-                                selectedChatEntryIndex = i;
-                                Log.d(TAG, "Auto-selected last AI response: " + selectedChatEntryIndex);
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                // Update action buttons based on initial selection
+                // Update action buttons based on selection
                 updateActionButtonsForSelection();
 
                 // Update selection status text
@@ -2870,8 +2891,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                             feedbackInput.setText("");
                         }
 
-                        // Update chat history
-                        updateChatHistoryDisplay();
+                        // Update chat history and force selection of the latest AI response
+                        updateChatHistoryDisplayWithLatestSelection();
 
                         // Automatically run the fixed code
                         runSelectedCode(true);
