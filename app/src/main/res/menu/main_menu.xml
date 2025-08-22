@@ -2,6 +2,10 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
       xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
+        android:id="@+id/action_edit_session_name"
+        android:title="Edit Session Name"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/action_api_key"
         android:title="Update API Key"
         app:showAsAction="never" />

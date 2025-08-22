@@ -124,6 +124,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     private void createNewSession() {
         // Create a new session
         currentSession = new DesignSession();
+        currentSession.setSessionName("Conway's Game of Life");
         currentSession.setDescription(
                 "Create an app that implements Conway's Game of Life. It's in the form of a 20x20 grid. Each square of the grid is tappable, and when tapped, it switches colors between white (dead) and black (alive). There are three buttons beneath the grid: play, stop, and step. Play runs the game with a delay of half a second between steps until the grid turns all white. Stop stops a play run. Step does a single iteration of the grid state.");
         currentSession.setLlmType(defaultLLMType);
@@ -198,6 +199,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         currentSession = new DesignSession();
 
         // Update session data
+        currentSession.setSessionName(description); // Use description as session name initially
         currentSession.setDescription(description);
         currentSession.setInitialCode(initialCode);
         currentSession.setLlmType(defaultLLMType);
@@ -354,6 +356,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
      */
     private void setupSessionState() {
         assert currentSession != null;
+
+        // Update session name display
+        updateSessionNameDisplay();
+
         // If we loaded an existing session, update the UI
         if (currentSession.getDescription() != null) {
             Log.d(TAG, "Setting up session state: " +
@@ -1477,7 +1483,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         int id = item.getItemId();
-        if (id == R.id.action_api_key) {
+        if (id == R.id.action_edit_session_name) {
+            showEditSessionNameDialog();
+            return true;
+        } else if (id == R.id.action_api_key) {
             LLMClientFactory.LLMType currentType = (LLMClientFactory.LLMType) llmTypeSpinner.getSelectedItem();
             showApiKeyDialog(currentType);
             return true;
@@ -3088,7 +3097,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         // Copy basic properties
         String originalDescription = currentSession.getDescription();
+        String originalSessionName = currentSession.getSessionName();
+        String forkSessionName = "(fork) " + (originalSessionName != null ? originalSessionName
+                : (originalDescription != null ? originalDescription : "Untitled"));
         String forkDescription = "(fork) " + (originalDescription != null ? originalDescription : "Untitled");
+        forkSession.setSessionName(forkSessionName);
         forkSession.setDescription(forkDescription);
         forkSession.setInitialCode(currentSession.getInitialCode());
         forkSession.setLlmType(currentSession.getLlmType());
@@ -3211,6 +3224,88 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             }
         }
 
-        Toast.makeText(this, "Created new fork session: " + currentSession.getDescription(), Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "Created new fork session: " + currentSession.getSessionName(), Toast.LENGTH_LONG).show();
+    }
+
+    /**
+     * Updates the session name display in the activity title
+     */
+    private void updateSessionNameDisplay() {
+        if (currentSession != null) {
+            String sessionName = currentSession.getSessionName();
+            if (sessionName == null || sessionName.trim().isEmpty()) {
+                // Use description as fallback or generate a default name
+                sessionName = currentSession.getDescription();
+                if (sessionName == null || sessionName.trim().isEmpty()) {
+                    sessionName = "Untitled Session";
+                }
+                // Truncate if too long for display (action bar titles should be shorter)
+                if (sessionName.length() > 30) {
+                    sessionName = sessionName.substring(0, 27) + "...";
+                }
+            }
+            setTitle(sessionName);
+        }
+    }
+
+    /**
+     * Shows a dialog to edit the session name (which becomes the activity title)
+     */
+    private void showEditSessionNameDialog() {
+        if (currentSession == null) {
+            Toast.makeText(this, "No active session", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Edit Session Name");
+
+        // Create input field
+        final EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+
+        // Set current session name or description as default
+        String currentName = currentSession.getSessionName();
+        if (currentName == null || currentName.trim().isEmpty()) {
+            currentName = currentSession.getDescription();
+            if (currentName == null) {
+                currentName = "";
+            }
+        }
+        input.setText(currentName);
+        input.setSelection(currentName.length()); // Place cursor at end
+
+        // Add padding to the input
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(50, 20, 50, 20);
+        layout.addView(input);
+        builder.setView(layout);
+
+        builder.setPositiveButton("Save", (dialog, which) -> {
+            String newName = input.getText().toString().trim();
+            if (!newName.isEmpty()) {
+                // Update session name
+                currentSession.setSessionName(newName);
+                sessionManager.updateSession(currentSession);
+
+                // Update display
+                updateSessionNameDisplay();
+
+                Toast.makeText(this, "Session name updated", Toast.LENGTH_SHORT).show();
+                Log.d(TAG, "Session name updated to: " + newName);
+            } else {
+                Toast.makeText(this, "Session name cannot be empty", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.cancel());
+
+        AlertDialog dialog = builder.create();
+        dialog.show();
+
+        // Show keyboard immediately
+        input.requestFocus();
+        dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
     }
 }

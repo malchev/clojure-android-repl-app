@@ -31,6 +31,7 @@ public class DesignSession {
     private static final String TAG = "DesignSession";
 
     private UUID id;
+    private String sessionName;
     private String description;
     private Date createdAt;
     private String initialCode;
@@ -61,6 +62,14 @@ public class DesignSession {
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public String getSessionName() {
+        return sessionName;
+    }
+
+    public void setSessionName(String sessionName) {
+        this.sessionName = sessionName;
     }
 
     public String getDescription() {
@@ -434,6 +443,9 @@ public class DesignSession {
     public JSONObject toJson() throws JSONException {
         JSONObject json = new JSONObject();
         json.put("id", id.toString());
+        if (sessionName != null) {
+            json.put("sessionName", sessionName);
+        }
         json.put("description", description);
         json.put("createdAt", createdAt.getTime());
         json.put("initialCode", initialCode);
@@ -547,6 +559,9 @@ public class DesignSession {
     public static DesignSession fromJson(JSONObject json, Context context) throws JSONException {
         DesignSession session = new DesignSession();
         session.id = UUID.fromString(json.getString("id"));
+        if (json.has("sessionName")) {
+            session.sessionName = json.getString("sessionName");
+        }
         session.description = json.getString("description");
         session.createdAt = new Date(json.getLong("createdAt"));
 
@@ -771,8 +786,17 @@ public class DesignSession {
      * Returns a short summary of the session for display
      */
     public String getDisplaySummary() {
-        return description.length() > 50
-                ? description.substring(0, 47) + "..."
+        // Use session name if available, otherwise use description
+        String displayText = sessionName != null && !sessionName.trim().isEmpty()
+                ? sessionName
                 : description;
+
+        if (displayText == null || displayText.trim().isEmpty()) {
+            displayText = "Untitled Session";
+        }
+
+        return displayText.length() > 50
+                ? displayText.substring(0, 47) + "..."
+                : displayText;
     }
 }

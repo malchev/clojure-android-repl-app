@@ -59,7 +59,7 @@ public class DesignSessionAdapter extends ListAdapter<DesignSession, DesignSessi
     public void onBindViewHolder(@NonNull SessionViewHolder holder, int position) {
         DesignSession session = getItem(position);
 
-        holder.descriptionTextView.setText(session.getDescription());
+        holder.descriptionTextView.setText(session.getDisplaySummary());
         holder.dateTextView.setText("Created: " + dateFormat.format(session.getCreatedAt()));
         holder.llmInfoTextView.setText(session.getLlmType() + " (" + session.getLlmModel() + ")");
         holder.iterationsTextView.setText("Iterations: " + session.getIterationCount());

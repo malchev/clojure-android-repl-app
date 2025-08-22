@@ -6,8 +6,6 @@
     android:padding="16dp"
     android:background="#FFFFFF">
 
-
-
     <ScrollView
         android:id="@+id/chat_history_container"
         android:layout_width="match_parent"
