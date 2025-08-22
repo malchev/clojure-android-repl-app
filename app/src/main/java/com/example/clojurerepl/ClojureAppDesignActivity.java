@@ -118,6 +118,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     private boolean autoIterateOnError = true;
     private boolean isIterating = false;
     private AlertDialog iterationProgressDialog;
+    private AlertDialog initialGenerationProgressDialog;
     private Button cancelIterationButton;
 
     private void createNewSession() {
@@ -583,18 +584,51 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             Toast.makeText(this, "Using existing code as a starting point", Toast.LENGTH_SHORT).show();
         }
 
-        // Show a progress dialog
-        ProgressDialog progressDialog = new ProgressDialog(this);
-        progressDialog.setMessage("Generating initial code...");
-        progressDialog.setCancelable(false);
-        progressDialog.show();
+        // Create a custom progress dialog with cancel button
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Generating Initial Code");
+
+        // Create a custom layout for the dialog
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(50, 30, 50, 30);
+
+        // Add progress message
+        TextView progressText = new TextView(this);
+        progressText.setText("Generating initial code...");
+        progressText.setTextSize(16);
+        layout.addView(progressText);
+
+        // Add some spacing
+        View spacer = new View(this);
+        spacer.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 20));
+        layout.addView(spacer);
+
+        // Add cancel button
+        Button dialogCancelButton = new Button(this);
+        dialogCancelButton.setText("Cancel Generation");
+        dialogCancelButton.setOnClickListener(v -> {
+            cancelInitialGeneration();
+            // The dialog will be dismissed in cancelInitialGeneration()
+        });
+        layout.addView(dialogCancelButton);
+
+        builder.setView(layout);
+        builder.setCancelable(false);
+
+        initialGenerationProgressDialog = builder.create();
+        initialGenerationProgressDialog.show();
 
         // Get the LLM to generate the code first - using IterationManager now
         iterationManager.generateInitialCode(description, initialCode)
                 .thenAccept(code -> {
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
-                        progressDialog.dismiss();
+                        if (initialGenerationProgressDialog != null) {
+                            initialGenerationProgressDialog.dismiss();
+                            initialGenerationProgressDialog = null;
+                        }
 
                         // Update session with code
                         currentSession.setCurrentCode(code);
@@ -621,10 +655,36 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     });
                 })
                 .exceptionally(throwable -> {
+                    // Check if this is a cancellation exception, which is expected behavior
+                    if (throwable instanceof CancellationException ||
+                            (throwable instanceof CompletionException &&
+                                    throwable.getCause() instanceof CancellationException)) {
+                        Log.d(TAG, "Initial generation was cancelled - this is expected behavior");
+                        runOnUiThread(() -> {
+                            // Dismiss progress dialog
+                            if (initialGenerationProgressDialog != null) {
+                                initialGenerationProgressDialog.dismiss();
+                                initialGenerationProgressDialog = null;
+                            }
+
+                            // Restore the user's input text since the operation was cancelled
+                            feedbackInput.setText(originalFeedbackText);
+                            feedbackInput.setSelection(originalFeedbackText.length()); // Move cursor to end
+
+                            // Re-enable the submit button
+                            submitFeedbackButton.setEnabled(true);
+                        });
+                        return null;
+                    }
+
+                    // Handle actual errors
                     Log.e(TAG, "Error generating code", throwable);
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
-                        progressDialog.dismiss();
+                        if (initialGenerationProgressDialog != null) {
+                            initialGenerationProgressDialog.dismiss();
+                            initialGenerationProgressDialog = null;
+                        }
 
                         // Restore the user's input text since the operation failed
                         feedbackInput.setText(originalFeedbackText);
@@ -892,6 +952,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         if (iterationProgressDialog != null && iterationProgressDialog.isShowing()) {
             iterationProgressDialog.dismiss();
+        }
+
+        if (initialGenerationProgressDialog != null && initialGenerationProgressDialog.isShowing()) {
+            initialGenerationProgressDialog.dismiss();
         }
     }
 
@@ -2734,6 +2798,28 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         // input
 
         Toast.makeText(this, "Iteration cancelled", Toast.LENGTH_SHORT).show();
+    }
+
+    private void cancelInitialGeneration() {
+        Log.d(TAG, "Cancelling initial generation");
+
+        // Cancel the underlying LLM request and generation
+        if (iterationManager != null) {
+            boolean cancelled = iterationManager.cancelCurrentGeneration();
+            Log.d(TAG, "Initial generation cancellation result: " + cancelled);
+        }
+
+        // Dismiss progress dialog
+        if (initialGenerationProgressDialog != null) {
+            initialGenerationProgressDialog.dismiss();
+            initialGenerationProgressDialog = null;
+        }
+
+        // Re-enable the submit button
+        Button submitFeedbackButton = findViewById(R.id.submit_feedback_button);
+        submitFeedbackButton.setEnabled(true);
+
+        Toast.makeText(this, "Initial generation cancelled", Toast.LENGTH_SHORT).show();
     }
 
     /**
