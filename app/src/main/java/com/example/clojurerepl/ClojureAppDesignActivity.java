@@ -471,6 +471,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
      * Handles clicks on the Generate button
      * - Initial click: generates the first version
      * - Subsequent clicks: shows feedback dialog for iteration
+     * - If non-latest AI response is selected: shows fork dialog
      */
     private void handleSubmitFeedbackClick() {
         // Get the feedback text from the input field
@@ -481,14 +482,25 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             return;
         }
 
-        // Check if we have existing code and iteration to provide feedback on
-        String currentCode = currentSession.getCurrentCode();
-        boolean hasExistingCode = currentCode != null && !currentCode.isEmpty()
-                && currentSession.getIterationCount() > 0;
+        // Check if we have an existing session with AI responses to provide feedback on
+        boolean hasExistingSession = currentSession.getIterationCount() > 0;
 
-        if (hasExistingCode) {
-            // We have existing code, so this is feedback for improvement
-            Log.d(TAG, "Submitting feedback for existing code: " + feedbackText);
+        Log.d(TAG, "handleSubmitFeedbackClick: hasExistingSession=" + hasExistingSession +
+                ", iterationCount=" + currentSession.getIterationCount() +
+                ", selectedChatEntryIndex=" + selectedChatEntryIndex);
+
+        if (hasExistingSession) {
+            // Check if the user has selected a non-latest AI response for forking
+            boolean requiresFork = doesSelectedMessageRequireFork();
+            Log.d(TAG, "handleSubmitFeedbackClick: requiresFork=" + requiresFork);
+
+            if (requiresFork) {
+                showForkConfirmationDialog(feedbackText);
+                return;
+            }
+
+            // We have existing session, so this is feedback for improvement
+            Log.d(TAG, "Submitting feedback for existing session: " + feedbackText);
 
             // Save the selected screenshots before clearing them
             List<File> imagesToSubmit = new ArrayList<>(selectedScreenshots);
@@ -2896,5 +2908,234 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 Log.w(TAG, "None of the saved images exist anymore, cleared selection");
             }
         }
+    }
+
+    /**
+     * Checks if the currently selected message requires forking to a new session.
+     * Returns true if a non-latest AI response is selected.
+     */
+    private boolean doesSelectedMessageRequireFork() {
+        if (selectedChatEntryIndex < 0 || currentSession == null) {
+            Log.d(TAG, "doesSelectedMessageRequireFork: false (no selection or session)");
+            return false;
+        }
+
+        List<LLMClient.Message> messages = currentSession.getChatHistory();
+        if (messages == null || selectedChatEntryIndex >= messages.size()) {
+            Log.d(TAG, "doesSelectedMessageRequireFork: false (invalid messages or index)");
+            return false;
+        }
+
+        // Find the latest AI response index
+        int latestAiResponseIndex = -1;
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
+                latestAiResponseIndex = i;
+                break;
+            }
+        }
+
+        // If no AI responses exist, no fork needed
+        if (latestAiResponseIndex == -1) {
+            Log.d(TAG, "doesSelectedMessageRequireFork: false (no AI responses)");
+            return false;
+        }
+
+        // Check if selected message is the latest AI response
+        LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
+        boolean isSelectedMessageAI = (selectedMessage.role == LLMClient.MessageRole.ASSISTANT);
+        boolean isLatestAIResponse = (selectedChatEntryIndex == latestAiResponseIndex);
+
+        Log.d(TAG, "doesSelectedMessageRequireFork: selectedIndex=" + selectedChatEntryIndex +
+                ", latestAiIndex=" + latestAiResponseIndex +
+                ", isSelectedAI=" + isSelectedMessageAI +
+                ", isLatest=" + isLatestAIResponse);
+
+        // Fork is needed if an AI response is selected, but it's not the latest one
+        boolean requiresFork = isSelectedMessageAI && !isLatestAIResponse;
+        Log.d(TAG, "doesSelectedMessageRequireFork: result=" + requiresFork);
+        return requiresFork;
+    }
+
+    /**
+     * Shows a confirmation dialog asking the user if they want to create a new
+     * session
+     * forked from the selected message.
+     */
+    private void showForkConfirmationDialog(String feedbackText) {
+        if (currentSession == null) {
+            return;
+        }
+
+        String currentDescription = currentSession.getDescription();
+        String forkDescription = "(fork) " + (currentDescription != null ? currentDescription : "Untitled");
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Create New Session?");
+        builder.setMessage("You're responding to a previous AI response. Do you want to create a new session " +
+                "starting from that point?\n\nNew session will be called:\n\"" + forkDescription + "\"");
+
+        builder.setPositiveButton("OK", (dialog, which) -> {
+            // Create the fork and continue with the feedback
+            forkSession(feedbackText);
+        });
+
+        builder.setNegativeButton("Cancel", (dialog, which) -> {
+            // Do nothing, keep the current text in the input field
+            dialog.dismiss();
+        });
+
+        builder.setCancelable(true);
+        builder.show();
+    }
+
+    /**
+     * Creates a new session forked from the current session up to the selected
+     * message
+     * and switches to use the new session.
+     */
+    private void forkSession(String feedbackText) {
+        if (currentSession == null || selectedChatEntryIndex < 0) {
+            Log.e(TAG, "Cannot create fork: invalid session or selection");
+            return;
+        }
+
+        List<LLMClient.Message> messages = currentSession.getChatHistory();
+        if (selectedChatEntryIndex >= messages.size()) {
+            Log.e(TAG, "Cannot create fork: invalid selection index");
+            return;
+        }
+
+        Log.d(TAG, "Creating fork session from message index " + selectedChatEntryIndex);
+
+        // Create new session
+        DesignSession forkSession = new DesignSession();
+
+        // Copy basic properties
+        String originalDescription = currentSession.getDescription();
+        String forkDescription = "(fork) " + (originalDescription != null ? originalDescription : "Untitled");
+        forkSession.setDescription(forkDescription);
+        forkSession.setInitialCode(currentSession.getInitialCode());
+        forkSession.setLlmType(currentSession.getLlmType());
+        forkSession.setLlmModel(currentSession.getLlmModel());
+
+        // Copy messages up to and including the selected message
+        LLMClient.ChatSession forkChatSession = forkSession.getChatSession();
+        for (int i = 0; i <= selectedChatEntryIndex; i++) {
+            LLMClient.Message message = messages.get(i);
+
+            if (message.role == LLMClient.MessageRole.SYSTEM) {
+                forkChatSession.queueSystemPrompt(message.content);
+            } else if (message.role == LLMClient.MessageRole.USER) {
+                LLMClient.UserMessage userMsg = (LLMClient.UserMessage) message;
+                if (userMsg.hasImages()) {
+                    List<File> validImages = userMsg.getValidImageFiles();
+                    if (!validImages.isEmpty()) {
+                        forkChatSession.queueUserMessageWithImages(message.content, validImages,
+                                userMsg.getLogcat(), userMsg.getFeedback(), userMsg.getInitialCode());
+                    } else {
+                        forkChatSession.queueUserMessage(message.content, userMsg.getLogcat(),
+                                userMsg.getFeedback(), userMsg.getInitialCode());
+                    }
+                } else {
+                    forkChatSession.queueUserMessage(message.content, userMsg.getLogcat(),
+                            userMsg.getFeedback(), userMsg.getInitialCode());
+                }
+            } else if (message.role == LLMClient.MessageRole.ASSISTANT) {
+                LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) message;
+                if (assistantMsg.getModelProvider() != null && assistantMsg.getModelName() != null) {
+                    forkChatSession.queueAssistantResponse(message.content,
+                            assistantMsg.getModelProvider(), assistantMsg.getModelName());
+                } else {
+                    forkChatSession.queueAssistantResponse(message.content);
+                }
+            }
+        }
+
+        // Set the current code to the code from the selected AI response
+        LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
+        if (selectedMessage.role == LLMClient.MessageRole.ASSISTANT) {
+            ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
+                    .extractClojureCode(selectedMessage.content);
+            if (result.success && result.code != null && !result.code.isEmpty()) {
+                forkSession.setCurrentCode(result.code);
+            }
+        }
+
+        // Copy relevant screenshot sets up to the selected iteration
+        int selectedIteration = getIterationNumberForMessage(selectedChatEntryIndex);
+        List<List<String>> originalScreenshotSets = currentSession.getScreenshotSets();
+        List<Integer> originalIterations = currentSession.getScreenshotSetIterations();
+
+        if (originalScreenshotSets != null && originalIterations != null) {
+            for (int i = 0; i < originalScreenshotSets.size() && i < originalIterations.size(); i++) {
+                int iterationNumber = originalIterations.get(i);
+                if (iterationNumber <= selectedIteration) {
+                    forkSession.addScreenshotSet(originalScreenshotSets.get(i), iterationNumber);
+                }
+            }
+        }
+
+        // Save the new fork session
+        sessionManager.updateSession(forkSession);
+
+        // Switch to the fork session
+        currentSession = forkSession;
+
+        // Shut down the existing iteration manager since we're switching sessions
+        if (iterationManager != null) {
+            Log.d(TAG, "Shutting down existing iterationManager for fork session");
+            iterationManager.shutdown();
+            iterationManager = null;
+        }
+
+        // Create new iteration manager for the fork session
+        iterationManager = new ClojureIterationManager(this, currentSession);
+        iterationManager.setExtractionErrorCallback(this);
+
+        // Update UI to reflect the new session
+        updateSessionStateAfterFork();
+
+        Log.d(TAG, "Successfully created and switched to fork session: " + forkSession.getId().toString());
+
+        // Now continue with the feedback submission
+        List<File> imagesToSubmit = new ArrayList<>(selectedScreenshots);
+
+        // Clear the input field and saved state for feedback
+        feedbackInput.setText("");
+        currentSession.setCurrentInputText(null);
+        currentSession.setSelectedImagePaths(null);
+        selectedScreenshots.clear();
+        paperclipButton.setText("📎"); // Reset paperclip button
+
+        submitFeedbackWithText(feedbackText, imagesToSubmit);
+    }
+
+    /**
+     * Updates the UI state after switching to a fork session
+     */
+    private void updateSessionStateAfterFork() {
+        // Update chat history display
+        updateChatHistoryDisplay(false, false); // Don't auto-select or auto-scroll
+
+        // Update paperclip button state
+        updatePaperclipButtonState();
+
+        // Restore screenshot state for the fork session
+        List<String> paths = currentSession.getCurrentIterationScreenshots();
+        currentScreenshots.clear();
+        if (paths != null && !paths.isEmpty()) {
+            for (String path : paths) {
+                File screenshotFile = new File(path);
+                if (screenshotFile.exists()) {
+                    currentScreenshots.add(screenshotFile);
+                }
+            }
+            if (!currentScreenshots.isEmpty()) {
+                displayScreenshot(currentScreenshots.get(0));
+            }
+        }
+
+        Toast.makeText(this, "Created new fork session: " + currentSession.getDescription(), Toast.LENGTH_LONG).show();
     }
 }
