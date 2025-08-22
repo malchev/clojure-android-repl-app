@@ -469,12 +469,22 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             // Find the latest AI response
             for (int i = messages.size() - 1; i >= 0; i--) {
                 if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
-                    int latestIteration = getIterationNumberForMessage(i);
-                    String iterationError = currentSession.getIterationError(latestIteration);
-                    if (iterationError != null && !iterationError.trim().isEmpty()) {
-                        errorToRestore = iterationError;
-                        Log.d(TAG, "Found iteration-specific error for latest response (iteration " + latestIteration
-                                + ")");
+                    // Check if this AI response contains code
+                    ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
+                            .extractClojureCode(messages.get(i).content);
+
+                    if (result.success && result.code != null && !result.code.isEmpty()) {
+                        // Only check for iteration-specific errors for AI responses that contain code
+                        int latestIteration = getIterationNumberForMessage(i);
+                        String iterationError = currentSession.getIterationError(latestIteration);
+                        if (iterationError != null && !iterationError.trim().isEmpty()) {
+                            errorToRestore = iterationError;
+                            Log.d(TAG,
+                                    "Found iteration-specific error for latest response (iteration " + latestIteration
+                                            + ")");
+                        }
+                    } else {
+                        Log.d(TAG, "Latest AI response contains no code, will not load iteration-specific error");
                     }
                     break;
                 }
@@ -1971,19 +1981,30 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             if (messageIndex >= 0 && messageIndex < messages.size()) {
                 LLMClient.Message selectedMessage = messages.get(messageIndex);
                 if (selectedMessage.role == LLMClient.MessageRole.ASSISTANT) {
-                    // Calculate the iteration number for this AI response
-                    int selectedIteration = getIterationNumberForMessage(messageIndex);
-                    String iterationError = currentSession.getIterationError(selectedIteration);
+                    // Check if this AI response contains code
+                    ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
+                            .extractClojureCode(selectedMessage.content);
 
-                    if (iterationError != null && !iterationError.trim().isEmpty()) {
-                        // Load the error into the text input
-                        feedbackInput.setText(iterationError);
-                        feedbackInput.setSelection(iterationError.length()); // Move cursor to end
-                        Log.d(TAG, "Loaded error for iteration " + selectedIteration + ": " + iterationError);
+                    if (result.success && result.code != null && !result.code.isEmpty()) {
+                        // Only load iteration-specific errors for AI responses that contain code
+                        // Calculate the iteration number for this AI response
+                        int selectedIteration = getIterationNumberForMessage(messageIndex);
+                        String iterationError = currentSession.getIterationError(selectedIteration);
+
+                        if (iterationError != null && !iterationError.trim().isEmpty()) {
+                            // Load the error into the text input
+                            feedbackInput.setText(iterationError);
+                            feedbackInput.setSelection(iterationError.length()); // Move cursor to end
+                            Log.d(TAG, "Loaded error for iteration " + selectedIteration + ": " + iterationError);
+                        } else {
+                            // Clear the text input if no error for this iteration
+                            feedbackInput.setText("");
+                            Log.d(TAG, "No error for iteration " + selectedIteration + ", cleared input field");
+                        }
                     } else {
-                        // Clear the text input if no error for this iteration
+                        // This AI response doesn't contain code, so clear the input field
                         feedbackInput.setText("");
-                        Log.d(TAG, "No error for iteration " + selectedIteration + ", cleared input field");
+                        Log.d(TAG, "Selected AI response contains no code, cleared input field");
                     }
                 }
             }
