@@ -42,6 +42,7 @@ import com.example.clojurerepl.session.DesignSession;
 import com.example.clojurerepl.session.SessionManager;
 import android.widget.ScrollView;
 import java.util.UUID;
+import java.util.Map;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletionException;
 
@@ -461,11 +462,30 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         }
 
         // Restore error feedback if available
-        if (currentSession.hasError() && currentSession.getLastErrorFeedback() != null) {
-            feedbackInput.setText(currentSession.getLastErrorFeedback());
-            Log.d(TAG, "Restored error feedback from session");
+        // First check if we have an iteration-specific error for the latest AI response
+        String errorToRestore = null;
+        List<LLMClient.Message> messages = currentSession.getChatHistory();
+        if (messages != null && !messages.isEmpty()) {
+            // Find the latest AI response
+            for (int i = messages.size() - 1; i >= 0; i--) {
+                if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
+                    int latestIteration = getIterationNumberForMessage(i);
+                    String iterationError = currentSession.getIterationError(latestIteration);
+                    if (iterationError != null && !iterationError.trim().isEmpty()) {
+                        errorToRestore = iterationError;
+                        Log.d(TAG, "Found iteration-specific error for latest response (iteration " + latestIteration
+                                + ")");
+                    }
+                    break;
+                }
+            }
+        }
+
+        if (errorToRestore != null) {
+            feedbackInput.setText(errorToRestore);
+            Log.d(TAG, "Restored iteration-specific error feedback from session");
         } else {
-            // Restore saved input state if no error feedback
+            // Restore saved input state if no iteration-specific error feedback
             restoreCurrentInputState();
         }
 
@@ -1059,9 +1079,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     Log.w(TAG, "Added screenshots using legacy method (iteration number not available)");
                 }
                 doUpdateSession = true;
-
-                // Reset the running iteration after use
-                currentRunningIteration = -1;
             }
 
             // Update paperclip button state now that we have screenshots
@@ -1088,10 +1105,19 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 feedbackInput.setText(errorFeedback);
             }
 
-            // Save error info to session
+            // Save error info to session (both legacy and iteration-specific)
             if (currentSession != null) {
                 currentSession.setLastErrorFeedback(errorFeedback);
                 currentSession.setHasError(true);
+
+                // Save error for the specific iteration that was just run
+                if (currentRunningIteration > 0) {
+                    currentSession.setIterationError(currentRunningIteration, errorFeedback);
+                    Log.d(TAG, "Saved error feedback for iteration " + currentRunningIteration + ": " + errorFeedback);
+                } else {
+                    Log.w(TAG, "No current running iteration to associate error with");
+                }
+
                 doUpdateSession = true;
                 Log.d(TAG, "Saved error feedback to session");
             }
@@ -1110,6 +1136,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             Log.d(TAG, "RenderActivity returned with no error status");
             currentSession.setLastErrorFeedback(null);
             currentSession.setHasError(false);
+
+            // Clear error for the specific iteration that was just run successfully
+            if (currentRunningIteration > 0) {
+                currentSession.setIterationError(currentRunningIteration, null);
+                Log.d(TAG, "Cleared error for iteration " + currentRunningIteration);
+            }
+
             doUpdateSession = true;
 
             // Clear the input field since there's no error
@@ -1121,6 +1154,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         if (doUpdateSession) {
             sessionManager.updateSession(currentSession);
         }
+
+        // Reset the running iteration after all processing is complete
+        currentRunningIteration = -1;
     }
 
     // Move screenshot display logic to a separate method
@@ -1911,6 +1947,30 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         messageContainer.setBackgroundColor(0x4400FF00); // Light green selection
 
         Log.d(TAG, "Selected AI response at index: " + messageIndex);
+
+        // Load iteration-specific error if it exists for this AI response
+        if (currentSession != null && feedbackInput != null) {
+            List<LLMClient.Message> messages = currentSession.getChatHistory();
+            if (messageIndex >= 0 && messageIndex < messages.size()) {
+                LLMClient.Message selectedMessage = messages.get(messageIndex);
+                if (selectedMessage.role == LLMClient.MessageRole.ASSISTANT) {
+                    // Calculate the iteration number for this AI response
+                    int selectedIteration = getIterationNumberForMessage(messageIndex);
+                    String iterationError = currentSession.getIterationError(selectedIteration);
+
+                    if (iterationError != null && !iterationError.trim().isEmpty()) {
+                        // Load the error into the text input
+                        feedbackInput.setText(iterationError);
+                        feedbackInput.setSelection(iterationError.length()); // Move cursor to end
+                        Log.d(TAG, "Loaded error for iteration " + selectedIteration + ": " + iterationError);
+                    } else {
+                        // Clear the text input if no error for this iteration
+                        feedbackInput.setText("");
+                        Log.d(TAG, "No error for iteration " + selectedIteration + ", cleared input field");
+                    }
+                }
+            }
+        }
 
         // Update button states based on selected response
         updateActionButtonsForSelection();
@@ -2749,6 +2809,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         currentSession.setLastErrorFeedback(null);
                         currentSession.setHasError(false);
 
+                        // Also clear iteration-specific error for the current iteration
+                        int currentIteration = currentSession.getIterationCount();
+                        if (currentIteration > 0) {
+                            currentSession.setIterationError(currentIteration, null);
+                            Log.d(TAG, "Cleared iteration error for automatic iteration " + currentIteration);
+                        }
+
                         sessionManager.updateSession(currentSession);
 
                         displayCurrentCode();
@@ -3160,6 +3227,18 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 int iterationNumber = originalIterations.get(i);
                 if (iterationNumber <= selectedIteration) {
                     forkSession.addScreenshotSet(originalScreenshotSets.get(i), iterationNumber);
+                }
+            }
+        }
+
+        // Copy relevant iteration errors up to the selected iteration
+        Map<Integer, String> originalErrors = currentSession.getAllIterationErrors();
+        if (originalErrors != null && !originalErrors.isEmpty()) {
+            for (Map.Entry<Integer, String> entry : originalErrors.entrySet()) {
+                int iterationNumber = entry.getKey();
+                if (iterationNumber <= selectedIteration) {
+                    forkSession.setIterationError(iterationNumber, entry.getValue());
+                    Log.d(TAG, "Copied error for iteration " + iterationNumber + " to fork session");
                 }
             }
         }

@@ -20,6 +20,7 @@ import java.util.UUID;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
@@ -45,6 +46,7 @@ public class DesignSession {
     private List<Integer> screenshotSetIterations; // Tracks which iteration each screenshot set belongs to
     private String currentInputText;
     private List<String> selectedImagePaths; // New field for multiple image paths
+    private Map<Integer, String> iterationErrors; // Maps iteration number to error message
 
     public DesignSession() {
         this.id = UUID.randomUUID();
@@ -52,6 +54,7 @@ public class DesignSession {
         this.screenshotSets = new ArrayList<>();
         this.screenshotSetIterations = new ArrayList<>();
         this.hasError = false;
+        this.iterationErrors = new HashMap<>();
         this.chatSession = new LLMClient.ChatSession(this.id.toString());
     }
 
@@ -294,6 +297,58 @@ public class DesignSession {
 
     public void setSelectedImagePaths(List<String> selectedImagePaths) {
         this.selectedImagePaths = selectedImagePaths;
+    }
+
+    /**
+     * Sets an error message for a specific iteration.
+     *
+     * @param iteration    The iteration number (1-based)
+     * @param errorMessage The error message, or null to clear the error
+     */
+    public void setIterationError(int iteration, String errorMessage) {
+        if (this.iterationErrors == null) {
+            this.iterationErrors = new HashMap<>();
+        }
+        if (errorMessage == null || errorMessage.trim().isEmpty()) {
+            this.iterationErrors.remove(iteration);
+        } else {
+            this.iterationErrors.put(iteration, errorMessage);
+        }
+    }
+
+    /**
+     * Gets the error message for a specific iteration.
+     *
+     * @param iteration The iteration number (1-based)
+     * @return The error message, or null if no error for this iteration
+     */
+    public String getIterationError(int iteration) {
+        if (this.iterationErrors == null) {
+            return null;
+        }
+        return this.iterationErrors.get(iteration);
+    }
+
+    /**
+     * Checks if a specific iteration has an error.
+     *
+     * @param iteration The iteration number (1-based)
+     * @return True if this iteration has an error, false otherwise
+     */
+    public boolean hasIterationError(int iteration) {
+        return getIterationError(iteration) != null;
+    }
+
+    /**
+     * Gets all iteration errors.
+     *
+     * @return Map of iteration numbers to error messages
+     */
+    public Map<Integer, String> getAllIterationErrors() {
+        if (this.iterationErrors == null) {
+            return new HashMap<>();
+        }
+        return new HashMap<>(this.iterationErrors);
     }
 
     /**
@@ -546,6 +601,15 @@ public class DesignSession {
             json.put("selectedImagePaths", imagePathsArray);
         }
 
+        // Save iteration errors
+        if (iterationErrors != null && !iterationErrors.isEmpty()) {
+            JSONObject errorsJson = new JSONObject();
+            for (Map.Entry<Integer, String> entry : iterationErrors.entrySet()) {
+                errorsJson.put(entry.getKey().toString(), entry.getValue());
+            }
+            json.put("iterationErrors", errorsJson);
+        }
+
         return json;
     }
 
@@ -777,6 +841,25 @@ public class DesignSession {
             // convert the single path to a list
             session.selectedImagePaths = new ArrayList<>();
             session.selectedImagePaths.add(selectedImagePath);
+        }
+
+        // Load iteration errors
+        if (json.has("iterationErrors")) {
+            JSONObject errorsJson = json.getJSONObject("iterationErrors");
+            session.iterationErrors = new HashMap<>();
+
+            @SuppressWarnings("unchecked")
+            java.util.Iterator<String> keys = errorsJson.keys();
+            while (keys.hasNext()) {
+                String iterationStr = keys.next();
+                try {
+                    int iteration = Integer.parseInt(iterationStr);
+                    String errorMessage = errorsJson.getString(iterationStr);
+                    session.iterationErrors.put(iteration, errorMessage);
+                } catch (NumberFormatException e) {
+                    Log.w(TAG, "Invalid iteration number in error data: " + iterationStr);
+                }
+            }
         }
 
         return session;
