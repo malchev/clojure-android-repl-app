@@ -1902,13 +1902,23 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     messageIndex++;
                 }
 
-                // Auto-select the last (most recent) AI response only if requested
+                // Auto-select based on session preference or default to last AI response
                 if (autoSelectLast) {
-                    selectedChatEntryIndex = -1; // Reset selection
-                    for (int i = messages.size() - 1; i >= 0; i--) {
-                        if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
-                            selectedChatEntryIndex = i;
-                            break;
+                    // First try to restore saved selection from session
+                    int savedSelection = currentSession.getSelectedMessageIndex();
+                    if (savedSelection >= 0 && savedSelection < messages.size() &&
+                            messages.get(savedSelection).role == LLMClient.MessageRole.ASSISTANT) {
+                        selectedChatEntryIndex = savedSelection;
+                        Log.d(TAG, "Restored saved message selection: " + savedSelection);
+                    } else {
+                        // Fall back to selecting the last (most recent) AI response
+                        selectedChatEntryIndex = -1; // Reset selection
+                        for (int i = messages.size() - 1; i >= 0; i--) {
+                            if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
+                                selectedChatEntryIndex = i;
+                                Log.d(TAG, "Auto-selected last AI response: " + selectedChatEntryIndex);
+                                break;
+                            }
                         }
                     }
                 }
@@ -1945,6 +1955,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         selectedChatEntryIndex = messageIndex;
         selectedChatEntry = messageContainer;
         messageContainer.setBackgroundColor(0x4400FF00); // Light green selection
+
+        // Save selection to session
+        if (currentSession != null) {
+            currentSession.setSelectedMessageIndex(messageIndex);
+            sessionManager.updateSession(currentSession);
+            Log.d(TAG, "Saved selected message index " + messageIndex + " to session");
+        }
 
         Log.d(TAG, "Selected AI response at index: " + messageIndex);
 
@@ -3243,6 +3260,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             }
         }
 
+        // Set the selected message to the message we're forking from
+        forkSession.setSelectedMessageIndex(selectedChatEntryIndex);
+        Log.d(TAG, "Set fork session selected message to: " + selectedChatEntryIndex);
+
         // Save the new fork session
         sessionManager.updateSession(forkSession);
 
@@ -3282,8 +3303,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
      * Updates the UI state after switching to a fork session
      */
     private void updateSessionStateAfterFork() {
-        // Update chat history display
-        updateChatHistoryDisplay(false, false); // Don't auto-select or auto-scroll
+        // Update chat history display (auto-select based on saved selection, no
+        // auto-scroll)
+        updateChatHistoryDisplay(true, false); // Auto-select (will use saved selection), no auto-scroll
 
         // Update paperclip button state
         updatePaperclipButtonState();

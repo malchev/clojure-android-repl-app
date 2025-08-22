@@ -47,6 +47,7 @@ public class DesignSession {
     private String currentInputText;
     private List<String> selectedImagePaths; // New field for multiple image paths
     private Map<Integer, String> iterationErrors; // Maps iteration number to error message
+    private int selectedMessageIndex = -1; // Index of currently selected AI response message
 
     public DesignSession() {
         this.id = UUID.randomUUID();
@@ -341,7 +342,7 @@ public class DesignSession {
 
     /**
      * Gets all iteration errors.
-     *
+     * 
      * @return Map of iteration numbers to error messages
      */
     public Map<Integer, String> getAllIterationErrors() {
@@ -349,6 +350,24 @@ public class DesignSession {
             return new HashMap<>();
         }
         return new HashMap<>(this.iterationErrors);
+    }
+
+    /**
+     * Gets the index of the currently selected AI response message.
+     *
+     * @return The message index, or -1 if no message is selected
+     */
+    public int getSelectedMessageIndex() {
+        return selectedMessageIndex;
+    }
+
+    /**
+     * Sets the index of the currently selected AI response message.
+     *
+     * @param selectedMessageIndex The message index, or -1 for no selection
+     */
+    public void setSelectedMessageIndex(int selectedMessageIndex) {
+        this.selectedMessageIndex = selectedMessageIndex;
     }
 
     /**
@@ -610,6 +629,9 @@ public class DesignSession {
             json.put("iterationErrors", errorsJson);
         }
 
+        // Save selected message index
+        json.put("selectedMessageIndex", selectedMessageIndex);
+
         return json;
     }
 
@@ -860,6 +882,11 @@ public class DesignSession {
                     Log.w(TAG, "Invalid iteration number in error data: " + iterationStr);
                 }
             }
+        }
+
+        // Load selected message index
+        if (json.has("selectedMessageIndex")) {
+            session.selectedMessageIndex = json.getInt("selectedMessageIndex");
         }
 
         return session;
