@@ -786,11 +786,41 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         runButton.setEnabled(false);
         submitFeedbackButton.setEnabled(false);
 
-        // Show a progress dialog
-        ProgressDialog progressDialog = new ProgressDialog(this);
-        progressDialog.setMessage("Generating next iteration...");
-        progressDialog.setCancelable(false);
-        progressDialog.show();
+        // Create a custom progress dialog with cancel button
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Generating Next Iteration");
+
+        // Create a custom layout for the dialog
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(50, 30, 50, 30);
+
+        // Add progress message
+        TextView progressText = new TextView(this);
+        progressText.setText("Generating next iteration...");
+        progressText.setTextSize(16);
+        layout.addView(progressText);
+
+        // Add some spacing
+        View spacer = new View(this);
+        spacer.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 20));
+        layout.addView(spacer);
+
+        // Add cancel button
+        Button dialogCancelButton = new Button(this);
+        dialogCancelButton.setText("Cancel Iteration");
+        dialogCancelButton.setOnClickListener(v -> {
+            cancelManualIteration(feedback, images);
+            // The dialog will be dismissed in cancelManualIteration()
+        });
+        layout.addView(dialogCancelButton);
+
+        builder.setView(layout);
+        builder.setCancelable(false);
+
+        iterationProgressDialog = builder.create();
+        iterationProgressDialog.show();
 
         // Create an IterationResult with the current state
         ClojureIterationManager.IterationResult result = new ClojureIterationManager.IterationResult(
@@ -809,7 +839,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 .thenAccept(code -> {
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
-                        progressDialog.dismiss();
+                        if (iterationProgressDialog != null) {
+                            iterationProgressDialog.dismiss();
+                            iterationProgressDialog = null;
+                        }
 
                         assert currentSession != null;
 
@@ -837,7 +870,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         Log.d(TAG, "Manual iteration was cancelled - this is expected behavior");
                         runOnUiThread(() -> {
                             // Dismiss progress dialog
-                            progressDialog.dismiss();
+                            if (iterationProgressDialog != null) {
+                                iterationProgressDialog.dismiss();
+                                iterationProgressDialog = null;
+                            }
 
                             // Restore the user's input text since the operation was cancelled
                             feedbackInput.setText(feedback);
@@ -864,7 +900,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     Log.e(TAG, "Error generating next iteration", throwable);
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
-                        progressDialog.dismiss();
+                        if (iterationProgressDialog != null) {
+                            iterationProgressDialog.dismiss();
+                            iterationProgressDialog = null;
+                        }
 
                         // Restore the user's input text since the operation failed
                         feedbackInput.setText(feedback);
@@ -2832,6 +2871,42 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         submitFeedbackButton.setEnabled(true);
 
         Toast.makeText(this, "Initial generation cancelled", Toast.LENGTH_SHORT).show();
+    }
+
+    private void cancelManualIteration(String originalFeedback, List<File> originalImages) {
+        Log.d(TAG, "Cancelling manual iteration");
+
+        // Cancel the underlying LLM request and generation
+        if (iterationManager != null) {
+            boolean cancelled = iterationManager.cancelCurrentGeneration();
+            Log.d(TAG, "Manual iteration cancellation result: " + cancelled);
+        }
+
+        // Dismiss progress dialog
+        if (iterationProgressDialog != null) {
+            iterationProgressDialog.dismiss();
+            iterationProgressDialog = null;
+        }
+
+        // Restore the user's input text since the operation was cancelled
+        feedbackInput.setText(originalFeedback);
+        feedbackInput.setSelection(originalFeedback.length()); // Move cursor to end
+
+        // Restore the selected screenshots if any were attached
+        if (originalImages != null && !originalImages.isEmpty()) {
+            selectedScreenshots.clear();
+            selectedScreenshots.addAll(originalImages);
+            paperclipButton.setText("📎✓ (" + selectedScreenshots.size() + ")"); // Visual feedback that screenshots are
+                                                                                 // selected
+        }
+
+        // Re-enable buttons
+        Button submitFeedbackButton = findViewById(R.id.submit_feedback_button);
+        thumbsUpButton.setEnabled(true);
+        runButton.setEnabled(true);
+        submitFeedbackButton.setEnabled(true);
+
+        Toast.makeText(this, "Manual iteration cancelled", Toast.LENGTH_SHORT).show();
     }
 
     /**
