@@ -964,30 +964,41 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         thumbsUpButton.setEnabled(true);
         runButton.setEnabled(true);
 
-        // Get code from the selected AI response
+        // Get code from the selected message (AI response or last AI response before
+        // user message)
         if (selectedChatEntryIndex < 0 || currentSession == null) {
-            Toast.makeText(this, "No AI response selected", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "No message selected", Toast.LENGTH_SHORT).show();
             return;
         }
 
         List<LLMClient.Message> messages = currentSession.getChatHistory();
         if (selectedChatEntryIndex >= messages.size()) {
-            Toast.makeText(this, "Selected response not found", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Selected message not found", Toast.LENGTH_SHORT).show();
             return;
         }
 
         LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
-        if (selectedMessage.role != LLMClient.MessageRole.ASSISTANT) {
-            Toast.makeText(this, "Selected message is not an AI response", Toast.LENGTH_SHORT).show();
+        int codeMessageIndex = selectedChatEntryIndex;
+
+        // If user message is selected, find the last AI response before it
+        if (selectedMessage.role == LLMClient.MessageRole.USER) {
+            codeMessageIndex = findLastAiResponseBefore(selectedChatEntryIndex);
+            if (codeMessageIndex < 0) {
+                Toast.makeText(this, "No AI response found before selected user message", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            selectedMessage = messages.get(codeMessageIndex);
+        } else if (selectedMessage.role != LLMClient.MessageRole.ASSISTANT) {
+            Toast.makeText(this, "Selected message is not an AI response or user message", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        // Extract code from the selected AI response
+        // Extract code from the AI response
         ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
                 .extractClojureCode(selectedMessage.content);
 
         if (!result.success || result.code == null || result.code.isEmpty()) {
-            Toast.makeText(this, "No code found in selected response", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "No code found in AI response", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -1584,43 +1595,55 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     }
 
     /**
-     * Runs the code from the selected AI response
+     * Runs the code from the selected message (AI response) or the last AI response
+     * before selected user message
      */
     private void runSelectedCode(boolean returnOnError) {
         if (selectedChatEntryIndex < 0 || currentSession == null) {
-            Toast.makeText(this, "No AI response selected", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "No message selected", Toast.LENGTH_SHORT).show();
             return;
         }
 
         List<LLMClient.Message> messages = currentSession.getChatHistory();
         if (selectedChatEntryIndex >= messages.size()) {
-            Toast.makeText(this, "Selected response not found", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Selected message not found", Toast.LENGTH_SHORT).show();
             return;
         }
 
         LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
-        if (selectedMessage.role != LLMClient.MessageRole.ASSISTANT) {
-            Toast.makeText(this, "Selected message is not an AI response", Toast.LENGTH_SHORT).show();
+        int codeMessageIndex = selectedChatEntryIndex;
+
+        // If user message is selected, find the last AI response before it
+        if (selectedMessage.role == LLMClient.MessageRole.USER) {
+            codeMessageIndex = findLastAiResponseBefore(selectedChatEntryIndex);
+            if (codeMessageIndex < 0) {
+                Toast.makeText(this, "No AI response found before selected user message", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            selectedMessage = messages.get(codeMessageIndex);
+        } else if (selectedMessage.role != LLMClient.MessageRole.ASSISTANT) {
+            Toast.makeText(this, "Selected message is not an AI response or user message", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        // Extract code from the selected AI response
+        // Extract code from the AI response
         ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
                 .extractClojureCode(selectedMessage.content);
 
         if (!result.success || result.code == null || result.code.isEmpty()) {
-            Toast.makeText(this, "No code found in selected response", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "No code found in AI response", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        // Calculate the correct iteration number for the selected message
-        int selectedIteration = getIterationNumberForMessage(selectedChatEntryIndex);
+        // Calculate the correct iteration number for the code message
+        int selectedIteration = getIterationNumberForMessage(codeMessageIndex);
 
         // Store the iteration number for use when screenshots are returned
         currentRunningIteration = selectedIteration;
 
         Log.d(TAG,
-                "Running code from iteration " + selectedIteration + " (message index " + selectedChatEntryIndex + ")");
+                "Running code from iteration " + selectedIteration + " (AI response at index " + codeMessageIndex +
+                        ", originally selected index " + selectedChatEntryIndex + ")");
 
         // Start the activity with the selected code
         RenderActivity.launch(this, ClojureAppDesignActivity.class,
@@ -1642,6 +1665,33 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 selectedIteration, // Use the correct iteration number
                 true,
                 returnOnError); // Enable return_on_error flag
+    }
+
+    /**
+     * Finds the last AI response message before the given message index.
+     *
+     * @param messageIndex The index to search before
+     * @return The index of the last AI response before messageIndex, or -1 if none
+     *         found
+     */
+    private int findLastAiResponseBefore(int messageIndex) {
+        if (currentSession == null) {
+            return -1;
+        }
+
+        List<LLMClient.Message> messages = currentSession.getChatHistory();
+        if (messages == null || messageIndex <= 0) {
+            return -1;
+        }
+
+        // Search backwards from the message before the given index
+        for (int i = messageIndex - 1; i >= 0; i--) {
+            if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     /**
@@ -1804,10 +1854,23 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 if (autoSelectLast) {
                     // First try to restore saved selection from session
                     int savedSelection = currentSession.getSelectedMessageIndex();
-                    if (savedSelection >= 0 && savedSelection < messages.size() &&
-                            messages.get(savedSelection).role == LLMClient.MessageRole.ASSISTANT) {
-                        selectedChatEntryIndex = savedSelection;
-                        Log.d(TAG, "Restored saved message selection: " + savedSelection);
+                    if (savedSelection >= 0 && savedSelection < messages.size()) {
+                        LLMClient.MessageRole savedRole = messages.get(savedSelection).role;
+                        // Allow both AI responses and user messages to be restored
+                        if (savedRole == LLMClient.MessageRole.ASSISTANT || savedRole == LLMClient.MessageRole.USER) {
+                            selectedChatEntryIndex = savedSelection;
+                            Log.d(TAG, "Restored saved message selection: " + savedSelection + " (" + savedRole + ")");
+                        } else {
+                            // Fall back to selecting the last (most recent) AI response
+                            selectedChatEntryIndex = -1; // Reset selection
+                            for (int i = messages.size() - 1; i >= 0; i--) {
+                                if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
+                                    selectedChatEntryIndex = i;
+                                    Log.d(TAG, "Auto-selected last AI response: " + selectedChatEntryIndex);
+                                    break;
+                                }
+                            }
+                        }
                     } else {
                         // Fall back to selecting the last (most recent) AI response
                         selectedChatEntryIndex = -1; // Reset selection
@@ -1843,13 +1906,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     messageContainer.setOrientation(LinearLayout.VERTICAL);
                     messageContainer.setPadding(16, 12, 16, 12);
 
-                    // Only make AI responses selectable
-                    boolean isAIResponse = (message.role == LLMClient.MessageRole.ASSISTANT);
-                    if (isAIResponse) {
+                    // Make both AI responses and user messages selectable
+                    boolean isSelectableMessage = (message.role == LLMClient.MessageRole.ASSISTANT ||
+                            message.role == LLMClient.MessageRole.USER);
+                    if (isSelectableMessage) {
                         messageContainer.setClickable(true);
                         messageContainer.setFocusable(true);
 
-                        // Set up selection behavior for AI responses only
+                        // Set up selection behavior for AI responses and user messages
                         final int currentMessageIndex = messageIndex;
                         messageContainer.setOnClickListener(v -> {
                             selectChatEntry(currentMessageIndex, messageContainer);
@@ -1864,9 +1928,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     // Add rounded corners and subtle border effect
                     messageContainer.setElevation(2.0f);
 
-                    // Apply selection state if this entry is currently selected (and it's an AI
-                    // response)
-                    if (messageIndex == selectedChatEntryIndex && isAIResponse) {
+                    // Apply selection state if this entry is currently selected (and it's
+                    // selectable)
+                    if (messageIndex == selectedChatEntryIndex && isSelectableMessage) {
                         messageContainer.setBackgroundColor(0x4400FF00); // Light green selection
                         selectedChatEntry = messageContainer;
                     }
@@ -1919,7 +1983,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     }
 
     /**
-     * Handles selection of a chat entry (AI responses only)
+     * Handles selection of a chat entry (AI responses and user messages)
      */
     private void selectChatEntry(int messageIndex, LinearLayout messageContainer) {
         // Clear previous selection by restoring its default background
@@ -1942,39 +2006,70 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             Log.d(TAG, "Saved selected message index " + messageIndex + " to session");
         }
 
-        Log.d(TAG, "Selected AI response at index: " + messageIndex);
+        List<LLMClient.Message> messages = currentSession.getChatHistory();
+        LLMClient.Message selectedMessage = messages.get(messageIndex);
 
-        // Load iteration-specific error if it exists for this AI response
-        if (currentSession != null && feedbackInput != null) {
-            List<LLMClient.Message> messages = currentSession.getChatHistory();
-            if (messageIndex >= 0 && messageIndex < messages.size()) {
-                LLMClient.Message selectedMessage = messages.get(messageIndex);
-                if (selectedMessage.role == LLMClient.MessageRole.ASSISTANT) {
-                    // Check if this AI response contains code
-                    ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
-                            .extractClojureCode(selectedMessage.content);
+        Log.d(TAG, "Selected " + selectedMessage.role + " message at index: " + messageIndex);
 
-                    if (result.success && result.code != null && !result.code.isEmpty()) {
-                        // Only load iteration-specific errors for AI responses that contain code
-                        // Calculate the iteration number for this AI response
-                        int selectedIteration = getIterationNumberForMessage(messageIndex);
-                        String iterationError = currentSession.getIterationError(selectedIteration);
+        // Handle different message types for input field population
+        if (currentSession != null && feedbackInput != null && messageIndex >= 0 && messageIndex < messages.size()) {
+            if (selectedMessage.role == LLMClient.MessageRole.ASSISTANT) {
+                // AI response selected - load iteration-specific error if it exists
+                // Check if this AI response contains code
+                ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
+                        .extractClojureCode(selectedMessage.content);
 
-                        if (iterationError != null && !iterationError.trim().isEmpty()) {
-                            // Load the error into the text input
-                            feedbackInput.setText(iterationError);
-                            feedbackInput.setSelection(iterationError.length()); // Move cursor to end
-                            Log.d(TAG, "Loaded error for iteration " + selectedIteration + ": " + iterationError);
-                        } else {
-                            // Clear the text input if no error for this iteration
-                            feedbackInput.setText("");
-                            Log.d(TAG, "No error for iteration " + selectedIteration + ", cleared input field");
-                        }
+                if (result.success && result.code != null && !result.code.isEmpty()) {
+                    // Only load iteration-specific errors for AI responses that contain code
+                    // Calculate the iteration number for this AI response
+                    int selectedIteration = getIterationNumberForMessage(messageIndex);
+                    String iterationError = currentSession.getIterationError(selectedIteration);
+
+                    if (iterationError != null && !iterationError.trim().isEmpty()) {
+                        // Load the error into the text input
+                        feedbackInput.setText(iterationError);
+                        feedbackInput.setSelection(iterationError.length()); // Move cursor to end
+                        Log.d(TAG, "Loaded error for iteration " + selectedIteration + ": " + iterationError);
                     } else {
-                        // This AI response doesn't contain code, so clear the input field
+                        // Clear the text input if no error for this iteration
                         feedbackInput.setText("");
-                        Log.d(TAG, "Selected AI response contains no code, cleared input field");
+                        Log.d(TAG, "No error for iteration " + selectedIteration + ", cleared input field");
                     }
+                } else {
+                    // This AI response doesn't contain code, so clear the input field
+                    feedbackInput.setText("");
+                    Log.d(TAG, "Selected AI response contains no code, cleared input field");
+                }
+            } else if (selectedMessage.role == LLMClient.MessageRole.USER) {
+                // User message selected - pre-fill with original feedback and restore images
+                LLMClient.UserMessage userMsg = (LLMClient.UserMessage) selectedMessage;
+
+                // Pre-fill feedback text
+                String originalFeedback = userMsg.getFeedback();
+                if (originalFeedback != null && !originalFeedback.trim().isEmpty()) {
+                    feedbackInput.setText(originalFeedback);
+                    feedbackInput.setSelection(originalFeedback.length()); // Move cursor to end
+                    Log.d(TAG, "Pre-filled input with original feedback: " + originalFeedback);
+                } else {
+                    // Fall back to message content if no separate feedback
+                    feedbackInput.setText(selectedMessage.content);
+                    feedbackInput.setSelection(selectedMessage.content.length());
+                    Log.d(TAG, "Pre-filled input with message content: " + selectedMessage.content);
+                }
+
+                // Restore image attachments
+                selectedScreenshots.clear();
+                if (userMsg.hasImages()) {
+                    List<File> validImages = userMsg.getValidImageFiles();
+                    selectedScreenshots.addAll(validImages);
+
+                    if (!selectedScreenshots.isEmpty()) {
+                        paperclipButton.setText("📎✓ (" + selectedScreenshots.size() + ")");
+                        Log.d(TAG, "Restored " + selectedScreenshots.size() + " image attachments from user message");
+                    }
+                } else {
+                    paperclipButton.setText("📎");
+                    Log.d(TAG, "No images to restore from user message");
                 }
             }
         }
@@ -1987,15 +2082,17 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     }
 
     /**
-     * Updates action buttons based on the currently selected AI response
+     * Updates action buttons based on the currently selected message (AI response
+     * or user message)
      */
     private void updateActionButtonsForSelection() {
         if (selectedChatEntryIndex >= 0 && currentSession != null) {
             List<LLMClient.Message> messages = currentSession.getChatHistory();
             if (selectedChatEntryIndex < messages.size()) {
                 LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
+
                 if (selectedMessage.role == LLMClient.MessageRole.ASSISTANT) {
-                    // Extract code from the selected AI response
+                    // AI response selected - check if it has code
                     ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
                             .extractClojureCode(selectedMessage.content);
 
@@ -2004,7 +2101,26 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     runButton.setEnabled(hasCode);
                     thumbsUpButton.setEnabled(hasCode);
 
-                    Log.d(TAG, "Updated action buttons for selected response. Has code: " + hasCode);
+                    Log.d(TAG, "Updated action buttons for selected AI response. Has code: " + hasCode);
+                } else if (selectedMessage.role == LLMClient.MessageRole.USER) {
+                    // User message selected - find the last AI response before it to determine if
+                    // we can run code
+                    int lastAiResponseIndex = findLastAiResponseBefore(selectedChatEntryIndex);
+                    boolean canRunCode = false;
+
+                    if (lastAiResponseIndex >= 0) {
+                        LLMClient.Message lastAiResponse = messages.get(lastAiResponseIndex);
+                        ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
+                                .extractClojureCode(lastAiResponse.content);
+                        canRunCode = result.success && result.code != null && !result.code.isEmpty();
+                    }
+
+                    runButton.setEnabled(canRunCode);
+                    thumbsUpButton.setEnabled(canRunCode);
+
+                    Log.d(TAG,
+                            "Updated action buttons for selected user message. Can run code from previous AI response: "
+                                    + canRunCode);
                 }
             }
         } else {
@@ -2015,7 +2131,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     }
 
     /**
-     * Updates the selection status text to show which AI response is selected
+     * Updates the selection status text to show which message is selected
      */
     private void updateSelectionStatusText() {
         if (currentSession == null || selectionStatusText == null) {
@@ -2027,27 +2143,52 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             return;
         }
 
-        // Count total AI responses
+        // Count total AI responses and user messages
         int totalAiResponses = 0;
-        int selectedResponseNumber = 0;
+        int totalUserMessages = 0;
+        int selectedAiResponseNumber = 0;
+        int selectedUserMessageNumber = 0;
 
         for (int i = 0; i < messages.size(); i++) {
             if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
                 totalAiResponses++;
                 if (i == selectedChatEntryIndex) {
-                    selectedResponseNumber = totalAiResponses;
+                    selectedAiResponseNumber = totalAiResponses;
+                }
+            } else if (messages.get(i).role == LLMClient.MessageRole.USER) {
+                totalUserMessages++;
+                if (i == selectedChatEntryIndex) {
+                    selectedUserMessageNumber = totalUserMessages;
                 }
             }
         }
 
-        if (totalAiResponses == 0) {
-            selectionStatusText.setText("No AI responses available");
+        if (totalAiResponses == 0 && totalUserMessages == 0) {
+            selectionStatusText.setText("No messages available");
             selectionStatusText.setVisibility(View.GONE);
-        } else if (selectedChatEntryIndex >= 0 && selectedResponseNumber > 0) {
-            selectionStatusText.setText("Selected AI response " + selectedResponseNumber + " of " + totalAiResponses);
+        } else if (selectedChatEntryIndex >= 0) {
+            LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
+            if (selectedMessage.role == LLMClient.MessageRole.ASSISTANT && selectedAiResponseNumber > 0) {
+                selectionStatusText
+                        .setText("Selected AI response " + selectedAiResponseNumber + " of " + totalAiResponses);
+            } else if (selectedMessage.role == LLMClient.MessageRole.USER && selectedUserMessageNumber > 0) {
+                selectionStatusText
+                        .setText("Selected user message " + selectedUserMessageNumber + " of " + totalUserMessages);
+            } else {
+                selectionStatusText.setText("Selected message (unknown type)");
+            }
             selectionStatusText.setVisibility(View.VISIBLE);
         } else {
-            selectionStatusText.setText("No AI response selected (" + totalAiResponses + " available)");
+            String statusText = "No message selected";
+            if (totalAiResponses > 0 && totalUserMessages > 0) {
+                statusText += " (" + totalAiResponses + " AI responses, " + totalUserMessages
+                        + " user messages available)";
+            } else if (totalAiResponses > 0) {
+                statusText += " (" + totalAiResponses + " AI responses available)";
+            } else if (totalUserMessages > 0) {
+                statusText += " (" + totalUserMessages + " user messages available)";
+            }
+            selectionStatusText.setText(statusText);
             selectionStatusText.setVisibility(View.VISIBLE);
         }
     }
@@ -3070,7 +3211,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
     /**
      * Checks if the currently selected message requires forking to a new session.
-     * Returns true if a non-latest AI response is selected.
+     * Returns true if a non-latest AI response is selected OR a user message is
+     * selected.
      */
     private boolean doesSelectedMessageRequireFork() {
         if (selectedChatEntryIndex < 0 || currentSession == null) {
@@ -3099,18 +3241,22 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             return false;
         }
 
-        // Check if selected message is the latest AI response
+        // Check if selected message is the latest AI response or a user message
         LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
         boolean isSelectedMessageAI = (selectedMessage.role == LLMClient.MessageRole.ASSISTANT);
+        boolean isSelectedMessageUser = (selectedMessage.role == LLMClient.MessageRole.USER);
         boolean isLatestAIResponse = (selectedChatEntryIndex == latestAiResponseIndex);
 
         Log.d(TAG, "doesSelectedMessageRequireFork: selectedIndex=" + selectedChatEntryIndex +
                 ", latestAiIndex=" + latestAiResponseIndex +
                 ", isSelectedAI=" + isSelectedMessageAI +
+                ", isSelectedUser=" + isSelectedMessageUser +
                 ", isLatest=" + isLatestAIResponse);
 
-        // Fork is needed if an AI response is selected, but it's not the latest one
-        boolean requiresFork = isSelectedMessageAI && !isLatestAIResponse;
+        // Fork is needed if:
+        // 1. An AI response is selected, but it's not the latest one, OR
+        // 2. A user message is selected (fork to previous AI response)
+        boolean requiresFork = (isSelectedMessageAI && !isLatestAIResponse) || isSelectedMessageUser;
         Log.d(TAG, "doesSelectedMessageRequireFork: result=" + requiresFork);
         return requiresFork;
     }
@@ -3128,10 +3274,26 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         String currentDescription = currentSession.getDescription();
         String forkDescription = "(fork) " + (currentDescription != null ? currentDescription : "Untitled");
 
+        List<LLMClient.Message> messages = currentSession.getChatHistory();
+        LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
+
+        String dialogMessage;
+        if (selectedMessage.role == LLMClient.MessageRole.ASSISTANT) {
+            dialogMessage = "You're responding to a previous AI response. Do you want to create a new session " +
+                    "starting from that point?";
+        } else if (selectedMessage.role == LLMClient.MessageRole.USER) {
+            dialogMessage = "You're editing a previous user message. Do you want to create a new session " +
+                    "starting from the last AI response before that message?";
+        } else {
+            dialogMessage = "You're responding to a previous message. Do you want to create a new session " +
+                    "starting from that point?";
+        }
+
+        dialogMessage += "\n\nNew session will be called:\n\"" + forkDescription + "\"";
+
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Create New Session?");
-        builder.setMessage("You're responding to a previous AI response. Do you want to create a new session " +
-                "starting from that point?\n\nNew session will be called:\n\"" + forkDescription + "\"");
+        builder.setMessage(dialogMessage);
 
         builder.setPositiveButton("OK", (dialog, which) -> {
             // Create the fork and continue with the feedback
@@ -3149,7 +3311,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
     /**
      * Creates a new session forked from the current session up to the selected
-     * message
+     * message or the previous AI response (for user messages)
      * and switches to use the new session.
      */
     private void forkSession(String feedbackText) {
@@ -3164,7 +3326,22 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             return;
         }
 
-        Log.d(TAG, "Creating fork session from message index " + selectedChatEntryIndex);
+        LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
+        int forkPointIndex = selectedChatEntryIndex;
+
+        // If user message is selected, fork to the last AI response before it
+        if (selectedMessage.role == LLMClient.MessageRole.USER) {
+            forkPointIndex = findLastAiResponseBefore(selectedChatEntryIndex);
+            if (forkPointIndex < 0) {
+                Log.e(TAG, "Cannot create fork: no AI response found before selected user message");
+                Toast.makeText(this, "No AI response found before selected user message", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            Log.d(TAG, "User message selected, forking to previous AI response at index " + forkPointIndex);
+        }
+
+        Log.d(TAG, "Creating fork session from message index " + forkPointIndex + " (originally selected: "
+                + selectedChatEntryIndex + ")");
 
         // Create new session
         DesignSession forkSession = new DesignSession();
@@ -3181,9 +3358,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         forkSession.setLlmType(currentSession.getLlmType());
         forkSession.setLlmModel(currentSession.getLlmModel());
 
-        // Copy messages up to and including the selected message
+        // Copy messages up to and including the fork point
         LLMClient.ChatSession forkChatSession = forkSession.getChatSession();
-        for (int i = 0; i <= selectedChatEntryIndex; i++) {
+        for (int i = 0; i <= forkPointIndex; i++) {
             LLMClient.Message message = messages.get(i);
 
             if (message.role == LLMClient.MessageRole.SYSTEM) {
@@ -3214,45 +3391,45 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             }
         }
 
-        // Set the current code to the code from the selected AI response
-        LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
-        if (selectedMessage.role == LLMClient.MessageRole.ASSISTANT) {
+        // Set the current code to the code from the fork point (AI response)
+        LLMClient.Message forkPointMessage = messages.get(forkPointIndex);
+        if (forkPointMessage.role == LLMClient.MessageRole.ASSISTANT) {
             ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
-                    .extractClojureCode(selectedMessage.content);
+                    .extractClojureCode(forkPointMessage.content);
             if (result.success && result.code != null && !result.code.isEmpty()) {
                 forkSession.setCurrentCode(result.code);
             }
         }
 
-        // Copy relevant screenshot sets up to the selected iteration
-        int selectedIteration = getIterationNumberForMessage(selectedChatEntryIndex);
+        // Copy relevant screenshot sets up to the fork point iteration
+        int forkIteration = getIterationNumberForMessage(forkPointIndex);
         List<List<String>> originalScreenshotSets = currentSession.getScreenshotSets();
         List<Integer> originalIterations = currentSession.getScreenshotSetIterations();
 
         if (originalScreenshotSets != null && originalIterations != null) {
             for (int i = 0; i < originalScreenshotSets.size() && i < originalIterations.size(); i++) {
                 int iterationNumber = originalIterations.get(i);
-                if (iterationNumber <= selectedIteration) {
+                if (iterationNumber <= forkIteration) {
                     forkSession.addScreenshotSet(originalScreenshotSets.get(i), iterationNumber);
                 }
             }
         }
 
-        // Copy relevant iteration errors up to the selected iteration
+        // Copy relevant iteration errors up to the fork point iteration
         Map<Integer, String> originalErrors = currentSession.getAllIterationErrors();
         if (originalErrors != null && !originalErrors.isEmpty()) {
             for (Map.Entry<Integer, String> entry : originalErrors.entrySet()) {
                 int iterationNumber = entry.getKey();
-                if (iterationNumber <= selectedIteration) {
+                if (iterationNumber <= forkIteration) {
                     forkSession.setIterationError(iterationNumber, entry.getValue());
                     Log.d(TAG, "Copied error for iteration " + iterationNumber + " to fork session");
                 }
             }
         }
 
-        // Set the selected message to the message we're forking from
-        forkSession.setSelectedMessageIndex(selectedChatEntryIndex);
-        Log.d(TAG, "Set fork session selected message to: " + selectedChatEntryIndex);
+        // Set the selected message to the fork point
+        forkSession.setSelectedMessageIndex(forkPointIndex);
+        Log.d(TAG, "Set fork session selected message to fork point: " + forkPointIndex);
 
         // Save the new fork session
         sessionManager.updateSession(forkSession);
@@ -3293,6 +3470,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity
      * Updates the UI state after switching to a fork session
      */
     private void updateSessionStateAfterFork() {
+        // Update session name display
+        updateSessionNameDisplay();
+
         // Update chat history display (auto-select based on saved selection, no
         // auto-scroll)
         updateChatHistoryDisplay(true, false); // Auto-select (will use saved selection), no auto-scroll
