@@ -178,7 +178,7 @@ public class ClaudeLLMClient extends LLMClient {
                             : "null"));
 
             // Queue system prompt and format initial prompt
-            chatSession.queueSystemPrompt(getSystemPrompt());
+            chatSession.queueSystemPrompt(new SystemPrompt(getSystemPrompt()));
             String prompt = formatInitialPrompt(description, null);
             chatSession.queueUserMessage(prompt, null, null, null);
             Log.d(TAG, "DEBUG: Created chat session, about to send messages to Claude API");
@@ -234,7 +234,7 @@ public class ClaudeLLMClient extends LLMClient {
                             : "null"));
 
             // Queue system prompt and format initial prompt
-            chatSession.queueSystemPrompt(getSystemPrompt());
+            chatSession.queueSystemPrompt(new SystemPrompt(getSystemPrompt()));
             String prompt = formatInitialPrompt(description, initialCode);
             chatSession.queueUserMessage(prompt, null, null, initialCode);
             Log.d(TAG, "DEBUG: Created chat session with template, about to send messages to Claude API");

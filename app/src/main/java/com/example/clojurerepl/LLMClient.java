@@ -477,17 +477,6 @@ public abstract class LLMClient {
         }
 
         /**
-         * Queues a system prompt message to be sent in the next API call
-         *
-         * @param content The system prompt content
-         */
-        public void queueSystemPrompt(String content) {
-            Log.d(TAG, "Queuing system prompt in session: " + sessionId);
-            this.systemPrompt = content;
-            messages.add(new SystemPrompt(content));
-        }
-
-        /**
          * Queues a user message to be sent in the next API call
          *
          * @param content The user message content

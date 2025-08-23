@@ -577,7 +577,7 @@ public class GeminiLLMClient extends LLMClient {
         Log.d(TAG, "Generating initial code for description: " + description);
 
         // Queue system prompt and format initial prompt
-        chatSession.queueSystemPrompt(getSystemPrompt());
+        chatSession.queueSystemPrompt(new SystemPrompt(getSystemPrompt()));
         String prompt = formatInitialPrompt(description, null);
         chatSession.queueUserMessage(prompt, null, null, null);
 
@@ -621,7 +621,7 @@ public class GeminiLLMClient extends LLMClient {
                 ", using initial code: " + (initialCode != null ? "yes" : "no"));
 
         // Queue system prompt and format initial prompt with existing code as base
-        chatSession.queueSystemPrompt(getSystemPrompt());
+        chatSession.queueSystemPrompt(new SystemPrompt(getSystemPrompt()));
         String prompt = formatInitialPrompt(description, initialCode);
         chatSession.queueUserMessage(prompt, null, null, initialCode);
 

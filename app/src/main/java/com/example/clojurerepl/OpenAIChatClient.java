@@ -301,7 +301,7 @@ public class OpenAIChatClient extends LLMClient {
         Log.d(TAG, "└───────────────────────────────────────────┘");
 
         // Queue system prompt and format initial prompt
-        chatSession.queueSystemPrompt(getSystemPrompt());
+        chatSession.queueSystemPrompt(new SystemPrompt(getSystemPrompt()));
         String prompt = formatInitialPrompt(description, null);
         chatSession.queueUserMessage(prompt, null, null, null);
         CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
@@ -340,7 +340,7 @@ public class OpenAIChatClient extends LLMClient {
         Log.d(TAG, "└───────────────────────────────────────────┘");
 
         // Queue system prompt and format initial prompt with existing code as base
-        chatSession.queueSystemPrompt(getSystemPrompt());
+        chatSession.queueSystemPrompt(new SystemPrompt(getSystemPrompt()));
         String prompt = formatInitialPrompt(description, initialCode);
         chatSession.queueUserMessage(prompt, null, null, initialCode);
         CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
