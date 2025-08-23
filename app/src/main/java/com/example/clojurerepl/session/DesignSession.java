@@ -104,7 +104,7 @@ public class DesignSession {
         List<String> code = new ArrayList<>();
         for (LLMClient.Message message : chatSession.getMessages()) {
             if (LLMClient.MessageRole.ASSISTANT.equals(message.role)) {
-                ClojureIterationManager.CodeExtractionResult extractionResult = ClojureIterationManager
+                LLMClient.CodeExtractionResult extractionResult = LLMClient
                         .extractClojureCode(message.content);
                 if (extractionResult.success) {
                     code.add(extractionResult.code);
@@ -798,7 +798,7 @@ public class DesignSession {
             } else if (LLMClient.MessageRole.ASSISTANT.equals(message.role)) {
                 LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) message;
                 session.chatSession.queueAssistantResponse(assistantMsg);
-                ClojureIterationManager.CodeExtractionResult extractionResult = ClojureIterationManager
+                LLMClient.CodeExtractionResult extractionResult = LLMClient
                         .extractClojureCode(message.content);
                 if (extractionResult.success) {
                     lastCode = extractionResult.code;

@@ -54,34 +54,6 @@ public class ClojureIterationManager {
 
     private final List<IterationResult> iterationHistory = new ArrayList<>();
 
-    /**
-     * Result class for code extraction operations
-     */
-    public static class CodeExtractionResult {
-        public final String code;
-        public final String textBeforeCode;
-        public final String textAfterCode;
-        public final boolean success;
-        public final String errorMessage;
-
-        private CodeExtractionResult(String code, String textBeforeCode, String textAfterCode, boolean success,
-                String errorMessage) {
-            this.code = code;
-            this.textBeforeCode = textBeforeCode;
-            this.textAfterCode = textAfterCode;
-            this.success = success;
-            this.errorMessage = errorMessage;
-        }
-
-        public static CodeExtractionResult success(String code, String textBeforeCode, String textAfterCode) {
-            return new CodeExtractionResult(code, textBeforeCode, textAfterCode, true, null);
-        }
-
-        public static CodeExtractionResult failure(String errorMessage) {
-            return new CodeExtractionResult(null, null, null, false, errorMessage);
-        }
-    }
-
     public ClojureIterationManager(Context context, DesignSession session) {
         this.context = context.getApplicationContext();
         this.llmClient = LLMClientFactory.createClient(context, session.getLlmType(), session.getLlmModel(),
@@ -190,7 +162,8 @@ public class ClojureIterationManager {
                             (assistantMessage.content != null ? assistantMessage.content.length() : "null"));
 
                     // Extract clean code from markdown blocks if present
-                    CodeExtractionResult extractionResult = extractClojureCode(assistantMessage.content);
+                    LLMClient.CodeExtractionResult extractionResult = LLMClient
+                            .extractClojureCode(assistantMessage.content);
                     if (!extractionResult.success) {
                         // Use callback if available, otherwise fall back to exception
                         if (extractionErrorCallback != null) {
@@ -218,67 +191,6 @@ public class ClojureIterationManager {
         });
 
         return generationFuture;
-    }
-
-    /**
-     * Extracts clean Clojure code from text that may contain markdown code block
-     * markers
-     * Helper method to ensure consistent code extraction across the app
-     * 
-     * @param input The input text that may contain markdown code blocks
-     * @return A CodeExtractionResult containing the extracted code or error
-     *         information
-     */
-    public static CodeExtractionResult extractClojureCode(String input) {
-        if (input == null || input.isEmpty()) {
-            Log.d(TAG, "Input is null or empty, returning empty string");
-            return CodeExtractionResult.success("", "", "");
-        }
-
-        // Check if the input contains markdown code block markers
-        // Find the LAST occurrence of ```clojure to ensure we get the final code block
-        // even if the LLM includes multiple code blocks in violation of the system
-        // prompt
-        int startMarkerPos = input.lastIndexOf("```clojure");
-        if (startMarkerPos != -1) {
-            Log.d(TAG, "Found starting marker at position: " + startMarkerPos);
-            try {
-                // Look for a code block
-                // Find the end of the start marker line
-                int lineEnd = input.indexOf('\n', startMarkerPos);
-                if (lineEnd != -1) {
-                    // Skip past the entire marker line
-                    int codeStart = lineEnd + 1;
-
-                    // Find the closing code block marker
-                    int endMarkerPos = input.indexOf("```", codeStart);
-                    if (endMarkerPos != -1) {
-                        // Extract just the code between the markers
-                        String extractedCode = input.substring(codeStart, endMarkerPos).trim();
-
-                        // Extract text before and after the code block
-                        String textBeforeCode = input.substring(0, startMarkerPos).trim();
-                        String textAfterCode = input.substring(endMarkerPos + 3).trim(); // +3 for "```"
-
-                        Log.d(TAG, "Successfully extracted code. Length: " + extractedCode.length());
-                        return CodeExtractionResult.success(extractedCode, textBeforeCode, textAfterCode);
-                    }
-                    Log.d(TAG, "Could not find closing marker.");
-                    return CodeExtractionResult.failure("No closing code block marker found in response");
-                } else {
-                    Log.e(TAG, "Starting marker line does not end with newline.");
-                    return CodeExtractionResult.failure("Starting marker line does not end with newline");
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Error extracting code", e);
-                return CodeExtractionResult.failure("Failed to extract code from response: " + e.getMessage());
-            }
-        }
-
-        // If we couldn't extract a code block or there are no markers, return the
-        // original text as textBeforeCode
-        Log.d(TAG, "No code block markers found in response");
-        return CodeExtractionResult.success("", input.trim(), "");
     }
 
     public CompletableFuture<String> generateNextIteration(String description, String feedback,
@@ -322,7 +234,8 @@ public class ClojureIterationManager {
                                     : assistantMessage.content));
 
                     // Extract clean code from markdown blocks if present
-                    CodeExtractionResult extractionResult = extractClojureCode(assistantMessage.content);
+                    LLMClient.CodeExtractionResult extractionResult = LLMClient
+                            .extractClojureCode(assistantMessage.content);
                     if (!extractionResult.success) {
                         // Use callback if available, otherwise fall back to exception
                         if (extractionErrorCallback != null) {
