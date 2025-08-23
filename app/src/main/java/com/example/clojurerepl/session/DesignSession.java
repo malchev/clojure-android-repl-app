@@ -702,7 +702,7 @@ public class DesignSession {
 
                 // Create appropriate message type based on role
                 if (role == LLMClient.MessageRole.SYSTEM) {
-                    chatHistory.add(new LLMClient.SystemMessage(content));
+                    chatHistory.add(new LLMClient.SystemPrompt(content));
                 } else if (role == LLMClient.MessageRole.ASSISTANT) {
                     if (modelProvider != null && modelName != null) {
                         chatHistory.add(new LLMClient.AssistantMessage(content, modelProvider, modelName));
@@ -790,23 +790,11 @@ public class DesignSession {
         String lastCode = null;
         for (LLMClient.Message message : chatHistory) {
             if (LLMClient.MessageRole.SYSTEM.equals(message.role)) {
-                session.chatSession.queueSystemPrompt(message.content);
+                LLMClient.SystemPrompt systemPrompt = (LLMClient.SystemPrompt) message;
+                session.chatSession.queueSystemPrompt(systemPrompt);
             } else if (LLMClient.MessageRole.USER.equals(message.role)) {
                 LLMClient.UserMessage userMsg = (LLMClient.UserMessage) message;
-                if (userMsg.hasImages()) {
-                    List<File> validImages = userMsg.getValidImageFiles();
-                    if (!validImages.isEmpty()) {
-                        // Use the new multi-image method
-                        session.chatSession.queueUserMessageWithImages(message.content, validImages,
-                                userMsg.getLogcat(), userMsg.getFeedback(), userMsg.getInitialCode());
-                    } else {
-                        session.chatSession.queueUserMessage(message.content, userMsg.getLogcat(),
-                                userMsg.getFeedback(), userMsg.getInitialCode());
-                    }
-                } else {
-                    session.chatSession.queueUserMessage(message.content, userMsg.getLogcat(),
-                            userMsg.getFeedback(), userMsg.getInitialCode());
-                }
+                session.chatSession.queueUserMessage(userMsg);
             } else if (LLMClient.MessageRole.ASSISTANT.equals(message.role)) {
                 LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) message;
                 session.chatSession.queueAssistantResponse(assistantMsg);

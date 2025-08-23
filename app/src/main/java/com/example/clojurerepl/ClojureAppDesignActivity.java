@@ -3460,22 +3460,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             LLMClient.Message message = messages.get(i);
 
             if (message.role == LLMClient.MessageRole.SYSTEM) {
-                forkChatSession.queueSystemPrompt(message.content);
+                LLMClient.SystemPrompt systemPrompt = (LLMClient.SystemPrompt) message;
+                forkChatSession.queueSystemPrompt(systemPrompt);
             } else if (message.role == LLMClient.MessageRole.USER) {
                 LLMClient.UserMessage userMsg = (LLMClient.UserMessage) message;
-                if (userMsg.hasImages()) {
-                    List<File> validImages = userMsg.getValidImageFiles();
-                    if (!validImages.isEmpty()) {
-                        forkChatSession.queueUserMessageWithImages(message.content, validImages,
-                                userMsg.getLogcat(), userMsg.getFeedback(), userMsg.getInitialCode());
-                    } else {
-                        forkChatSession.queueUserMessage(message.content, userMsg.getLogcat(),
-                                userMsg.getFeedback(), userMsg.getInitialCode());
-                    }
-                } else {
-                    forkChatSession.queueUserMessage(message.content, userMsg.getLogcat(),
-                            userMsg.getFeedback(), userMsg.getInitialCode());
-                }
+                forkChatSession.queueUserMessage(userMsg);
             } else if (message.role == LLMClient.MessageRole.ASSISTANT) {
                 LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) message;
                 forkChatSession.queueAssistantResponse(assistantMsg);

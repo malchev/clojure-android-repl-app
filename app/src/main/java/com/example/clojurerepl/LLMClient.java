@@ -256,8 +256,8 @@ public abstract class LLMClient {
     }
 
     // System message - simple text only
-    public static class SystemMessage extends Message {
-        public SystemMessage(String content) {
+    public static class SystemPrompt extends Message {
+        public SystemPrompt(String content) {
             super(MessageRole.SYSTEM, content);
         }
     }
@@ -484,7 +484,7 @@ public abstract class LLMClient {
         public void queueSystemPrompt(String content) {
             Log.d(TAG, "Queuing system prompt in session: " + sessionId);
             this.systemPrompt = content;
-            messages.add(new SystemMessage(content));
+            messages.add(new SystemPrompt(content));
         }
 
         /**
@@ -566,6 +566,28 @@ public abstract class LLMClient {
                     " (provider: " + assistantMessage.getModelProvider() +
                     ", model: " + assistantMessage.getModelName() + ")");
             messages.add(assistantMessage);
+        }
+
+        /**
+         * Queues a system prompt object directly to the chat session
+         *
+         * @param systemPrompt The SystemPrompt object to queue
+         */
+        public void queueSystemPrompt(SystemPrompt systemPrompt) {
+            Log.d(TAG, "Queuing system prompt object in session: " + sessionId);
+            this.systemPrompt = systemPrompt.content;
+            messages.add(systemPrompt);
+        }
+
+        /**
+         * Queues a user message object directly to the chat session
+         *
+         * @param userMessage The UserMessage object to queue
+         */
+        public void queueUserMessage(UserMessage userMessage) {
+            Log.d(TAG, "Queuing user message object in session: " + sessionId +
+                    " (has images: " + userMessage.hasImages() + ")");
+            messages.add(userMessage);
         }
 
         /**
