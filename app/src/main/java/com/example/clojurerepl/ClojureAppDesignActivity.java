@@ -49,6 +49,7 @@ import java.util.concurrent.CompletionException;
 public class ClojureAppDesignActivity extends AppCompatActivity
         implements ClojureIterationManager.ExtractionErrorCallback {
     private static final String TAG = "ClojureAppDesign";
+    private static final String UNNAMED_SESSION = "(unnamed session)";
 
     private ScrollView chatHistoryContainer;
     private LinearLayout chatHistoryLayout;
@@ -122,7 +123,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     private void createNewSession() {
         // Create a new session
         currentSession = new DesignSession();
-        currentSession.setSessionName("Conway's Game of Life");
+        currentSession.setSessionName(UNNAMED_SESSION);
         currentSession.setDescription(
                 "Create an app that implements Conway's Game of Life. It's in the form of a 20x20 grid. Each square of the grid is tappable, and when tapped, it switches colors between white (dead) and black (alive). There are three buttons beneath the grid: play, stop, and step. Play runs the game with a delay of half a second between steps until the grid turns all white. Stop stops a play run. Step does a single iteration of the grid state.");
         currentSession.setLlmType(defaultLLMType);
@@ -1555,6 +1556,16 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    public void onBackPressed() {
+        // Check if session is unnamed and prompt user to name it
+        if (isSessionUnnamed()) {
+            showSessionNamingBeforeExitDialog();
+        } else {
+            super.onBackPressed();
+        }
     }
 
     private void saveCodeToFile() {
@@ -3271,8 +3282,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             return;
         }
 
-        String currentDescription = currentSession.getDescription();
-        String forkDescription = "(fork) " + (currentDescription != null ? currentDescription : "Untitled");
+        String currentSessionName = currentSession.getSessionName();
+        String forkedSessionName = "(fork) " +
+                ((currentSessionName == null || currentSessionName.trim().isEmpty()) ? UNNAMED_SESSION :
+                 currentSessionName);
 
         List<LLMClient.Message> messages = currentSession.getChatHistory();
         LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
@@ -3289,7 +3302,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     "starting from that point?";
         }
 
-        dialogMessage += "\n\nNew session will be called:\n\"" + forkDescription + "\"";
+        dialogMessage += "\n\nNew session will be called:\n\"" + forkedSessionName + "\"";
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Create New Session?");
@@ -3297,7 +3310,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         builder.setPositiveButton("OK", (dialog, which) -> {
             // Create the fork and continue with the feedback
-            forkSession(feedbackText);
+            forkSession(feedbackText, forkedSessionName);
         });
 
         builder.setNegativeButton("Cancel", (dialog, which) -> {
@@ -3314,7 +3327,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
      * message or the previous AI response (for user messages)
      * and switches to use the new session.
      */
-    private void forkSession(String feedbackText) {
+    private void forkSession(String feedbackText, String forkedSessionName) {
         if (currentSession == null || selectedChatEntryIndex < 0) {
             Log.e(TAG, "Cannot create fork: invalid session or selection");
             return;
@@ -3344,22 +3357,20 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 + selectedChatEntryIndex + ")");
 
         // Create new session
-        DesignSession forkSession = new DesignSession();
+        DesignSession forkedSession = new DesignSession();
 
         // Copy basic properties
         String originalDescription = currentSession.getDescription();
         String originalSessionName = currentSession.getSessionName();
-        String forkSessionName = "(fork) " + (originalSessionName != null ? originalSessionName
-                : (originalDescription != null ? originalDescription : "Untitled"));
-        String forkDescription = "(fork) " + (originalDescription != null ? originalDescription : "Untitled");
-        forkSession.setSessionName(forkSessionName);
-        forkSession.setDescription(forkDescription);
-        forkSession.setInitialCode(currentSession.getInitialCode());
-        forkSession.setLlmType(currentSession.getLlmType());
-        forkSession.setLlmModel(currentSession.getLlmModel());
+
+        forkedSession.setSessionName(forkedSessionName);
+        forkedSession.setDescription(originalDescription);
+        forkedSession.setInitialCode(currentSession.getInitialCode());
+        forkedSession.setLlmType(currentSession.getLlmType());
+        forkedSession.setLlmModel(currentSession.getLlmModel());
 
         // Copy messages up to and including the fork point
-        LLMClient.ChatSession forkChatSession = forkSession.getChatSession();
+        LLMClient.ChatSession forkChatSession = forkedSession.getChatSession();
         for (int i = 0; i <= forkPointIndex; i++) {
             LLMClient.Message message = messages.get(i);
 
@@ -3397,7 +3408,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
                     .extractClojureCode(forkPointMessage.content);
             if (result.success && result.code != null && !result.code.isEmpty()) {
-                forkSession.setCurrentCode(result.code);
+                forkedSession.setCurrentCode(result.code);
             }
         }
 
@@ -3410,7 +3421,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             for (int i = 0; i < originalScreenshotSets.size() && i < originalIterations.size(); i++) {
                 int iterationNumber = originalIterations.get(i);
                 if (iterationNumber <= forkIteration) {
-                    forkSession.addScreenshotSet(originalScreenshotSets.get(i), iterationNumber);
+                    forkedSession.addScreenshotSet(originalScreenshotSets.get(i), iterationNumber);
                 }
             }
         }
@@ -3421,21 +3432,21 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             for (Map.Entry<Integer, String> entry : originalErrors.entrySet()) {
                 int iterationNumber = entry.getKey();
                 if (iterationNumber <= forkIteration) {
-                    forkSession.setIterationError(iterationNumber, entry.getValue());
+                    forkedSession.setIterationError(iterationNumber, entry.getValue());
                     Log.d(TAG, "Copied error for iteration " + iterationNumber + " to fork session");
                 }
             }
         }
 
         // Set the selected message to the fork point
-        forkSession.setSelectedMessageIndex(forkPointIndex);
+        forkedSession.setSelectedMessageIndex(forkPointIndex);
         Log.d(TAG, "Set fork session selected message to fork point: " + forkPointIndex);
 
         // Save the new fork session
-        sessionManager.updateSession(forkSession);
+        sessionManager.updateSession(forkedSession);
 
         // Switch to the fork session
-        currentSession = forkSession;
+        currentSession = forkedSession;
 
         // Shut down the existing iteration manager since we're switching sessions
         if (iterationManager != null) {
@@ -3451,7 +3462,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         // Update UI to reflect the new session
         updateSessionStateAfterFork();
 
-        Log.d(TAG, "Successfully created and switched to fork session: " + forkSession.getId().toString());
+        Log.d(TAG, "Successfully created and switched to fork session: " + forkedSession.getId().toString());
 
         // Now continue with the feedback submission
         List<File> imagesToSubmit = new ArrayList<>(selectedScreenshots);
@@ -3520,16 +3531,31 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     }
 
     /**
-     * Shows a dialog to edit the session name (which becomes the activity title)
+     * Shows a session naming dialog with customizable title, message, and
+     * completion callback
+     *
+     * @param title              Dialog title
+     * @param message            Dialog message (can be null for no message)
+     * @param onNameSaved        Callback when name is saved (receives the new name)
+     * @param onCancelled        Callback when dialog is cancelled (can be null)
      */
-    private void showEditSessionNameDialog() {
+    private void showSessionNamingDialog(String title, String message,
+            java.util.function.Consumer<String> onNameSaved,
+            Runnable onCancelled) {
         if (currentSession == null) {
             Toast.makeText(this, "No active session", Toast.LENGTH_SHORT).show();
+            if (onCancelled != null) {
+                onCancelled.run();
+            }
             return;
         }
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Edit Session Name");
+        builder.setTitle(title);
+
+        if (message != null && !message.trim().isEmpty()) {
+            builder.setMessage(message);
+        }
 
         // Create input field
         final EditText input = new EditText(this);
@@ -3537,14 +3563,26 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         // Set current session name or description as default
         String currentName = currentSession.getSessionName();
-        if (currentName == null || currentName.trim().isEmpty()) {
-            currentName = currentSession.getDescription();
-            if (currentName == null) {
+        if (currentName == null || currentName.trim().isEmpty() || currentName.equals(UNNAMED_SESSION)) {
+            String description = currentSession.getDescription();
+            if (description != null && !description.trim().isEmpty()) {
+                // Truncate long descriptions to make reasonable session names
+                if (description.length() > 50) {
+                    currentName = description.substring(0, 47) + "...";
+                } else {
+                    currentName = description;
+                }
+            } else {
                 currentName = "";
             }
         }
-        input.setText(currentName);
-        input.setSelection(currentName.length()); // Place cursor at end
+
+        if (!currentName.isEmpty()) {
+            input.setText(currentName);
+            input.setSelection(currentName.length()); // Place cursor at end
+        }
+
+        input.setHint("Enter session name");
 
         // Add padding to the input
         LinearLayout layout = new LinearLayout(this);
@@ -3556,27 +3594,94 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         builder.setPositiveButton("Save", (dialog, which) -> {
             String newName = input.getText().toString().trim();
             if (!newName.isEmpty()) {
-                // Update session name
-                currentSession.setSessionName(newName);
-                sessionManager.updateSession(currentSession);
-
-                // Update display
-                updateSessionNameDisplay();
-
-                Toast.makeText(this, "Session name updated", Toast.LENGTH_SHORT).show();
-                Log.d(TAG, "Session name updated to: " + newName);
+                onNameSaved.accept(newName);
             } else {
                 Toast.makeText(this, "Session name cannot be empty", Toast.LENGTH_SHORT).show();
+                if (onCancelled != null) {
+                    onCancelled.run();
+                }
             }
         });
 
-        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.cancel());
+        builder.setNegativeButton("Cancel", (dialog, which) -> {
+            dialog.cancel();
+            if (onCancelled != null) {
+                onCancelled.run();
+            }
+        });
 
+        builder.setCancelable(true);
         AlertDialog dialog = builder.create();
         dialog.show();
 
         // Show keyboard immediately
         input.requestFocus();
         dialog.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
+    }
+
+    /**
+     * Shows a dialog to edit the session name (which becomes the activity title)
+     */
+    private void showEditSessionNameDialog() {
+        showSessionNamingDialog(
+                "Edit Session Name",
+                null, // No message
+                newName -> {
+                    // Update session name
+                    currentSession.setSessionName(newName);
+                    sessionManager.updateSession(currentSession);
+
+                    // Update display
+                    updateSessionNameDisplay();
+
+                    Toast.makeText(this, "Session name updated", Toast.LENGTH_SHORT).show();
+                    Log.d(TAG, "Session name updated to: " + newName);
+                },
+                null // No cancellation callback needed
+        );
+    }
+
+    /**
+     * Checks if the current session has an unnamed/default name
+     */
+    private boolean isSessionUnnamed() {
+        if (currentSession == null) {
+            return true;
+        }
+
+        String sessionName = currentSession.getSessionName();
+        if (sessionName == null || sessionName.trim().isEmpty()) {
+            return true;
+        }
+
+        // Check if it's exactly the unnamed session
+        if (sessionName.equals(UNNAMED_SESSION)) {
+            return true;
+        }
+
+        // Check if it's the unnamed session with zero or more "(fork) " prefixes
+        // Remove all "(fork) " prefixes and see if what remains is UNNAMED_SESSION
+        String withoutForkPrefixes = sessionName.replaceAll("^(\\(fork\\) )*", "");
+        return withoutForkPrefixes.equals(UNNAMED_SESSION);
+    }
+
+    /**
+     * Shows a dialog to name the session before exiting the activity
+     */
+    private void showSessionNamingBeforeExitDialog() {
+        showSessionNamingDialog(
+                "Name This Session",
+                "Name this session before returning to the session list?",
+                newName -> {
+                    // Update session name
+                    currentSession.setSessionName(newName);
+                    sessionManager.updateSession(currentSession);
+                    Log.d(TAG, "Session named before exit: " + newName);
+                    finish(); // Exit after naming
+                },
+                () -> {
+                    // Exit without naming
+                    finish();
+                });
     }
 }
