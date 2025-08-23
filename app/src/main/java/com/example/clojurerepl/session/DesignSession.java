@@ -809,13 +809,7 @@ public class DesignSession {
                 }
             } else if (LLMClient.MessageRole.ASSISTANT.equals(message.role)) {
                 LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) message;
-                // Use the model information if available, otherwise use the default method
-                if (assistantMsg.getModelProvider() != null && assistantMsg.getModelName() != null) {
-                    session.chatSession.queueAssistantResponse(message.content, assistantMsg.getModelProvider(),
-                            assistantMsg.getModelName());
-                } else {
-                    session.chatSession.queueAssistantResponse(message.content);
-                }
+                session.chatSession.queueAssistantResponse(assistantMsg);
                 ClojureIterationManager.CodeExtractionResult extractionResult = ClojureIterationManager
                         .extractClojureCode(message.content);
                 if (extractionResult.success) {

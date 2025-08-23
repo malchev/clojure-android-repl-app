@@ -38,7 +38,7 @@ public class GeminiLLMClient extends LLMClient {
     private static final int RETRY_DELAY_MS = 2000; // 2 seconds between retries
 
     // Track the current request for cancellation
-    private final AtomicReference<CancellableCompletableFuture<String>> currentRequest = new AtomicReference<>();
+    private final AtomicReference<CancellableCompletableFuture<AssistantMessage>> currentRequest = new AtomicReference<>();
 
     // Static cache for available models
     private static List<String> cachedModels = null;
@@ -479,7 +479,7 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     @Override
-    protected CancellableCompletableFuture<String> sendMessages(ChatSession session) {
+    protected CancellableCompletableFuture<AssistantMessage> sendMessages(ChatSession session) {
         Log.d(TAG, "Sending " + session.getMessages().size() + " messages in session: " + session.getSessionId());
         Log.d(TAG, "System prompt available: " + (session.hasSystemPrompt() ? "yes" : "no"));
 
@@ -487,7 +487,7 @@ public class GeminiLLMClient extends LLMClient {
         cancelCurrentRequest();
 
         // Create a new cancellable future
-        CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
         currentRequest.set(future);
 
         CompletableFuture.runAsync(() -> {
@@ -507,11 +507,14 @@ public class GeminiLLMClient extends LLMClient {
                     return;
                 }
 
-                // Save the original response to history
-                session.queueAssistantResponse(response, getType(), getModel());
+                // Create AssistantMessage with model information
+                AssistantMessage assistantMessage = new AssistantMessage(response, getType(), getModel());
 
-                // Complete the future with the response
-                future.complete(response);
+                // Save the assistant message to history
+                session.queueAssistantResponse(assistantMessage);
+
+                // Complete the future with the AssistantMessage
+                future.complete(assistantMessage);
             } catch (Exception e) {
                 // Check if this is a cancellation exception, which is expected behavior
                 if (e instanceof CancellationException ||
@@ -553,7 +556,7 @@ public class GeminiLLMClient extends LLMClient {
 
     @Override
     public boolean cancelCurrentRequest() {
-        CancellableCompletableFuture<String> request = currentRequest.get();
+        CancellableCompletableFuture<AssistantMessage> request = currentRequest.get();
         if (request != null && !request.isCancelledOrCompleted()) {
             Log.d(TAG, "Cancelling current Gemini API request");
             boolean cancelled = request.cancel(true);
@@ -564,7 +567,7 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     @Override
-    public CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description) {
+    public CancellableCompletableFuture<AssistantMessage> generateInitialCode(UUID sessionId, String description) {
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +
                 "│         GENERATING INITIAL CODE           │\n" +
@@ -579,11 +582,11 @@ public class GeminiLLMClient extends LLMClient {
         chatSession.queueUserMessage(prompt, null, null, null);
 
         // Send all messages and get the response
-        CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
         sendMessages(chatSession)
-                .thenAccept(response -> {
-                    Log.d(TAG, "Got response, length: " + response.length());
-                    future.complete(response);
+                .thenAccept(assistantMessage -> {
+                    Log.d(TAG, "Got response, length: " + assistantMessage.content.length());
+                    future.complete(assistantMessage);
                 })
                 .exceptionally(ex -> {
                     // Remove the messages we added before sendMessages (system prompt + user
@@ -606,7 +609,7 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     @Override
-    public CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description,
+    public CancellableCompletableFuture<AssistantMessage> generateInitialCode(UUID sessionId, String description,
             String initialCode) {
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +
@@ -623,11 +626,11 @@ public class GeminiLLMClient extends LLMClient {
         chatSession.queueUserMessage(prompt, null, null, initialCode);
 
         // Send all messages and get the response
-        CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
         sendMessages(chatSession)
-                .thenAccept(response -> {
-                    Log.d(TAG, "Got response, length: " + response.length());
-                    future.complete(response);
+                .thenAccept(assistantMessage -> {
+                    Log.d(TAG, "Got response, length: " + assistantMessage.content.length());
+                    future.complete(assistantMessage);
                 })
                 .exceptionally(ex -> {
                     // Remove the messages we added before sendMessages (system prompt + user
@@ -650,7 +653,7 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     @Override
-    public CancellableCompletableFuture<String> generateNextIteration(
+    public CancellableCompletableFuture<AssistantMessage> generateNextIteration(
             UUID sessionId,
             String description,
             String currentCode,
@@ -667,7 +670,7 @@ public class GeminiLLMClient extends LLMClient {
         if (images != null && !images.isEmpty()) {
             ModelProperties props = getModelProperties(getModel());
             if (props == null || !props.isMultimodal) {
-                CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+                CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
                 future.completeExceptionally(
                         new UnsupportedOperationException("Images parameter provided but model is not multimodal"));
                 return future;
@@ -690,11 +693,11 @@ public class GeminiLLMClient extends LLMClient {
         chatSession.queueUserMessageWithImages(prompt, images, logcat, feedback, null);
 
         // Send all messages and get the response
-        CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
         sendMessages(chatSession)
-                .thenAccept(response -> {
-                    Log.d(TAG, "Got response response, length: " + response.length());
-                    future.complete(response);
+                .thenAccept(assistantMessage -> {
+                    Log.d(TAG, "Got response response, length: " + assistantMessage.content.length());
+                    future.complete(assistantMessage);
                 })
                 .exceptionally(ex -> {
                     // Remove the user message we added before sendMessages (1 message)
@@ -717,7 +720,7 @@ public class GeminiLLMClient extends LLMClient {
 
     // Helper method to call the Gemini API with message history
     private String callGeminiAPI(List<Message> history, String systemPrompt,
-            CancellableCompletableFuture<String> future) {
+            CancellableCompletableFuture<AssistantMessage> future) {
         int retryCount = 0;
         Exception lastException = null;
         int currentTokenLimit = getMaxOutputTokens(currentModel);
@@ -813,7 +816,7 @@ public class GeminiLLMClient extends LLMClient {
 
     // Actual API call implementation
     private ExtractionResult performGeminiAPICall(List<Message> history, String systemPrompt, int tokenLimit,
-            CancellableCompletableFuture<String> future)
+            CancellableCompletableFuture<AssistantMessage> future)
             throws java.io.IOException {
         try {
             // Manage conversation history to prevent context overflow

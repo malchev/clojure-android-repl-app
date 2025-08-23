@@ -3478,12 +3478,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 }
             } else if (message.role == LLMClient.MessageRole.ASSISTANT) {
                 LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) message;
-                if (assistantMsg.getModelProvider() != null && assistantMsg.getModelName() != null) {
-                    forkChatSession.queueAssistantResponse(message.content,
-                            assistantMsg.getModelProvider(), assistantMsg.getModelName());
-                } else {
-                    forkChatSession.queueAssistantResponse(message.content);
-                }
+                forkChatSession.queueAssistantResponse(assistantMsg);
             }
         }
 

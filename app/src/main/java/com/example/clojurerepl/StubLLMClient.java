@@ -18,10 +18,10 @@ public class StubLLMClient extends LLMClient {
     }
 
     @Override
-    protected CancellableCompletableFuture<String> sendMessages(ChatSession session) {
+    protected CancellableCompletableFuture<AssistantMessage> sendMessages(ChatSession session) {
         Log.d(TAG, "Sending " + session.getMessages().size() + " messages in stub session: " + session.getSessionId());
 
-        CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
 
         CompletableFuture.runAsync(() -> {
             try {
@@ -49,10 +49,13 @@ public class StubLLMClient extends LLMClient {
                     return;
                 }
 
-                // Add assistant message to history
-                session.queueAssistantResponse(response, getType(), getModel());
+                // Create AssistantMessage with model information
+                AssistantMessage assistantMessage = new AssistantMessage(response, getType(), getModel());
 
-                future.complete(response);
+                // Add assistant message to history
+                session.queueAssistantResponse(assistantMessage);
+
+                future.complete(assistantMessage);
             } catch (Exception e) {
                 Log.e(TAG, "Error in stub chat session", e);
                 if (!future.isCancelled()) {
@@ -98,7 +101,7 @@ public class StubLLMClient extends LLMClient {
     }
 
     @Override
-    public CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description) {
+    public CancellableCompletableFuture<AssistantMessage> generateInitialCode(UUID sessionId, String description) {
         Log.d(TAG, "Generating initial code for description: " + description + " using stub client");
 
         // Queue system prompt and format initial prompt
@@ -107,10 +110,10 @@ public class StubLLMClient extends LLMClient {
         chatSession.queueUserMessage(prompt, null, null, null);
 
         // Send all messages and get the response
-        CancellableCompletableFuture<String> future = sendMessages(chatSession);
-        CancellableCompletableFuture<String> wrappedFuture = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantMessage> future = sendMessages(chatSession);
+        CancellableCompletableFuture<AssistantMessage> wrappedFuture = new CancellableCompletableFuture<>();
 
-        future.handle((response, ex) -> {
+        future.handle((assistantMessage, ex) -> {
             if (ex != null) {
                 // Remove the messages we added before sendMessages (system prompt + user
                 // message = 2 messages)
@@ -118,7 +121,7 @@ public class StubLLMClient extends LLMClient {
                 Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
                 wrappedFuture.completeExceptionally(ex);
             } else {
-                wrappedFuture.complete(response);
+                wrappedFuture.complete(assistantMessage);
             }
             return null;
         });
@@ -127,7 +130,7 @@ public class StubLLMClient extends LLMClient {
     }
 
     @Override
-    public CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description,
+    public CancellableCompletableFuture<AssistantMessage> generateInitialCode(UUID sessionId, String description,
             String initialCode) {
         Log.d(TAG, "Generating initial code for description: " + description +
                 " using stub client, with initial code: " + (initialCode != null ? "yes" : "no"));
@@ -138,10 +141,10 @@ public class StubLLMClient extends LLMClient {
         chatSession.queueUserMessage(prompt, null, null, initialCode);
 
         // Send all messages and get the response
-        CancellableCompletableFuture<String> future = sendMessages(chatSession);
-        CancellableCompletableFuture<String> wrappedFuture = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantMessage> future = sendMessages(chatSession);
+        CancellableCompletableFuture<AssistantMessage> wrappedFuture = new CancellableCompletableFuture<>();
 
-        future.handle((response, ex) -> {
+        future.handle((assistantMessage, ex) -> {
             if (ex != null) {
                 // Remove the messages we added before sendMessages (system prompt + user
                 // message = 2 messages)
@@ -149,7 +152,7 @@ public class StubLLMClient extends LLMClient {
                 Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
                 wrappedFuture.completeExceptionally(ex);
             } else {
-                wrappedFuture.complete(response);
+                wrappedFuture.complete(assistantMessage);
             }
             return null;
         });
@@ -158,7 +161,7 @@ public class StubLLMClient extends LLMClient {
     }
 
     @Override
-    public CancellableCompletableFuture<String> generateNextIteration(
+    public CancellableCompletableFuture<AssistantMessage> generateNextIteration(
             UUID sessionId,
             String description,
             String currentCode,
@@ -171,7 +174,7 @@ public class StubLLMClient extends LLMClient {
         if (images != null && !images.isEmpty()) {
             ModelProperties props = getModelProperties(getModel());
             if (props == null || !props.isMultimodal) {
-                CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+                CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
                 future.completeExceptionally(
                         new UnsupportedOperationException("Images parameter provided but model is not multimodal"));
                 return future;
@@ -186,17 +189,17 @@ public class StubLLMClient extends LLMClient {
         chatSession.queueUserMessageWithImages(prompt, images, logcat, feedback, null);
 
         // Send all messages and get the response
-        CancellableCompletableFuture<String> future = sendMessages(chatSession);
-        CancellableCompletableFuture<String> wrappedFuture = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantMessage> future = sendMessages(chatSession);
+        CancellableCompletableFuture<AssistantMessage> wrappedFuture = new CancellableCompletableFuture<>();
 
-        future.handle((response, ex) -> {
+        future.handle((assistantMessage, ex) -> {
             if (ex != null) {
                 // Remove the user message we added before sendMessages (1 message)
                 chatSession.removeLastMessages(1);
                 Log.d(TAG, "Removed 1 message (user message) due to failure in generateNextIteration");
                 wrappedFuture.completeExceptionally(ex);
             } else {
-                wrappedFuture.complete(response);
+                wrappedFuture.complete(assistantMessage);
             }
             return null;
         });

@@ -34,7 +34,7 @@ public class ClaudeLLMClient extends LLMClient {
     private String currentModel = null;
 
     // Track the current request for cancellation
-    private final AtomicReference<CancellableCompletableFuture<String>> currentRequest = new AtomicReference<>();
+    private final AtomicReference<CancellableCompletableFuture<AssistantMessage>> currentRequest = new AtomicReference<>();
 
     // Static cache for available models
     private static List<String> cachedModels = null;
@@ -65,7 +65,7 @@ public class ClaudeLLMClient extends LLMClient {
     }
 
     @Override
-    protected CancellableCompletableFuture<String> sendMessages(ChatSession session) {
+    protected CancellableCompletableFuture<AssistantMessage> sendMessages(ChatSession session) {
         Log.d(TAG,
                 "DEBUG: ClaudeLLMClient.sendMessages called with " + session.getMessages().size()
                         + " messages in session: "
@@ -75,7 +75,7 @@ public class ClaudeLLMClient extends LLMClient {
         cancelCurrentRequest();
 
         // Create a new cancellable future
-        CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
         currentRequest.set(future);
 
         // Log message types and short previews for debugging
@@ -129,10 +129,13 @@ public class ClaudeLLMClient extends LLMClient {
                                 ? (response.length() > 1000 ? response.substring(0, 1000) + "..." : response)
                                 : "NULL RESPONSE"));
 
-                // Add assistant message to history
-                session.queueAssistantResponse(response, getType(), getModel());
+                // Create AssistantMessage with model information
+                AssistantMessage assistantMessage = new AssistantMessage(response, getType(), getModel());
 
-                future.complete(response);
+                // Add assistant message to history
+                session.queueAssistantResponse(assistantMessage);
+
+                future.complete(assistantMessage);
             } catch (Exception e) {
                 Log.e(TAG, "ERROR: Exception in sendMessages CompletableFuture", e);
                 // Check if this is a cancellation exception, which is expected behavior
@@ -159,7 +162,7 @@ public class ClaudeLLMClient extends LLMClient {
     }
 
     @Override
-    public CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description) {
+    public CancellableCompletableFuture<AssistantMessage> generateInitialCode(UUID sessionId, String description) {
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +
                 "│ CLAUDE STARTING INITIAL CODE GENERATION   │\n" +
@@ -180,8 +183,8 @@ public class ClaudeLLMClient extends LLMClient {
             chatSession.queueUserMessage(prompt, null, null, null);
             Log.d(TAG, "DEBUG: Created chat session, about to send messages to Claude API");
 
-            CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
-            sendMessages(chatSession).handle((response, ex) -> {
+            CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
+            sendMessages(chatSession).handle((assistantMessage, ex) -> {
                 if (ex != null) {
                     // Remove the messages we added before sendMessages (system prompt + user
                     // message = 2 messages)
@@ -195,25 +198,25 @@ public class ClaudeLLMClient extends LLMClient {
                         future.completeExceptionally(ex);
                     } else {
                         Log.e(TAG, "ERROR: Failed in Claude sendMessages", ex);
-                        future.complete("ERROR: " + ex.getMessage());
+                        future.completeExceptionally(ex);
                     }
                 } else {
                     Log.d(TAG, "SUCCESS: Claude sendMessages completed successfully");
-                    future.complete(response);
+                    future.complete(assistantMessage);
                 }
                 return null;
             });
             return future;
         } catch (Exception e) {
             Log.e(TAG, "ERROR: Exception in generateInitialCode", e);
-            CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+            CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
             future.completeExceptionally(e);
             return future;
         }
     }
 
     @Override
-    public CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description,
+    public CancellableCompletableFuture<AssistantMessage> generateInitialCode(UUID sessionId, String description,
             String initialCode) {
         Log.d(TAG, "\n" +
                 "┌───────────────────────────────────────────┐\n" +
@@ -236,8 +239,8 @@ public class ClaudeLLMClient extends LLMClient {
             chatSession.queueUserMessage(prompt, null, null, initialCode);
             Log.d(TAG, "DEBUG: Created chat session with template, about to send messages to Claude API");
 
-            CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
-            sendMessages(chatSession).handle((response, ex) -> {
+            CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
+            sendMessages(chatSession).handle((assistantMessage, ex) -> {
                 if (ex != null) {
                     // Remove the messages we added before sendMessages (system prompt + user
                     // message = 2 messages)
@@ -252,25 +255,25 @@ public class ClaudeLLMClient extends LLMClient {
                         future.completeExceptionally(ex);
                     } else {
                         Log.e(TAG, "ERROR: Failed in Claude sendMessages with template", ex);
-                        future.complete("ERROR: " + ex.getMessage());
+                        future.completeExceptionally(ex);
                     }
                 } else {
                     Log.d(TAG, "SUCCESS: Claude sendMessages with template completed successfully");
-                    future.complete(response);
+                    future.complete(assistantMessage);
                 }
                 return null;
             });
             return future;
         } catch (Exception e) {
             Log.e(TAG, "ERROR: Exception in generateInitialCode with template", e);
-            CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+            CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
             future.completeExceptionally(e);
             return future;
         }
     }
 
     @Override
-    public CancellableCompletableFuture<String> generateNextIteration(
+    public CancellableCompletableFuture<AssistantMessage> generateNextIteration(
             UUID sessionId,
             String description,
             String currentCode,
@@ -286,7 +289,7 @@ public class ClaudeLLMClient extends LLMClient {
         if (images != null && !images.isEmpty()) {
             ModelProperties props = getModelProperties(getModel());
             if (props == null || !props.isMultimodal) {
-                CancellableCompletableFuture<String> future = new CancellableCompletableFuture<>();
+                CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
                 future.completeExceptionally(
                         new UnsupportedOperationException("Images parameter provided but model is not multimodal"));
                 return future;
@@ -346,17 +349,17 @@ public class ClaudeLLMClient extends LLMClient {
         Log.d(TAG, recentMessages.toString());
 
         // Send all messages and get the response
-        CancellableCompletableFuture<String> future = sendMessages(chatSession);
-        CancellableCompletableFuture<String> wrappedFuture = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantMessage> future = sendMessages(chatSession);
+        CancellableCompletableFuture<AssistantMessage> wrappedFuture = new CancellableCompletableFuture<>();
 
-        future.handle((response, ex) -> {
+        future.handle((assistantMessage, ex) -> {
             if (ex != null) {
                 // Remove the user message we added before sendMessages (1 message)
                 chatSession.removeLastMessages(1);
                 Log.d(TAG, "Removed 1 message (user message) due to failure in generateNextIteration");
                 wrappedFuture.completeExceptionally(ex);
             } else {
-                wrappedFuture.complete(response);
+                wrappedFuture.complete(assistantMessage);
             }
             return null;
         });
@@ -381,7 +384,7 @@ public class ClaudeLLMClient extends LLMClient {
 
     @Override
     public boolean cancelCurrentRequest() {
-        CancellableCompletableFuture<String> request = currentRequest.get();
+        CancellableCompletableFuture<AssistantMessage> request = currentRequest.get();
         if (request != null && !request.isCancelledOrCompleted()) {
             Log.d(TAG, "Cancelling current Claude API request");
             boolean cancelled = request.cancel(true);
@@ -395,7 +398,7 @@ public class ClaudeLLMClient extends LLMClient {
      * Helper method to call the Claude API with message history.
      * Claude API requires converting multiple messages into a special format.
      */
-    private String callClaudeAPI(List<Message> history, CancellableCompletableFuture<String> future) {
+    private String callClaudeAPI(List<Message> history, CancellableCompletableFuture<AssistantMessage> future) {
         try {
             Log.d(TAG, "DEBUG: callClaudeAPI started in thread: " + Thread.currentThread().getName());
             Log.d(TAG, "=== Calling Claude API ===");

@@ -177,7 +177,7 @@ public class ClojureIterationManager {
         executor.execute(() -> {
             try {
                 // Call the LLM client which returns a CancellableCompletableFuture
-                LLMClient.CancellableCompletableFuture<String> llmFuture;
+                LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> llmFuture;
                 if (initialCode != null && !initialCode.isEmpty()) {
                     llmFuture = llmClient.generateInitialCode(sessionId, description, initialCode);
                 } else {
@@ -185,12 +185,12 @@ public class ClojureIterationManager {
                 }
 
                 // When the LLM response is ready, complete our future
-                llmFuture.thenAccept(response -> {
+                llmFuture.thenAccept(assistantMessage -> {
                     Log.d(TAG, "Received initial response from LLM, length: " +
-                            (response != null ? response.length() : "null"));
+                            (assistantMessage.content != null ? assistantMessage.content.length() : "null"));
 
                     // Extract clean code from markdown blocks if present
-                    CodeExtractionResult extractionResult = extractClojureCode(response);
+                    CodeExtractionResult extractionResult = extractClojureCode(assistantMessage.content);
                     if (!extractionResult.success) {
                         // Use callback if available, otherwise fall back to exception
                         if (extractionErrorCallback != null) {
@@ -303,23 +303,26 @@ public class ClojureIterationManager {
             try {
                 // Call the LLM client which returns a CancellableCompletableFuture - PASS
                 // DESCRIPTION HERE
-                LLMClient.CancellableCompletableFuture<String> llmFuture = llmClient.generateNextIteration(
-                        sessionId,
-                        description, // Pass the original description now
-                        lastResult.code,
-                        lastResult.logcat,
-                        feedback,
-                        images); // Pass the images list
+                LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> llmFuture = llmClient
+                        .generateNextIteration(
+                                sessionId,
+                                description, // Pass the original description now
+                                lastResult.code,
+                                lastResult.logcat,
+                                feedback,
+                                images); // Pass the images list
 
                 // When the LLM response is ready, complete our future
-                llmFuture.thenAccept(response -> {
+                llmFuture.thenAccept(assistantMessage -> {
                     Log.d(TAG, "Received response from LLM, length: " +
-                            (response != null ? response.length() : "null"));
+                            (assistantMessage.content != null ? assistantMessage.content.length() : "null"));
                     Log.d(TAG, "LLM response first 100 chars: " +
-                            (response != null && response.length() > 100 ? response.substring(0, 100) : response));
+                            (assistantMessage.content != null && assistantMessage.content.length() > 100
+                                    ? assistantMessage.content.substring(0, 100)
+                                    : assistantMessage.content));
 
                     // Extract clean code from markdown blocks if present
-                    CodeExtractionResult extractionResult = extractClojureCode(response);
+                    CodeExtractionResult extractionResult = extractClojureCode(assistantMessage.content);
                     if (!extractionResult.success) {
                         // Use callback if available, otherwise fall back to exception
                         if (extractionErrorCallback != null) {

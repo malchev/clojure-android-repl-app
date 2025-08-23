@@ -193,7 +193,8 @@ public abstract class LLMClient {
         return promptTemplate + "\n\nAlways respond with Clojure code in a markdown code block.";
     }
 
-    public abstract CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description);
+    public abstract CancellableCompletableFuture<AssistantMessage> generateInitialCode(UUID sessionId,
+            String description);
 
     /**
      * Generate initial code with optional starting code
@@ -202,9 +203,11 @@ public abstract class LLMClient {
      * @param description The app description
      * @param initialCode Optional initial code to use as a starting point (may be
      *                    null)
-     * @return A CancellableCompletableFuture containing the generated code
+     * @return A CancellableCompletableFuture containing the generated
+     *         AssistantMessage
      */
-    public abstract CancellableCompletableFuture<String> generateInitialCode(UUID sessionId, String description,
+    public abstract CancellableCompletableFuture<AssistantMessage> generateInitialCode(UUID sessionId,
+            String description,
             String initialCode);
 
     protected String formatIterationPrompt(String description,
@@ -233,7 +236,7 @@ public abstract class LLMClient {
         }
     }
 
-    public abstract CancellableCompletableFuture<String> generateNextIteration(
+    public abstract CancellableCompletableFuture<AssistantMessage> generateNextIteration(
             UUID sessionId,
             String description,
             String currentCode,
@@ -554,27 +557,15 @@ public abstract class LLMClient {
         }
 
         /**
-         * Queues an assistant (model) response to be sent in the next API call
-         * Typically used when loading previous conversations
+         * Queues an assistant message object directly to the chat session
          *
-         * @param content The assistant response content
+         * @param assistantMessage The AssistantMessage object to queue
          */
-        public void queueAssistantResponse(String content) {
-            Log.d(TAG, "Queuing assistant response in session: " + sessionId);
-            messages.add(new AssistantMessage(content));
-        }
-
-        /**
-         * Queues an assistant (model) response with model information
-         *
-         * @param content       The assistant response content
-         * @param modelProvider The model provider (CLAUDE, OPENAI, GEMINI)
-         * @param modelName     The specific model name
-         */
-        public void queueAssistantResponse(String content, LLMClientFactory.LLMType modelProvider, String modelName) {
-            Log.d(TAG, "Queuing assistant response with model: " + modelProvider + "/" + modelName + " in session: "
-                    + sessionId);
-            messages.add(new AssistantMessage(content, modelProvider, modelName));
+        public void queueAssistantResponse(AssistantMessage assistantMessage) {
+            Log.d(TAG, "Queuing assistant message object in session: " + sessionId +
+                    " (provider: " + assistantMessage.getModelProvider() +
+                    ", model: " + assistantMessage.getModelName() + ")");
+            messages.add(assistantMessage);
         }
 
         /**
@@ -637,9 +628,10 @@ public abstract class LLMClient {
      * This method must be implemented by each LLMClient subclass
      *
      * @param session The chat session containing messages to send
-     * @return A CancellableCompletableFuture containing the API response
+     * @return A CancellableCompletableFuture containing the API response as an
+     *         AssistantMessage
      */
-    protected abstract CancellableCompletableFuture<String> sendMessages(ChatSession session);
+    protected abstract CancellableCompletableFuture<AssistantMessage> sendMessages(ChatSession session);
 
     /**
      * Clears the API key for this client type
