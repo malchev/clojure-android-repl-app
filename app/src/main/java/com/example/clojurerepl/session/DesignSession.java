@@ -540,13 +540,18 @@ public class DesignSession {
             messageJson.put("role", message.role.getApiValue());
             messageJson.put("content", message.content);
 
-            // Add model information for assistant messages
+            // Add model information and extracted code for assistant messages
             if (message.role == LLMClient.MessageRole.ASSISTANT) {
                 LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) message;
                 if (assistantMsg.getModelProvider() != null && assistantMsg.getModelName() != null) {
                     messageJson.put("modelProvider", assistantMsg.getModelProvider().name());
                     messageJson.put("modelName", assistantMsg.getModelName());
                 }
+
+                // Always save the code field, even if it's null (save as empty string for
+                // compatibility)
+                String extractedCode = assistantMsg.getExtractedCode();
+                messageJson.put("extractedCode", extractedCode != null ? extractedCode : "");
             }
 
             // Add image file paths and MIME types if the message has images
@@ -704,10 +709,24 @@ public class DesignSession {
                 if (role == LLMClient.MessageRole.SYSTEM) {
                     chatHistory.add(new LLMClient.SystemPrompt(content));
                 } else if (role == LLMClient.MessageRole.ASSISTANT) {
-                    if (modelProvider != null && modelName != null) {
-                        chatHistory.add(new LLMClient.AssistantMessage(content, modelProvider, modelName));
+                    // Handle extracted code field
+                    String extractedCode = null;
+                    if (messageJson.has("extractedCode")) {
+                        String codeValue = messageJson.getString("extractedCode");
+                        // If code field exists but is empty, set to null; otherwise use the value
+                        extractedCode = (codeValue != null && !codeValue.trim().isEmpty()) ? codeValue : null;
+
+                        // Use constructor with explicit code field
+                        chatHistory
+                                .add(new LLMClient.AssistantMessage(content, modelProvider, modelName, extractedCode));
                     } else {
-                        chatHistory.add(new LLMClient.AssistantMessage(content));
+                        // For compatibility: no code field exists, use regular constructor (which will
+                        // auto-extract)
+                        if (modelProvider != null && modelName != null) {
+                            chatHistory.add(new LLMClient.AssistantMessage(content, modelProvider, modelName));
+                        } else {
+                            chatHistory.add(new LLMClient.AssistantMessage(content));
+                        }
                     }
                 } else if (role == LLMClient.MessageRole.USER) {
                     // Get additional fields for user messages

@@ -428,17 +428,46 @@ public abstract class LLMClient {
     public static class AssistantMessage extends Message {
         public final LLMClientFactory.LLMType modelProvider;
         public final String modelName;
+        public final String extractedCode; // Extracted Clojure code, null if no code or only whitespace
 
         public AssistantMessage(String content) {
             super(MessageRole.ASSISTANT, content);
             this.modelProvider = null;
             this.modelName = null;
+            this.extractedCode = extractCodeFromContent(content);
         }
 
         public AssistantMessage(String content, LLMClientFactory.LLMType modelProvider, String modelName) {
             super(MessageRole.ASSISTANT, content);
             this.modelProvider = modelProvider;
             this.modelName = modelName;
+            this.extractedCode = extractCodeFromContent(content);
+        }
+
+        /**
+         * Constructor for deserialization with explicit code field
+         */
+        public AssistantMessage(String content, LLMClientFactory.LLMType modelProvider, String modelName,
+                String extractedCode) {
+            super(MessageRole.ASSISTANT, content);
+            this.modelProvider = modelProvider;
+            this.modelName = modelName;
+            this.extractedCode = extractedCode;
+        }
+
+        /**
+         * Helper method to extract code from content during construction
+         */
+        private static String extractCodeFromContent(String content) {
+            if (content == null) {
+                return null;
+            }
+
+            CodeExtractionResult result = extractClojureCode(content);
+            if (result.success && result.code != null && !result.code.trim().isEmpty()) {
+                return result.code;
+            }
+            return null;
         }
 
         /**
@@ -457,6 +486,15 @@ public abstract class LLMClient {
          */
         public String getModelName() {
             return modelName;
+        }
+
+        /**
+         * Get the extracted code for this assistant message
+         *
+         * @return The extracted Clojure code, or null if no code was found
+         */
+        public String getExtractedCode() {
+            return extractedCode;
         }
     }
 
