@@ -979,31 +979,18 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         }
 
         LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
-        int codeMessageIndex = selectedChatEntryIndex;
 
-        // If user message is selected, find the last AI response before it
-        if (selectedMessage.role == LLMClient.MessageRole.USER) {
-            codeMessageIndex = findLastAiResponseBefore(selectedChatEntryIndex);
-            if (codeMessageIndex < 0) {
-                Toast.makeText(this, "No AI response found before selected user message", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            selectedMessage = messages.get(codeMessageIndex);
-        } else if (selectedMessage.role != LLMClient.MessageRole.ASSISTANT) {
-            Toast.makeText(this, "Selected message is not an AI response or user message", Toast.LENGTH_SHORT).show();
+        // Get code for execution using smart fallback logic
+        CodeSearchResult codeResult = getCodeForExecution(selectedMessage, selectedChatEntryIndex, "Accept");
+
+        if (!codeResult.found) {
+            Toast.makeText(this, "No code found in message history. Please generate code first.", Toast.LENGTH_SHORT)
+                    .show();
             return;
         }
 
-        // Extract code from the AI response
-        ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
-                .extractClojureCode(selectedMessage.content);
-
-        if (!result.success || result.code == null || result.code.isEmpty()) {
-            Toast.makeText(this, "No code found in AI response", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        String currentCode = result.code;
+        String currentCode = codeResult.code;
+        int codeMessageIndex = codeResult.messageIndex;
 
         // Base64 encode the code
         String encodedCode;
@@ -1622,29 +1609,18 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         }
 
         LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
-        int codeMessageIndex = selectedChatEntryIndex;
 
-        // If user message is selected, find the last AI response before it
-        if (selectedMessage.role == LLMClient.MessageRole.USER) {
-            codeMessageIndex = findLastAiResponseBefore(selectedChatEntryIndex);
-            if (codeMessageIndex < 0) {
-                Toast.makeText(this, "No AI response found before selected user message", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            selectedMessage = messages.get(codeMessageIndex);
-        } else if (selectedMessage.role != LLMClient.MessageRole.ASSISTANT) {
-            Toast.makeText(this, "Selected message is not an AI response or user message", Toast.LENGTH_SHORT).show();
+        // Get code for execution using smart fallback logic
+        CodeSearchResult codeResult = getCodeForExecution(selectedMessage, selectedChatEntryIndex, "Run");
+
+        if (!codeResult.found) {
+            Toast.makeText(this, "No code found in message history. Please generate code first.", Toast.LENGTH_SHORT)
+                    .show();
             return;
         }
 
-        // Extract code from the AI response
-        ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
-                .extractClojureCode(selectedMessage.content);
-
-        if (!result.success || result.code == null || result.code.isEmpty()) {
-            Toast.makeText(this, "No code found in AI response", Toast.LENGTH_SHORT).show();
-            return;
-        }
+        String codeToRun = codeResult.code;
+        int codeMessageIndex = codeResult.messageIndex;
 
         // Calculate the correct iteration number for the code message
         int selectedIteration = getIterationNumberForMessage(codeMessageIndex);
@@ -1671,7 +1647,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         });
                     }
                 },
-                result.code,
+                codeToRun,
                 currentSession.getId().toString(),
                 selectedIteration, // Use the correct iteration number
                 true,
@@ -1703,6 +1679,111 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         }
 
         return -1;
+    }
+
+    /**
+     * Result class for AI response code search operations
+     */
+    private static class CodeSearchResult {
+        public final int messageIndex;
+        public final String code;
+        public final boolean found;
+
+        private CodeSearchResult(int messageIndex, String code, boolean found) {
+            this.messageIndex = messageIndex;
+            this.code = code;
+            this.found = found;
+        }
+
+        public static CodeSearchResult success(int messageIndex, String code) {
+            return new CodeSearchResult(messageIndex, code, true);
+        }
+
+        public static CodeSearchResult notFound() {
+            return new CodeSearchResult(-1, null, false);
+        }
+    }
+
+    /**
+     * Finds the last AI response message with code, searching backwards from the
+     * given message index.
+     * If messageIndex is -1, searches from the end of the message history.
+     *
+     * @param messageIndex The index to search before, or -1 to search from the end
+     * @return CodeSearchResult containing the index and extracted code, or
+     *         notFound() if none found
+     */
+    private CodeSearchResult findLastAiResponseWithCode(int messageIndex) {
+        if (currentSession == null) {
+            return CodeSearchResult.notFound();
+        }
+
+        List<LLMClient.Message> messages = currentSession.getChatHistory();
+        if (messages == null || messages.isEmpty()) {
+            return CodeSearchResult.notFound();
+        }
+
+        // Determine starting point for search
+        int startIndex = (messageIndex == -1) ? messages.size() - 1 : messageIndex - 1;
+
+        // Search backwards from the starting index
+        for (int i = startIndex; i >= 0; i--) {
+            if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
+                // Check if this AI response contains code
+                ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
+                        .extractClojureCode(messages.get(i).content);
+                if (result.success && result.code != null && !result.code.isEmpty()) {
+                    return CodeSearchResult.success(i, result.code);
+                }
+            }
+        }
+
+        return CodeSearchResult.notFound();
+    }
+
+    /**
+     * Gets code for execution based on the selected message with smart fallback.
+     * Handles both AI responses and user messages with consistent fallback logic.
+     *
+     * @param selectedMessage The currently selected message
+     * @param selectedIndex   The index of the selected message
+     * @param operation       A description of the operation for logging (e.g.,
+     *                        "Accept", "Run")
+     * @return CodeSearchResult containing the code and its message index, or
+     *         notFound() if no code available
+     */
+    private CodeSearchResult getCodeForExecution(LLMClient.Message selectedMessage, int selectedIndex,
+            String operation) {
+        if (selectedMessage.role == LLMClient.MessageRole.USER) {
+            // User message selected - search backwards for any AI response with code
+            CodeSearchResult result = findLastAiResponseWithCode(selectedIndex);
+            if (result.found) {
+                Log.d(TAG, "User message selected for " + operation + ", using code from AI response at index "
+                        + result.messageIndex);
+            }
+            return result;
+        } else if (selectedMessage.role == LLMClient.MessageRole.ASSISTANT) {
+            // AI response selected - check if it has code, otherwise fall back to search
+            ClojureIterationManager.CodeExtractionResult extractionResult = ClojureIterationManager
+                    .extractClojureCode(selectedMessage.content);
+
+            if (extractionResult.success && extractionResult.code != null && !extractionResult.code.isEmpty()) {
+                // Use code from the selected AI response if it contains code
+                return CodeSearchResult.success(selectedIndex, extractionResult.code);
+            } else {
+                // If selected AI response doesn't contain code, search backwards for the last
+                // AI response with code
+                CodeSearchResult result = findLastAiResponseWithCode(selectedIndex);
+                if (result.found) {
+                    Log.d(TAG, "Selected AI response contains no code for " + operation
+                            + ", using code from message at index " + result.messageIndex);
+                }
+                return result;
+            }
+        } else {
+            // Invalid message type
+            return CodeSearchResult.notFound();
+        }
     }
 
     /**
@@ -2107,31 +2188,35 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
                             .extractClojureCode(selectedMessage.content);
 
-                    // Enable/disable buttons based on whether the selected response has code
-                    boolean hasCode = result.success && result.code != null && !result.code.isEmpty();
+                    // Enable/disable buttons based on whether we have code (either in selected
+                    // response or in history)
+                    boolean hasCodeInResponse = result.success && result.code != null && !result.code.isEmpty();
+                    boolean hasCodeInHistory = false;
+
+                    if (!hasCodeInResponse) {
+                        // Check if we can find code in the message history
+                        CodeSearchResult searchResult = findLastAiResponseWithCode(selectedChatEntryIndex);
+                        hasCodeInHistory = searchResult.found;
+                    }
+
+                    boolean hasCode = hasCodeInResponse || hasCodeInHistory;
+
                     runButton.setEnabled(hasCode);
                     thumbsUpButton.setEnabled(hasCode);
 
-                    Log.d(TAG, "Updated action buttons for selected AI response. Has code: " + hasCode);
+                    Log.d(TAG, "Updated action buttons for selected AI response. Has code in response: "
+                            + hasCodeInResponse + ", has code in history: " + hasCodeInHistory);
                 } else if (selectedMessage.role == LLMClient.MessageRole.USER) {
-                    // User message selected - find the last AI response before it to determine if
-                    // we can run code
-                    int lastAiResponseIndex = findLastAiResponseBefore(selectedChatEntryIndex);
-                    boolean canRunCode = false;
+                    // User message selected - search backwards for any AI response with code
+                    CodeSearchResult searchResult = findLastAiResponseWithCode(selectedChatEntryIndex);
+                    boolean hasCodeInHistory = searchResult.found;
 
-                    if (lastAiResponseIndex >= 0) {
-                        LLMClient.Message lastAiResponse = messages.get(lastAiResponseIndex);
-                        ClojureIterationManager.CodeExtractionResult result = ClojureIterationManager
-                                .extractClojureCode(lastAiResponse.content);
-                        canRunCode = result.success && result.code != null && !result.code.isEmpty();
-                    }
-
-                    runButton.setEnabled(canRunCode);
-                    thumbsUpButton.setEnabled(canRunCode);
+                    runButton.setEnabled(hasCodeInHistory);
+                    thumbsUpButton.setEnabled(hasCodeInHistory);
 
                     Log.d(TAG,
-                            "Updated action buttons for selected user message. Can run code from previous AI response: "
-                                    + canRunCode);
+                            "Updated action buttons for selected user message. Has code in history: "
+                                    + hasCodeInHistory);
                 }
             }
         } else {
@@ -3284,8 +3369,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         String currentSessionName = currentSession.getSessionName();
         String forkedSessionName = "(fork) " +
-                ((currentSessionName == null || currentSessionName.trim().isEmpty()) ? UNNAMED_SESSION :
-                 currentSessionName);
+                ((currentSessionName == null || currentSessionName.trim().isEmpty()) ? UNNAMED_SESSION
+                        : currentSessionName);
 
         List<LLMClient.Message> messages = currentSession.getChatHistory();
         LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
@@ -3534,10 +3619,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
      * Shows a session naming dialog with customizable title, message, and
      * completion callback
      *
-     * @param title              Dialog title
-     * @param message            Dialog message (can be null for no message)
-     * @param onNameSaved        Callback when name is saved (receives the new name)
-     * @param onCancelled        Callback when dialog is cancelled (can be null)
+     * @param title       Dialog title
+     * @param message     Dialog message (can be null for no message)
+     * @param onNameSaved Callback when name is saved (receives the new name)
+     * @param onCancelled Callback when dialog is cancelled (can be null)
      */
     private void showSessionNamingDialog(String title, String message,
             java.util.function.Consumer<String> onNameSaved,
