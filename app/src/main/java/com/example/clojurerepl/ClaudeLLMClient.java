@@ -180,7 +180,7 @@ public class ClaudeLLMClient extends LLMClient {
             // Queue system prompt and format initial prompt
             chatSession.queueSystemPrompt(new SystemPrompt(getSystemPrompt()));
             String prompt = formatInitialPrompt(description, null);
-            chatSession.queueUserMessage(prompt, null, null, null);
+            chatSession.queueUserMessage(new UserMessage(prompt, null, null, null));
             Log.d(TAG, "DEBUG: Created chat session, about to send messages to Claude API");
 
             CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
@@ -236,7 +236,7 @@ public class ClaudeLLMClient extends LLMClient {
             // Queue system prompt and format initial prompt
             chatSession.queueSystemPrompt(new SystemPrompt(getSystemPrompt()));
             String prompt = formatInitialPrompt(description, initialCode);
-            chatSession.queueUserMessage(prompt, null, null, initialCode);
+            chatSession.queueUserMessage(new UserMessage(prompt, null, null, initialCode));
             Log.d(TAG, "DEBUG: Created chat session with template, about to send messages to Claude API");
 
             CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
@@ -318,7 +318,8 @@ public class ClaudeLLMClient extends LLMClient {
                 images != null && !images.isEmpty());
 
         // Queue the user message (with images attachment if provided)
-        chatSession.queueUserMessageWithImages(prompt, images, logcat, feedback, null);
+        UserMessage userMessage = new UserMessage(prompt, images, logcat, feedback, null);
+        chatSession.queueUserMessage(userMessage);
 
         Log.d(TAG, "After queueing new user message, session now has " +
                 chatSession.getMessages().size() + " messages");

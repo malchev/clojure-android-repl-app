@@ -303,7 +303,7 @@ public class OpenAIChatClient extends LLMClient {
         // Queue system prompt and format initial prompt
         chatSession.queueSystemPrompt(new SystemPrompt(getSystemPrompt()));
         String prompt = formatInitialPrompt(description, null);
-        chatSession.queueUserMessage(prompt, null, null, null);
+        chatSession.queueUserMessage(new UserMessage(prompt, null, null, null));
         CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
         sendMessages(chatSession)
                 .thenAccept(assistantMessage -> {
@@ -342,7 +342,7 @@ public class OpenAIChatClient extends LLMClient {
         // Queue system prompt and format initial prompt with existing code as base
         chatSession.queueSystemPrompt(new SystemPrompt(getSystemPrompt()));
         String prompt = formatInitialPrompt(description, initialCode);
-        chatSession.queueUserMessage(prompt, null, null, initialCode);
+        chatSession.queueUserMessage(new UserMessage(prompt, null, null, initialCode));
         CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
         sendMessages(chatSession)
                 .thenAccept(assistantMessage -> {
@@ -390,7 +390,7 @@ public class OpenAIChatClient extends LLMClient {
 
         // Queue the user message (without images, as OpenAI implementation ignores
         // them)
-        chatSession.queueUserMessage(prompt, logcat, feedback, null);
+        chatSession.queueUserMessage(new UserMessage(prompt, logcat, feedback, null));
         CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
         sendMessages(chatSession)
                 .thenAccept(assistantMessage -> {
