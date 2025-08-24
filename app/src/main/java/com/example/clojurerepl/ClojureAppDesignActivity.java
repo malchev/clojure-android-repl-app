@@ -668,7 +668,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         // Get the LLM to generate the code first - using IterationManager now
         iterationManager.generateInitialCode(description, initialCode)
-                .thenAccept(code -> {
+                .thenAccept(assistantMessage -> {
+                    String code = assistantMessage.getExtractedCode();
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
                         if (initialGenerationProgressDialog != null) {
@@ -870,7 +871,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 feedback,
                 result,
                 images)
-                .thenAccept(code -> {
+                .thenAccept(assistantMessage -> {
+                    String code = assistantMessage.getExtractedCode();
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
                         if (iterationProgressDialog != null) {
@@ -3037,7 +3039,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 errorFeedback,
                 result,
                 new ArrayList<>()) // No images for automatic iteration
-                .thenAccept(code -> {
+                .thenAccept(assistantMessage -> {
+                    String code = assistantMessage.getExtractedCode();
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
                         if (iterationProgressDialog != null) {

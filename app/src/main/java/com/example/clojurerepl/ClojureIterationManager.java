@@ -32,7 +32,7 @@ public class ClojureIterationManager {
     private CompletableFuture<IterationResult> currentIterationFuture;
     private ExecutorService executor;
     private CompletableFuture<IterationResult> renderFuture;
-    private CompletableFuture<String> generationFuture;
+    private CompletableFuture<LLMClient.AssistantMessage> generationFuture;
     private IterationResult lastResult;
 
     public static class IterationResult {
@@ -116,9 +116,9 @@ public class ClojureIterationManager {
      * This is the entry point for starting a new design.
      * 
      * @param description The app description to generate code for
-     * @return A CompletableFuture that will be completed with the generated code
+     * @return A CompletableFuture that will be completed with the AssistantMessage
      */
-    public CompletableFuture<String> generateInitialCode(String description) {
+    public CompletableFuture<LLMClient.AssistantMessage> generateInitialCode(String description) {
         return generateInitialCode(description, null);
     }
 
@@ -130,9 +130,9 @@ public class ClojureIterationManager {
      * @param description The app description to generate code for
      * @param initialCode Optional initial code to use as a starting point (may be
      *                    null)
-     * @return A CompletableFuture that will be completed with the generated code
+     * @return A CompletableFuture that will be completed with the AssistantMessage
      */
-    public CompletableFuture<String> generateInitialCode(String description, String initialCode) {
+    public CompletableFuture<LLMClient.AssistantMessage> generateInitialCode(String description, String initialCode) {
         // Use sessionId directly as it's already a UUID
         // Cancel any previous generation task that might be running
         if (generationFuture != null && !generationFuture.isDone()) {
@@ -161,25 +161,25 @@ public class ClojureIterationManager {
                     Log.d(TAG, "Received initial response from LLM, length: " +
                             (assistantMessage.content != null ? assistantMessage.content.length() : "null"));
 
-                    // Extract clean code from markdown blocks if present
-                    LLMClient.CodeExtractionResult extractionResult = LLMClient
-                            .extractClojureCode(assistantMessage.content);
-                    if (!extractionResult.success) {
+                    // Check if code extraction succeeded (now handled by AssistantMessage)
+                    if (assistantMessage.getExtractedCode() == null) {
                         // Use callback if available, otherwise fall back to exception
                         if (extractionErrorCallback != null) {
-                            extractionErrorCallback.onExtractionError(extractionResult.errorMessage);
+                            extractionErrorCallback.onExtractionError("No code found in LLM response");
                             generationFuture.cancel(true);
                         } else {
                             generationFuture
-                                    .completeExceptionally(new IllegalArgumentException(extractionResult.errorMessage));
+                                    .completeExceptionally(
+                                            new IllegalArgumentException("No code found in LLM response"));
                         }
                         return;
                     }
-                    String cleanCode = extractionResult.code;
-                    Log.d(TAG, "Extracted clean initial code. Length: " +
-                            (cleanCode != null ? cleanCode.length() : "null"));
 
-                    generationFuture.complete(cleanCode);
+                    Log.d(TAG, "Extracted clean initial code. Length: " +
+                            (assistantMessage.getExtractedCode() != null ? assistantMessage.getExtractedCode().length()
+                                    : "null"));
+
+                    generationFuture.complete(assistantMessage);
                 }).exceptionally(ex -> {
                     generationFuture.completeExceptionally(ex);
                     return null;
@@ -193,7 +193,7 @@ public class ClojureIterationManager {
         return generationFuture;
     }
 
-    public CompletableFuture<String> generateNextIteration(String description, String feedback,
+    public CompletableFuture<LLMClient.AssistantMessage> generateNextIteration(String description, String feedback,
             IterationResult lastResult, List<File> images) {
         // Cancel any previous generation task that might be running
         if (generationFuture != null && !generationFuture.isDone()) {
@@ -233,25 +233,25 @@ public class ClojureIterationManager {
                                     ? assistantMessage.content.substring(0, 100)
                                     : assistantMessage.content));
 
-                    // Extract clean code from markdown blocks if present
-                    LLMClient.CodeExtractionResult extractionResult = LLMClient
-                            .extractClojureCode(assistantMessage.content);
-                    if (!extractionResult.success) {
+                    // Check if code extraction succeeded (now handled by AssistantMessage)
+                    if (assistantMessage.getExtractedCode() == null) {
                         // Use callback if available, otherwise fall back to exception
                         if (extractionErrorCallback != null) {
-                            extractionErrorCallback.onExtractionError(extractionResult.errorMessage);
+                            extractionErrorCallback.onExtractionError("No code found in LLM response");
                             generationFuture.cancel(true);
                         } else {
                             generationFuture
-                                    .completeExceptionally(new IllegalArgumentException(extractionResult.errorMessage));
+                                    .completeExceptionally(
+                                            new IllegalArgumentException("No code found in LLM response"));
                         }
                         return;
                     }
-                    String cleanCode = extractionResult.code;
-                    Log.d(TAG, "Extracted clean code. Length: " +
-                            (cleanCode != null ? cleanCode.length() : "null"));
 
-                    generationFuture.complete(cleanCode);
+                    Log.d(TAG, "Extracted clean code. Length: " +
+                            (assistantMessage.getExtractedCode() != null ? assistantMessage.getExtractedCode().length()
+                                    : "null"));
+
+                    generationFuture.complete(assistantMessage);
                 }).exceptionally(ex -> {
                     generationFuture.completeExceptionally(ex);
                     return null;
