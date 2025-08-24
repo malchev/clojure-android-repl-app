@@ -548,8 +548,21 @@ public class DesignSession {
                     messageJson.put("modelName", assistantMsg.getModelName());
                 }
 
-                // Always save the code field, even if it's null (save as empty string for
-                // compatibility)
+                // Save the complete code extraction result
+                LLMClient.CodeExtractionResult codeResult = assistantMsg.getCodeExtractionResult();
+                if (codeResult != null) {
+                    JSONObject codeResultJson = new JSONObject();
+                    codeResultJson.put("success", codeResult.success);
+                    codeResultJson.put("code", codeResult.code != null ? codeResult.code : "");
+                    codeResultJson.put("textBeforeCode",
+                            codeResult.textBeforeCode != null ? codeResult.textBeforeCode : "");
+                    codeResultJson.put("textAfterCode",
+                            codeResult.textAfterCode != null ? codeResult.textAfterCode : "");
+                    codeResultJson.put("errorMessage", codeResult.errorMessage != null ? codeResult.errorMessage : "");
+                    messageJson.put("codeExtractionResult", codeResultJson);
+                }
+
+                // For backwards compatibility, still save extractedCode field
                 String extractedCode = assistantMsg.getExtractedCode();
                 messageJson.put("extractedCode", extractedCode != null ? extractedCode : "");
             }
@@ -709,14 +722,39 @@ public class DesignSession {
                 if (role == LLMClient.MessageRole.SYSTEM) {
                     chatHistory.add(new LLMClient.SystemPrompt(content));
                 } else if (role == LLMClient.MessageRole.ASSISTANT) {
-                    // Handle extracted code field
-                    String extractedCode = null;
-                    if (messageJson.has("extractedCode")) {
-                        String codeValue = messageJson.getString("extractedCode");
-                        // If code field exists but is empty, set to null; otherwise use the value
-                        extractedCode = (codeValue != null && !codeValue.trim().isEmpty()) ? codeValue : null;
+                    // Handle code extraction result field
+                    LLMClient.CodeExtractionResult codeResult = null;
 
-                        // Use constructor with explicit code field
+                    if (messageJson.has("codeExtractionResult")) {
+                        // New format with complete CodeExtractionResult
+                        JSONObject codeResultJson = messageJson.getJSONObject("codeExtractionResult");
+                        boolean success = codeResultJson.getBoolean("success");
+                        String code = codeResultJson.getString("code");
+                        String textBeforeCode = codeResultJson.getString("textBeforeCode");
+                        String textAfterCode = codeResultJson.getString("textAfterCode");
+                        String errorMessage = codeResultJson.getString("errorMessage");
+
+                        // Convert empty strings back to null for consistency
+                        code = code.isEmpty() ? null : code;
+                        textBeforeCode = textBeforeCode.isEmpty() ? null : textBeforeCode;
+                        textAfterCode = textAfterCode.isEmpty() ? null : textAfterCode;
+                        errorMessage = errorMessage.isEmpty() ? null : errorMessage;
+
+                        if (success) {
+                            codeResult = LLMClient.CodeExtractionResult.success(code, textBeforeCode, textAfterCode);
+                        } else {
+                            codeResult = LLMClient.CodeExtractionResult.failure(errorMessage);
+                        }
+
+                        // Use constructor with explicit CodeExtractionResult
+                        chatHistory.add(new LLMClient.AssistantMessage(content, modelProvider, modelName, codeResult));
+                    } else if (messageJson.has("extractedCode")) {
+                        // TODO(extractedCode): remove this else if
+                        // Backwards compatibility: old format with just extractedCode
+                        String codeValue = messageJson.getString("extractedCode");
+                        String extractedCode = (codeValue != null && !codeValue.trim().isEmpty()) ? codeValue : null;
+
+                        // Use backwards compatibility constructor with extractedCode string
                         chatHistory
                                 .add(new LLMClient.AssistantMessage(content, modelProvider, modelName, extractedCode));
                     } else {

@@ -428,46 +428,48 @@ public abstract class LLMClient {
     public static class AssistantMessage extends Message {
         public final LLMClientFactory.LLMType modelProvider;
         public final String modelName;
-        public final String extractedCode; // Extracted Clojure code, null if no code or only whitespace
+        public final CodeExtractionResult codeExtractionResult; // Complete code extraction result
 
         public AssistantMessage(String content) {
             super(MessageRole.ASSISTANT, content);
             this.modelProvider = null;
             this.modelName = null;
-            this.extractedCode = extractCodeFromContent(content);
+            this.codeExtractionResult = extractClojureCode(content);
         }
 
         public AssistantMessage(String content, LLMClientFactory.LLMType modelProvider, String modelName) {
             super(MessageRole.ASSISTANT, content);
             this.modelProvider = modelProvider;
             this.modelName = modelName;
-            this.extractedCode = extractCodeFromContent(content);
+            this.codeExtractionResult = extractClojureCode(content);
         }
 
         /**
-         * Constructor for deserialization with explicit code field
+         * Constructor for deserialization with explicit code extraction result
+         */
+        public AssistantMessage(String content, LLMClientFactory.LLMType modelProvider, String modelName,
+                CodeExtractionResult codeExtractionResult) {
+            super(MessageRole.ASSISTANT, content);
+            this.modelProvider = modelProvider;
+            this.modelName = modelName;
+            this.codeExtractionResult = codeExtractionResult;
+        }
+
+        /**
+         * Constructor for backwards compatibility with extractedCode string
+         * TODO(extractedCode): remove this else if
          */
         public AssistantMessage(String content, LLMClientFactory.LLMType modelProvider, String modelName,
                 String extractedCode) {
             super(MessageRole.ASSISTANT, content);
             this.modelProvider = modelProvider;
             this.modelName = modelName;
-            this.extractedCode = extractedCode;
-        }
-
-        /**
-         * Helper method to extract code from content during construction
-         */
-        private static String extractCodeFromContent(String content) {
-            if (content == null) {
-                return null;
+            // Create a simple CodeExtractionResult from the extracted code
+            if (extractedCode != null && !extractedCode.trim().isEmpty()) {
+                this.codeExtractionResult = CodeExtractionResult.success(extractedCode, "", "");
+            } else {
+                this.codeExtractionResult = CodeExtractionResult.success("", content != null ? content : "", "");
             }
-
-            CodeExtractionResult result = extractClojureCode(content);
-            if (result.success && result.code != null && !result.code.trim().isEmpty()) {
-                return result.code;
-            }
-            return null;
         }
 
         /**
@@ -494,7 +496,21 @@ public abstract class LLMClient {
          * @return The extracted Clojure code, or null if no code was found
          */
         public String getExtractedCode() {
-            return extractedCode;
+            if (codeExtractionResult != null && codeExtractionResult.success &&
+                    codeExtractionResult.code != null && !codeExtractionResult.code.trim().isEmpty()) {
+                return codeExtractionResult.code;
+            }
+            return null;
+        }
+
+        /**
+         * Get the complete code extraction result for this assistant message
+         *
+         * @return The CodeExtractionResult containing code, text before/after, and
+         *         success status
+         */
+        public CodeExtractionResult getCodeExtractionResult() {
+            return codeExtractionResult;
         }
     }
 

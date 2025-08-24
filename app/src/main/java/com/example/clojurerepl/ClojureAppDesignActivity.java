@@ -2443,11 +2443,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         }
 
         if (extractedCode != null && !extractedCode.isEmpty()) {
-            // Show text before code - for AssistantMessage, we need to extract text
-            // before/after manually
-            // since we're now using pre-extracted code
-            LLMClient.CodeExtractionResult result = LLMClient.extractClojureCode(message.content);
-            if (result.textBeforeCode != null && !result.textBeforeCode.isEmpty()) {
+            // Show text before code - get the complete extraction result from
+            // AssistantMessage
+            LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) message;
+            LLMClient.CodeExtractionResult result = assistantMsg.getCodeExtractionResult();
+            if (result != null && result.textBeforeCode != null && !result.textBeforeCode.isEmpty()) {
                 TextView beforeTextView = new TextView(this);
                 beforeTextView.setLayoutParams(new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
@@ -2566,7 +2566,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
             }
 
             // Show text after code
-            if (result.textAfterCode != null && !result.textAfterCode.isEmpty()) {
+            if (result != null && result.textAfterCode != null && !result.textAfterCode.isEmpty()) {
                 TextView afterTextView = new TextView(this);
                 afterTextView.setLayoutParams(new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
