@@ -104,10 +104,10 @@ public class DesignSession {
         List<String> code = new ArrayList<>();
         for (LLMClient.Message message : chatSession.getMessages()) {
             if (LLMClient.MessageRole.ASSISTANT.equals(message.role)) {
-                LLMClient.CodeExtractionResult extractionResult = LLMClient
-                        .extractClojureCode(message.content);
-                if (extractionResult.success) {
-                    code.add(extractionResult.code);
+                LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) message;
+                String extractedCode = assistantMsg.getExtractedCode();
+                if (extractedCode != null && !extractedCode.isEmpty()) {
+                    code.add(extractedCode);
                 }
             }
         }
@@ -817,10 +817,16 @@ public class DesignSession {
             } else if (LLMClient.MessageRole.ASSISTANT.equals(message.role)) {
                 LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) message;
                 session.chatSession.queueAssistantResponse(assistantMsg);
-                LLMClient.CodeExtractionResult extractionResult = LLMClient
-                        .extractClojureCode(message.content);
-                if (extractionResult.success) {
-                    lastCode = extractionResult.code;
+                String extractedCode = assistantMsg.getExtractedCode();
+                if (extractedCode != null && !extractedCode.isEmpty()) {
+                    lastCode = extractedCode;
+                } else {
+                    // Fallback for backwards compatibility if extractedCode is null
+                    LLMClient.CodeExtractionResult extractionResult = LLMClient
+                            .extractClojureCode(message.content);
+                    if (extractionResult.success) {
+                        lastCode = extractionResult.code;
+                    }
                 }
             } else {
                 throw new JSONException("Unknown message type " + message.role);
