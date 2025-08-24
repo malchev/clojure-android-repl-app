@@ -29,30 +29,8 @@ public class ClojureIterationManager {
     private final UUID sessionId;
     private ExtractionErrorCallback extractionErrorCallback;
 
-    private CompletableFuture<IterationResult> currentIterationFuture;
     private ExecutorService executor;
-    private CompletableFuture<IterationResult> renderFuture;
     private CompletableFuture<LLMClient.AssistantMessage> generationFuture;
-    private IterationResult lastResult;
-
-    public static class IterationResult {
-        public final String code;
-        public final String logcat;
-        public final File screenshot;
-        public final boolean success;
-        public final String feedback;
-
-        public IterationResult(String code, String logcat, File screenshot,
-                boolean success, String feedback) {
-            this.code = code;
-            this.logcat = logcat;
-            this.screenshot = screenshot;
-            this.success = success;
-            this.feedback = feedback;
-        }
-    }
-
-    private final List<IterationResult> iterationHistory = new ArrayList<>();
 
     public ClojureIterationManager(Context context, DesignSession session) {
         this.context = context.getApplicationContext();
@@ -87,18 +65,6 @@ public class ClojureIterationManager {
         if (generationFuture != null && !generationFuture.isDone()) {
             Log.d(TAG, "Cancelling generation future");
             cancelled = generationFuture.cancel(true);
-        }
-
-        // Cancel the current iteration future if it exists and is not done
-        if (currentIterationFuture != null && !currentIterationFuture.isDone()) {
-            Log.d(TAG, "Cancelling current iteration future");
-            cancelled = currentIterationFuture.cancel(true) || cancelled;
-        }
-
-        // Cancel the render future if it exists and is not done
-        if (renderFuture != null && !renderFuture.isDone()) {
-            Log.d(TAG, "Cancelling render future");
-            cancelled = renderFuture.cancel(true) || cancelled;
         }
 
         // Cancel the underlying LLM client request
@@ -194,7 +160,9 @@ public class ClojureIterationManager {
     }
 
     public CompletableFuture<LLMClient.AssistantMessage> generateNextIteration(String description, String feedback,
-            IterationResult lastResult, List<File> images) {
+            String code,
+            String logcat,
+            List<File> images) {
         // Cancel any previous generation task that might be running
         if (generationFuture != null && !generationFuture.isDone()) {
             generationFuture.cancel(true);
@@ -204,9 +172,6 @@ public class ClojureIterationManager {
 
         // Create a new future for this generation
         generationFuture = new CompletableFuture<>();
-
-        // Store the result for future reference
-        this.lastResult = lastResult;
 
         // Use sessionId directly as it's already a UUID
 
@@ -219,8 +184,8 @@ public class ClojureIterationManager {
                         .generateNextIteration(
                                 sessionId,
                                 description, // Pass the original description now
-                                lastResult.code,
-                                lastResult.logcat,
+                                code,
+                                logcat,
                                 feedback,
                                 images); // Pass the images list
 
@@ -263,17 +228,6 @@ public class ClojureIterationManager {
         });
 
         return generationFuture;
-    }
-
-    public IterationResult getLastResult() {
-        if (iterationHistory.isEmpty()) {
-            return null;
-        }
-        return iterationHistory.get(iterationHistory.size() - 1);
-    }
-
-    public void addIterationResult(IterationResult result) {
-        iterationHistory.add(result);
     }
 
     public void shutdown() {

@@ -857,19 +857,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         iterationProgressDialog = builder.create();
         iterationProgressDialog.show();
 
-        // Create an IterationResult with the current state
-        ClojureIterationManager.IterationResult result = new ClojureIterationManager.IterationResult(
-                currentCode,
-                logcatText,
-                currentScreenshot,
-                true,
-                feedback);
-
         // Generate next iteration using the iteration manager's method
         iterationManager.generateNextIteration(
                 currentSession.getDescription(),
                 feedback,
-                result,
+                currentCode,
+                logcatText,
                 images)
                 .thenAccept(assistantMessage -> {
                     String code = assistantMessage.getExtractedCode();
@@ -3031,19 +3024,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         // Get the current logcat output from session
         String logcatText = currentSession.getLastLogcat() != null ? currentSession.getLastLogcat() : "";
 
-        // Create an IterationResult with the current state
-        ClojureIterationManager.IterationResult result = new ClojureIterationManager.IterationResult(
-                currentSession.getCurrentCode(),
-                logcatText,
-                currentScreenshot,
-                true,
-                errorFeedback);
-
         // Generate next iteration using the iteration manager's method
         iterationManager.generateNextIteration(
                 currentSession.getDescription(),
                 errorFeedback,
-                result,
+                currentSession.getCurrentCode(),
+                logcatText,
                 new ArrayList<>()) // No images for automatic iteration
                 .thenAccept(assistantMessage -> {
                     String code = assistantMessage.getExtractedCode();
