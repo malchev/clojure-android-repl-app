@@ -102,9 +102,17 @@ public class ClojureIterationManager {
         LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> wrapperFuture = new LLMClient.CancellableCompletableFuture<>();
         generationFuture = wrapperFuture;
 
-        // Call the LLM client which returns a CancellableCompletableFuture
+        // Manage message history and call sendMessages directly
+        LLMClient.ChatSession chatSession = llmClient.getChatSession();
+
+        // Queue system prompt and format initial prompt
+        chatSession.queueSystemPrompt(new LLMClient.SystemPrompt(llmClient.getSystemPrompt()));
+        String prompt = llmClient.formatInitialPrompt(description, initialCode);
+        chatSession.queueUserMessage(new LLMClient.UserMessage(prompt, null, null, initialCode));
+
+        // Call sendMessages directly
         LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> llmFuture = llmClient
-                .generateInitialCode(sessionId, description, initialCode);
+                .sendMessages(chatSession);
 
         // Handle the LLM response
         llmFuture.thenAccept(assistantMessage -> {
@@ -129,6 +137,11 @@ public class ClojureIterationManager {
 
             wrapperFuture.complete(assistantMessage);
         }).exceptionally(ex -> {
+            // Remove the messages we added before sendMessages (system prompt + user
+            // message = 2 messages)
+            chatSession.removeLastMessages(2);
+            Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
+
             Log.e(TAG, "Error generating initial code", ex);
             wrapperFuture.completeExceptionally(ex);
             return null;
@@ -153,15 +166,30 @@ public class ClojureIterationManager {
         LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> wrapperFuture = new LLMClient.CancellableCompletableFuture<>();
         generationFuture = wrapperFuture;
 
-        // Call the LLM client which returns a CancellableCompletableFuture
+        // Check if images are provided and model is multimodal
+        if (images != null && !images.isEmpty()) {
+            LLMClient.ModelProperties props = getModelProperties();
+            if (props == null || !props.isMultimodal) {
+                wrapperFuture.completeExceptionally(
+                        new UnsupportedOperationException("Images parameter provided but model is not multimodal"));
+                return wrapperFuture;
+            }
+        }
+
+        // Manage message history and call sendMessages directly
+        LLMClient.ChatSession chatSession = llmClient.getChatSession();
+
+        // Format the iteration prompt
+        String prompt = llmClient.formatIterationPrompt(description, code, logcat, feedback,
+                images != null && !images.isEmpty());
+
+        // Queue the user message (with images attachment if provided)
+        LLMClient.UserMessage userMessage = new LLMClient.UserMessage(prompt, images, logcat, feedback, null);
+        chatSession.queueUserMessage(userMessage);
+
+        // Call sendMessages directly
         LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> llmFuture = llmClient
-                .generateNextIteration(
-                        sessionId,
-                        description, // Pass the original description now
-                        code,
-                        logcat,
-                        feedback,
-                        images); // Pass the images list
+                .sendMessages(chatSession);
 
         // Handle the LLM response
         llmFuture.thenAccept(assistantMessage -> {
@@ -190,6 +218,10 @@ public class ClojureIterationManager {
 
             wrapperFuture.complete(assistantMessage);
         }).exceptionally(ex -> {
+            // Remove the user message we added before sendMessages (1 message)
+            chatSession.removeLastMessages(1);
+            Log.d(TAG, "Removed 1 message (user message) due to failure in generateNextIteration");
+
             Log.e(TAG, "Error generating next iteration", ex);
             wrapperFuture.completeExceptionally(ex);
             return null;

@@ -171,7 +171,7 @@ public abstract class LLMClient {
      *                    null)
      * @return Formatted prompt string
      */
-    protected String formatInitialPrompt(String description, String initialCode) {
+    public String formatInitialPrompt(String description, String initialCode) {
         Log.d(TAG, "Formatting initial prompt with description: " + description +
                 ", initial code provided: " + (initialCode != null && !initialCode.isEmpty()));
 
@@ -189,25 +189,11 @@ public abstract class LLMClient {
      * Returns the system prompt to be used when initializing a conversation.
      * This prompt provides instruction on how to generate Clojure code.
      */
-    protected String getSystemPrompt() {
+    public String getSystemPrompt() {
         return promptTemplate + "\n\nAlways respond with Clojure code in a markdown code block.";
     }
 
-    /**
-     * Generate initial code with optional starting code
-     * 
-     * @param sessionId   The session UUID
-     * @param description The app description
-     * @param initialCode Optional initial code to use as a starting point (may be
-     *                    null)
-     * @return A CancellableCompletableFuture containing the generated
-     *         AssistantMessage
-     */
-    public abstract CancellableCompletableFuture<AssistantMessage> generateInitialCode(UUID sessionId,
-            String description,
-            String initialCode);
-
-    protected String formatIterationPrompt(String description,
+    public String formatIterationPrompt(String description,
             String currentCode,
             String logcat,
             String feedback, boolean hasImages) {
@@ -232,14 +218,6 @@ public abstract class LLMClient {
                     feedback);
         }
     }
-
-    public abstract CancellableCompletableFuture<AssistantMessage> generateNextIteration(
-            UUID sessionId,
-            String description,
-            String currentCode,
-            String logcat,
-            String feedback,
-            List<File> images);
 
     // Base Message class for chat history
     public static abstract class Message {
