@@ -157,6 +157,18 @@ public class DesignSession {
         return chatSession;
     }
 
+    /**
+     * Queues the system prompt if the chat session is empty (no messages).
+     * This should be called once when setting up a new session.
+     * 
+     * @param systemPrompt The system prompt to queue
+     */
+    public void queueSystemPromptIfEmpty(String systemPrompt) {
+        if (chatSession.getMessages().isEmpty()) {
+            chatSession.queueSystemPrompt(new LLMClient.SystemPrompt(systemPrompt));
+        }
+    }
+
     public List<LLMClient.Message> getChatHistory() {
         return chatSession.getMessages();
     }

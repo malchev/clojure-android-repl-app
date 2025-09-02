@@ -406,7 +406,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 // Create the client directly with the saved model
                 Log.d(TAG, "Session restore: Creating LLM client with model " + sessionRestoreModel);
                 assert iterationManager == null : "iterationManager should be null before creating new instance";
-                iterationManager = new ClojureIterationManager(this, currentSession);
+                iterationManager = createIterationManagerWithSystemPrompt(currentSession);
 
                 // We'll wait until llmTypeSpinner's selection listener fires to trigger model
                 // enumeration
@@ -615,7 +615,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             iterationManager = null;
         }
 
-        iterationManager = new ClojureIterationManager(this, currentSession);
+        iterationManager = createIterationManagerWithSystemPrompt(currentSession);
 
         // Update paperclip button state for new iteration manager
         updatePaperclipButtonState();
@@ -666,8 +666,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Manage message history and call sendMessages directly
         LLMClient.ChatSession chatSession = iterationManager.getLLMClient().getChatSession();
 
-        // Queue system prompt and format initial prompt
-        chatSession.queueSystemPrompt(new LLMClient.SystemPrompt(iterationManager.getLLMClient().getSystemPrompt()));
+        // Format initial prompt and queue user message (system prompt already queued
+        // when creating iteration manager)
         String prompt = iterationManager.getLLMClient().formatInitialPrompt(description, initialCode);
         chatSession.queueUserMessage(new LLMClient.UserMessage(prompt, null, null, initialCode));
 
@@ -716,10 +716,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     });
                 })
                 .exceptionally(throwable -> {
-                    // Remove the messages we added before sendMessages (system prompt + user
-                    // message = 2 messages)
-                    chatSession.removeLastMessages(2);
-                    Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
+                    // Remove the user message we added before sendMessages (1 message)
+                    // System prompt stays in the chat session permanently
+                    chatSession.removeLastMessages(1);
+                    Log.d(TAG, "Removed 1 message (user message) due to failure in initial generation");
 
                     // Check if this is a cancellation exception, which is expected behavior
                     if (throwable instanceof CancellationException ||
@@ -1446,8 +1446,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     currentSession.setLlmModel(selectedModel);
                     sessionManager.updateSession(currentSession);
 
-                    iterationManager = new ClojureIterationManager(ClojureAppDesignActivity.this,
-                            currentSession);
+                    iterationManager = createIterationManagerWithSystemPrompt(currentSession);
 
                     // Update paperclip button state for new model
                     updatePaperclipButtonState();
@@ -2978,6 +2977,25 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     }
 
     /**
+     * Creates a new ClojureIterationManager and queues the system prompt if needed
+     * 
+     * @param session The design session to create the manager for
+     * @return The new ClojureIterationManager
+     */
+    private ClojureIterationManager createIterationManagerWithSystemPrompt(DesignSession session) {
+        ClojureIterationManager manager = new ClojureIterationManager(this, session);
+
+        // Queue system prompt if the chat session is empty (new session)
+        LLMClient llmClient = manager.getLLMClient();
+        if (llmClient != null) {
+            session.queueSystemPromptIfEmpty(llmClient.getSystemPrompt());
+            Log.d(TAG, "Queued system prompt for session: " + session.getId().toString());
+        }
+
+        return manager;
+    }
+
+    /**
      * Updates the paperclip button state based on current model's multimodal
      * capability
      */
@@ -3593,7 +3611,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         }
 
         // Create new iteration manager for the fork session
-        iterationManager = new ClojureIterationManager(this, currentSession);
+        iterationManager = createIterationManagerWithSystemPrompt(currentSession);
 
         // Update UI to reflect the new session
         updateSessionStateAfterFork();
