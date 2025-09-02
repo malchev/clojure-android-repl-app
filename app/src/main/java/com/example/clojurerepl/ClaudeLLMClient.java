@@ -183,30 +183,30 @@ public class ClaudeLLMClient extends LLMClient {
             chatSession.queueUserMessage(new UserMessage(prompt, null, null, null));
             Log.d(TAG, "DEBUG: Created chat session, about to send messages to Claude API");
 
-            CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
-            sendMessages(chatSession).handle((assistantMessage, ex) -> {
-                if (ex != null) {
-                    // Remove the messages we added before sendMessages (system prompt + user
-                    // message = 2 messages)
-                    chatSession.removeLastMessages(2);
-                    Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
+            // Send all messages and get the response
+            CancellableCompletableFuture<AssistantMessage> result = new CancellableCompletableFuture<>();
+            sendMessages(chatSession)
+                    .thenAccept(assistantMessage -> {
+                        Log.d(TAG, "SUCCESS: Claude sendMessages completed successfully");
+                        result.complete(assistantMessage);
+                    })
+                    .exceptionally(ex -> {
+                        // Remove the messages we added before sendMessages (system prompt + user
+                        // message = 2 messages)
+                        chatSession.removeLastMessages(2);
+                        Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
 
-                    // Check if this is a cancellation exception, which is expected behavior
-                    if (ex instanceof CancellationException ||
-                            (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
-                        Log.d(TAG, "Claude initial code generation was cancelled - this is expected behavior");
-                        future.completeExceptionally(ex);
-                    } else {
-                        Log.e(TAG, "ERROR: Failed in Claude sendMessages", ex);
-                        future.completeExceptionally(ex);
-                    }
-                } else {
-                    Log.d(TAG, "SUCCESS: Claude sendMessages completed successfully");
-                    future.complete(assistantMessage);
-                }
-                return null;
-            });
-            return future;
+                        // Check if this is a cancellation exception, which is expected behavior
+                        if (ex instanceof CancellationException ||
+                                (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
+                            Log.d(TAG, "Claude initial code generation was cancelled - this is expected behavior");
+                        } else {
+                            Log.e(TAG, "ERROR: Failed in Claude sendMessages", ex);
+                        }
+                        result.completeExceptionally(ex);
+                        return null;
+                    });
+            return result;
         } catch (Exception e) {
             Log.e(TAG, "ERROR: Exception in generateInitialCode", e);
             CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
@@ -239,31 +239,31 @@ public class ClaudeLLMClient extends LLMClient {
             chatSession.queueUserMessage(new UserMessage(prompt, null, null, initialCode));
             Log.d(TAG, "DEBUG: Created chat session with template, about to send messages to Claude API");
 
-            CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
-            sendMessages(chatSession).handle((assistantMessage, ex) -> {
-                if (ex != null) {
-                    // Remove the messages we added before sendMessages (system prompt + user
-                    // message = 2 messages)
-                    chatSession.removeLastMessages(2);
-                    Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
+            // Send all messages and get the response
+            CancellableCompletableFuture<AssistantMessage> result = new CancellableCompletableFuture<>();
+            sendMessages(chatSession)
+                    .thenAccept(assistantMessage -> {
+                        Log.d(TAG, "SUCCESS: Claude sendMessages with template completed successfully");
+                        result.complete(assistantMessage);
+                    })
+                    .exceptionally(ex -> {
+                        // Remove the messages we added before sendMessages (system prompt + user
+                        // message = 2 messages)
+                        chatSession.removeLastMessages(2);
+                        Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
 
-                    // Check if this is a cancellation exception, which is expected behavior
-                    if (ex instanceof CancellationException ||
-                            (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
-                        Log.d(TAG,
-                                "Claude initial code generation with template was cancelled - this is expected behavior");
-                        future.completeExceptionally(ex);
-                    } else {
-                        Log.e(TAG, "ERROR: Failed in Claude sendMessages with template", ex);
-                        future.completeExceptionally(ex);
-                    }
-                } else {
-                    Log.d(TAG, "SUCCESS: Claude sendMessages with template completed successfully");
-                    future.complete(assistantMessage);
-                }
-                return null;
-            });
-            return future;
+                        // Check if this is a cancellation exception, which is expected behavior
+                        if (ex instanceof CancellationException ||
+                                (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
+                            Log.d(TAG,
+                                    "Claude initial code generation with template was cancelled - this is expected behavior");
+                        } else {
+                            Log.e(TAG, "ERROR: Failed in Claude sendMessages with template", ex);
+                        }
+                        result.completeExceptionally(ex);
+                        return null;
+                    });
+            return result;
         } catch (Exception e) {
             Log.e(TAG, "ERROR: Exception in generateInitialCode with template", e);
             CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
@@ -311,22 +311,28 @@ public class ClaudeLLMClient extends LLMClient {
                 chatSession.getMessages().size() + " messages");
 
         // Send all messages and get the response
-        CancellableCompletableFuture<AssistantMessage> future = sendMessages(chatSession);
-        CancellableCompletableFuture<AssistantMessage> wrappedFuture = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantMessage> result = new CancellableCompletableFuture<>();
+        sendMessages(chatSession)
+                .thenAccept(assistantMessage -> {
+                    Log.d(TAG, "Got response, length: " + assistantMessage.content.length());
+                    result.complete(assistantMessage);
+                })
+                .exceptionally(ex -> {
+                    // Remove the user message we added before sendMessages (1 message)
+                    chatSession.removeLastMessages(1);
+                    Log.d(TAG, "Removed 1 message (user message) due to failure in generateNextIteration");
 
-        future.handle((assistantMessage, ex) -> {
-            if (ex != null) {
-                // Remove the user message we added before sendMessages (1 message)
-                chatSession.removeLastMessages(1);
-                Log.d(TAG, "Removed 1 message (user message) due to failure in generateNextIteration");
-                wrappedFuture.completeExceptionally(ex);
-            } else {
-                wrappedFuture.complete(assistantMessage);
-            }
-            return null;
-        });
-
-        return wrappedFuture;
+                    // Check if this is a cancellation exception, which is expected behavior
+                    if (ex instanceof CancellationException ||
+                            (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
+                        Log.d(TAG, "Claude next iteration generation was cancelled - this is expected behavior");
+                    } else {
+                        Log.e(TAG, "Error in next iteration generation", ex);
+                    }
+                    result.completeExceptionally(ex);
+                    return null;
+                });
+        return result;
     }
 
     @Override

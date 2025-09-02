@@ -30,7 +30,7 @@ public class ClojureIterationManager {
     private ExtractionErrorCallback extractionErrorCallback;
 
     private ExecutorService executor;
-    private CompletableFuture<LLMClient.AssistantMessage> generationFuture;
+    private LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> generationFuture;
 
     public ClojureIterationManager(Context context, DesignSession session) {
         this.context = context.getApplicationContext();
@@ -85,10 +85,11 @@ public class ClojureIterationManager {
      * @param description The app description to generate code for
      * @param initialCode Optional initial code to use as a starting point (may be
      *                    null)
-     * @return A CompletableFuture that will be completed with the AssistantMessage
+     * @return A CancellableCompletableFuture that will be completed with the
+     *         AssistantMessage
      */
-    public CompletableFuture<LLMClient.AssistantMessage> generateInitialCode(String description, String initialCode) {
-        // Use sessionId directly as it's already a UUID
+    public LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> generateInitialCode(String description,
+            String initialCode) {
         // Cancel any previous generation task that might be running
         if (generationFuture != null && !generationFuture.isDone()) {
             generationFuture.cancel(true);
@@ -97,58 +98,51 @@ public class ClojureIterationManager {
         Log.d(TAG, "Starting initial code generation with description: " + description +
                 ", initial code provided: " + (initialCode != null && !initialCode.isEmpty()));
 
-        // Create a new future for this generation
-        generationFuture = new CompletableFuture<>();
+        // Create wrapper future that maintains CancellableCompletableFuture type
+        LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> wrapperFuture = new LLMClient.CancellableCompletableFuture<>();
+        generationFuture = wrapperFuture;
 
-        // Run in background thread
-        executor.execute(() -> {
-            try {
-                // Call the LLM client which returns a CancellableCompletableFuture
-                LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> llmFuture;
-                if (initialCode != null && !initialCode.isEmpty()) {
-                    llmFuture = llmClient.generateInitialCode(sessionId, description, initialCode);
+        // Call the LLM client which returns a CancellableCompletableFuture
+        LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> llmFuture;
+        if (initialCode != null && !initialCode.isEmpty()) {
+            llmFuture = llmClient.generateInitialCode(sessionId, description, initialCode);
+        } else {
+            llmFuture = llmClient.generateInitialCode(sessionId, description);
+        }
+
+        // Handle the LLM response
+        llmFuture.thenAccept(assistantMessage -> {
+            Log.d(TAG, "Received initial response from LLM, length: " +
+                    (assistantMessage.content != null ? assistantMessage.content.length() : "null"));
+
+            // Check if code extraction succeeded (now handled by AssistantMessage)
+            if (assistantMessage.getExtractedCode() == null) {
+                // Use callback if available, otherwise fall back to exception
+                if (extractionErrorCallback != null) {
+                    extractionErrorCallback.onExtractionError("No code found in LLM response");
+                    wrapperFuture.completeExceptionally(new IllegalArgumentException("No code found in LLM response"));
                 } else {
-                    llmFuture = llmClient.generateInitialCode(sessionId, description);
+                    wrapperFuture.completeExceptionally(new IllegalArgumentException("No code found in LLM response"));
                 }
-
-                // When the LLM response is ready, complete our future
-                llmFuture.thenAccept(assistantMessage -> {
-                    Log.d(TAG, "Received initial response from LLM, length: " +
-                            (assistantMessage.content != null ? assistantMessage.content.length() : "null"));
-
-                    // Check if code extraction succeeded (now handled by AssistantMessage)
-                    if (assistantMessage.getExtractedCode() == null) {
-                        // Use callback if available, otherwise fall back to exception
-                        if (extractionErrorCallback != null) {
-                            extractionErrorCallback.onExtractionError("No code found in LLM response");
-                            generationFuture.cancel(true);
-                        } else {
-                            generationFuture
-                                    .completeExceptionally(
-                                            new IllegalArgumentException("No code found in LLM response"));
-                        }
-                        return;
-                    }
-
-                    Log.d(TAG, "Extracted clean initial code. Length: " +
-                            (assistantMessage.getExtractedCode() != null ? assistantMessage.getExtractedCode().length()
-                                    : "null"));
-
-                    generationFuture.complete(assistantMessage);
-                }).exceptionally(ex -> {
-                    generationFuture.completeExceptionally(ex);
-                    return null;
-                });
-            } catch (Exception e) {
-                Log.e(TAG, "Error generating initial code", e);
-                generationFuture.completeExceptionally(e);
+                return;
             }
+
+            Log.d(TAG, "Extracted clean initial code. Length: " +
+                    (assistantMessage.getExtractedCode() != null ? assistantMessage.getExtractedCode().length()
+                            : "null"));
+
+            wrapperFuture.complete(assistantMessage);
+        }).exceptionally(ex -> {
+            Log.e(TAG, "Error generating initial code", ex);
+            wrapperFuture.completeExceptionally(ex);
+            return null;
         });
 
-        return generationFuture;
+        return wrapperFuture;
     }
 
-    public CompletableFuture<LLMClient.AssistantMessage> generateNextIteration(String description, String feedback,
+    public LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> generateNextIteration(String description,
+            String feedback,
             String code,
             String logcat,
             List<File> images) {
@@ -159,64 +153,53 @@ public class ClojureIterationManager {
 
         Log.d(TAG, "Starting new code generation with description: " + description + ", feedback: " + feedback);
 
-        // Create a new future for this generation
-        generationFuture = new CompletableFuture<>();
+        // Create wrapper future that maintains CancellableCompletableFuture type
+        LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> wrapperFuture = new LLMClient.CancellableCompletableFuture<>();
+        generationFuture = wrapperFuture;
 
-        // Use sessionId directly as it's already a UUID
+        // Call the LLM client which returns a CancellableCompletableFuture
+        LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> llmFuture = llmClient
+                .generateNextIteration(
+                        sessionId,
+                        description, // Pass the original description now
+                        code,
+                        logcat,
+                        feedback,
+                        images); // Pass the images list
 
-        // Run in background thread
-        executor.execute(() -> {
-            try {
-                // Call the LLM client which returns a CancellableCompletableFuture - PASS
-                // DESCRIPTION HERE
-                LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> llmFuture = llmClient
-                        .generateNextIteration(
-                                sessionId,
-                                description, // Pass the original description now
-                                code,
-                                logcat,
-                                feedback,
-                                images); // Pass the images list
+        // Handle the LLM response
+        llmFuture.thenAccept(assistantMessage -> {
+            Log.d(TAG, "Received response from LLM, length: " +
+                    (assistantMessage.content != null ? assistantMessage.content.length() : "null"));
+            Log.d(TAG, "LLM response first 100 chars: " +
+                    (assistantMessage.content != null && assistantMessage.content.length() > 100
+                            ? assistantMessage.content.substring(0, 100)
+                            : assistantMessage.content));
 
-                // When the LLM response is ready, complete our future
-                llmFuture.thenAccept(assistantMessage -> {
-                    Log.d(TAG, "Received response from LLM, length: " +
-                            (assistantMessage.content != null ? assistantMessage.content.length() : "null"));
-                    Log.d(TAG, "LLM response first 100 chars: " +
-                            (assistantMessage.content != null && assistantMessage.content.length() > 100
-                                    ? assistantMessage.content.substring(0, 100)
-                                    : assistantMessage.content));
-
-                    // Check if code extraction succeeded (now handled by AssistantMessage)
-                    if (assistantMessage.getExtractedCode() == null) {
-                        // Use callback if available, otherwise fall back to exception
-                        if (extractionErrorCallback != null) {
-                            extractionErrorCallback.onExtractionError("No code found in LLM response");
-                            generationFuture.cancel(true);
-                        } else {
-                            generationFuture
-                                    .completeExceptionally(
-                                            new IllegalArgumentException("No code found in LLM response"));
-                        }
-                        return;
-                    }
-
-                    Log.d(TAG, "Extracted clean code. Length: " +
-                            (assistantMessage.getExtractedCode() != null ? assistantMessage.getExtractedCode().length()
-                                    : "null"));
-
-                    generationFuture.complete(assistantMessage);
-                }).exceptionally(ex -> {
-                    generationFuture.completeExceptionally(ex);
-                    return null;
-                });
-            } catch (Exception e) {
-                Log.e(TAG, "Error generating next iteration", e);
-                generationFuture.completeExceptionally(e);
+            // Check if code extraction succeeded (now handled by AssistantMessage)
+            if (assistantMessage.getExtractedCode() == null) {
+                // Use callback if available, otherwise fall back to exception
+                if (extractionErrorCallback != null) {
+                    extractionErrorCallback.onExtractionError("No code found in LLM response");
+                    wrapperFuture.completeExceptionally(new IllegalArgumentException("No code found in LLM response"));
+                } else {
+                    wrapperFuture.completeExceptionally(new IllegalArgumentException("No code found in LLM response"));
+                }
+                return;
             }
+
+            Log.d(TAG, "Extracted clean code. Length: " +
+                    (assistantMessage.getExtractedCode() != null ? assistantMessage.getExtractedCode().length()
+                            : "null"));
+
+            wrapperFuture.complete(assistantMessage);
+        }).exceptionally(ex -> {
+            Log.e(TAG, "Error generating next iteration", ex);
+            wrapperFuture.completeExceptionally(ex);
+            return null;
         });
 
-        return generationFuture;
+        return wrapperFuture;
     }
 
     public void shutdown() {

@@ -582,11 +582,11 @@ public class GeminiLLMClient extends LLMClient {
         chatSession.queueUserMessage(new UserMessage(prompt, null, null, null));
 
         // Send all messages and get the response
-        CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantMessage> result = new CancellableCompletableFuture<>();
         sendMessages(chatSession)
                 .thenAccept(assistantMessage -> {
                     Log.d(TAG, "Got response, length: " + assistantMessage.content.length());
-                    future.complete(assistantMessage);
+                    result.complete(assistantMessage);
                 })
                 .exceptionally(ex -> {
                     // Remove the messages we added before sendMessages (system prompt + user
@@ -598,14 +598,13 @@ public class GeminiLLMClient extends LLMClient {
                     if (ex instanceof CancellationException ||
                             (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
                         Log.d(TAG, "Initial code generation was cancelled - this is expected behavior");
-                        future.completeExceptionally(ex);
                     } else {
                         Log.e(TAG, "Error in initial code generation", ex);
-                        future.completeExceptionally(ex);
                     }
+                    result.completeExceptionally(ex);
                     return null;
                 });
-        return future;
+        return result;
     }
 
     @Override
@@ -626,11 +625,11 @@ public class GeminiLLMClient extends LLMClient {
         chatSession.queueUserMessage(new UserMessage(prompt, null, null, initialCode));
 
         // Send all messages and get the response
-        CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantMessage> result = new CancellableCompletableFuture<>();
         sendMessages(chatSession)
                 .thenAccept(assistantMessage -> {
                     Log.d(TAG, "Got response, length: " + assistantMessage.content.length());
-                    future.complete(assistantMessage);
+                    result.complete(assistantMessage);
                 })
                 .exceptionally(ex -> {
                     // Remove the messages we added before sendMessages (system prompt + user
@@ -642,14 +641,13 @@ public class GeminiLLMClient extends LLMClient {
                     if (ex instanceof CancellationException ||
                             (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
                         Log.d(TAG, "Initial code generation was cancelled - this is expected behavior");
-                        future.completeExceptionally(ex);
                     } else {
                         Log.e(TAG, "Error in initial code generation", ex);
-                        future.completeExceptionally(ex);
                     }
+                    result.completeExceptionally(ex);
                     return null;
                 });
-        return future;
+        return result;
     }
 
     @Override
@@ -694,11 +692,11 @@ public class GeminiLLMClient extends LLMClient {
         chatSession.queueUserMessage(userMessage);
 
         // Send all messages and get the response
-        CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantMessage> result = new CancellableCompletableFuture<>();
         sendMessages(chatSession)
                 .thenAccept(assistantMessage -> {
                     Log.d(TAG, "Got response response, length: " + assistantMessage.content.length());
-                    future.complete(assistantMessage);
+                    result.complete(assistantMessage);
                 })
                 .exceptionally(ex -> {
                     // Remove the user message we added before sendMessages (1 message)
@@ -709,14 +707,13 @@ public class GeminiLLMClient extends LLMClient {
                     if (ex instanceof CancellationException ||
                             (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
                         Log.d(TAG, "Next iteration generation was cancelled - this is expected behavior");
-                        future.completeExceptionally(ex);
                     } else {
                         Log.e(TAG, "Error in next iteration generation", ex);
-                        future.completeExceptionally(ex);
                     }
+                    result.completeExceptionally(ex);
                     return null;
                 });
-        return future;
+        return result;
     }
 
     // Helper method to call the Gemini API with message history

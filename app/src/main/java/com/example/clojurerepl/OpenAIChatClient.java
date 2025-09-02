@@ -304,11 +304,13 @@ public class OpenAIChatClient extends LLMClient {
         chatSession.queueSystemPrompt(new SystemPrompt(getSystemPrompt()));
         String prompt = formatInitialPrompt(description, null);
         chatSession.queueUserMessage(new UserMessage(prompt, null, null, null));
-        CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
+
+        // Send all messages and get the response
+        CancellableCompletableFuture<AssistantMessage> result = new CancellableCompletableFuture<>();
         sendMessages(chatSession)
                 .thenAccept(assistantMessage -> {
                     Log.d(TAG, "Got response, length: " + assistantMessage.content.length());
-                    future.complete(assistantMessage);
+                    result.complete(assistantMessage);
                 })
                 .exceptionally(ex -> {
                     // Remove the messages we added before sendMessages (system prompt + user
@@ -320,14 +322,13 @@ public class OpenAIChatClient extends LLMClient {
                     if (ex instanceof CancellationException ||
                             (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
                         Log.d(TAG, "OpenAI initial code generation was cancelled - this is expected behavior");
-                        future.completeExceptionally(ex);
                     } else {
                         Log.e(TAG, "Error in initial code generation", ex);
-                        future.completeExceptionally(ex);
                     }
+                    result.completeExceptionally(ex);
                     return null;
                 });
-        return future;
+        return result;
     }
 
     @Override
@@ -343,11 +344,13 @@ public class OpenAIChatClient extends LLMClient {
         chatSession.queueSystemPrompt(new SystemPrompt(getSystemPrompt()));
         String prompt = formatInitialPrompt(description, initialCode);
         chatSession.queueUserMessage(new UserMessage(prompt, null, null, initialCode));
-        CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
+
+        // Send all messages and get the response
+        CancellableCompletableFuture<AssistantMessage> result = new CancellableCompletableFuture<>();
         sendMessages(chatSession)
                 .thenAccept(assistantMessage -> {
                     Log.d(TAG, "Got response, length: " + assistantMessage.content.length());
-                    future.complete(assistantMessage);
+                    result.complete(assistantMessage);
                 })
                 .exceptionally(ex -> {
                     // Remove the messages we added before sendMessages (system prompt + user
@@ -360,14 +363,13 @@ public class OpenAIChatClient extends LLMClient {
                             (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
                         Log.d(TAG,
                                 "OpenAI initial code generation with template was cancelled - this is expected behavior");
-                        future.completeExceptionally(ex);
                     } else {
                         Log.e(TAG, "Error in initial code generation with template", ex);
-                        future.completeExceptionally(ex);
                     }
+                    result.completeExceptionally(ex);
                     return null;
                 });
-        return future;
+        return result;
     }
 
     @Override
@@ -391,11 +393,13 @@ public class OpenAIChatClient extends LLMClient {
         // Queue the user message (without images, as OpenAI implementation ignores
         // them)
         chatSession.queueUserMessage(new UserMessage(prompt, logcat, feedback, null));
-        CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
+
+        // Send all messages and get the response
+        CancellableCompletableFuture<AssistantMessage> result = new CancellableCompletableFuture<>();
         sendMessages(chatSession)
                 .thenAccept(assistantMessage -> {
                     Log.d(TAG, "Got response, length: " + assistantMessage.content.length());
-                    future.complete(assistantMessage);
+                    result.complete(assistantMessage);
                 })
                 .exceptionally(ex -> {
                     // Remove the user message we added before sendMessages (1 message)
@@ -406,14 +410,13 @@ public class OpenAIChatClient extends LLMClient {
                     if (ex instanceof CancellationException ||
                             (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
                         Log.d(TAG, "OpenAI next iteration generation was cancelled - this is expected behavior");
-                        future.completeExceptionally(ex);
                     } else {
                         Log.e(TAG, "Error in next iteration generation", ex);
-                        future.completeExceptionally(ex);
                     }
+                    result.completeExceptionally(ex);
                     return null;
                 });
-        return future;
+        return result;
     }
 
     private String callOpenAIAPI(List<Message> messages, CancellableCompletableFuture<AssistantMessage> future) {

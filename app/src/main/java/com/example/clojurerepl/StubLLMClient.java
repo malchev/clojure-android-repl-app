@@ -4,6 +4,7 @@ import android.content.Context;
 import android.util.Log;
 import java.io.File;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -110,23 +111,29 @@ public class StubLLMClient extends LLMClient {
         chatSession.queueUserMessage(new UserMessage(prompt, null, null, null));
 
         // Send all messages and get the response
-        CancellableCompletableFuture<AssistantMessage> future = sendMessages(chatSession);
-        CancellableCompletableFuture<AssistantMessage> wrappedFuture = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantMessage> result = new CancellableCompletableFuture<>();
+        sendMessages(chatSession)
+                .thenAccept(assistantMessage -> {
+                    Log.d(TAG, "Got response, length: " + assistantMessage.content.length());
+                    result.complete(assistantMessage);
+                })
+                .exceptionally(ex -> {
+                    // Remove the messages we added before sendMessages (system prompt + user
+                    // message = 2 messages)
+                    chatSession.removeLastMessages(2);
+                    Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
 
-        future.handle((assistantMessage, ex) -> {
-            if (ex != null) {
-                // Remove the messages we added before sendMessages (system prompt + user
-                // message = 2 messages)
-                chatSession.removeLastMessages(2);
-                Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
-                wrappedFuture.completeExceptionally(ex);
-            } else {
-                wrappedFuture.complete(assistantMessage);
-            }
-            return null;
-        });
-
-        return wrappedFuture;
+                    // Check if this is a cancellation exception, which is expected behavior
+                    if (ex instanceof CancellationException ||
+                            (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
+                        Log.d(TAG, "Stub initial code generation was cancelled - this is expected behavior");
+                    } else {
+                        Log.e(TAG, "Error in initial code generation", ex);
+                    }
+                    result.completeExceptionally(ex);
+                    return null;
+                });
+        return result;
     }
 
     @Override
@@ -141,23 +148,30 @@ public class StubLLMClient extends LLMClient {
         chatSession.queueUserMessage(new UserMessage(prompt, null, null, initialCode));
 
         // Send all messages and get the response
-        CancellableCompletableFuture<AssistantMessage> future = sendMessages(chatSession);
-        CancellableCompletableFuture<AssistantMessage> wrappedFuture = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantMessage> result = new CancellableCompletableFuture<>();
+        sendMessages(chatSession)
+                .thenAccept(assistantMessage -> {
+                    Log.d(TAG, "Got response, length: " + assistantMessage.content.length());
+                    result.complete(assistantMessage);
+                })
+                .exceptionally(ex -> {
+                    // Remove the messages we added before sendMessages (system prompt + user
+                    // message = 2 messages)
+                    chatSession.removeLastMessages(2);
+                    Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
 
-        future.handle((assistantMessage, ex) -> {
-            if (ex != null) {
-                // Remove the messages we added before sendMessages (system prompt + user
-                // message = 2 messages)
-                chatSession.removeLastMessages(2);
-                Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
-                wrappedFuture.completeExceptionally(ex);
-            } else {
-                wrappedFuture.complete(assistantMessage);
-            }
-            return null;
-        });
-
-        return wrappedFuture;
+                    // Check if this is a cancellation exception, which is expected behavior
+                    if (ex instanceof CancellationException ||
+                            (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
+                        Log.d(TAG,
+                                "Stub initial code generation with template was cancelled - this is expected behavior");
+                    } else {
+                        Log.e(TAG, "Error in initial code generation with template", ex);
+                    }
+                    result.completeExceptionally(ex);
+                    return null;
+                });
+        return result;
     }
 
     @Override
@@ -190,22 +204,28 @@ public class StubLLMClient extends LLMClient {
         chatSession.queueUserMessage(userMessage);
 
         // Send all messages and get the response
-        CancellableCompletableFuture<AssistantMessage> future = sendMessages(chatSession);
-        CancellableCompletableFuture<AssistantMessage> wrappedFuture = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantMessage> result = new CancellableCompletableFuture<>();
+        sendMessages(chatSession)
+                .thenAccept(assistantMessage -> {
+                    Log.d(TAG, "Got response, length: " + assistantMessage.content.length());
+                    result.complete(assistantMessage);
+                })
+                .exceptionally(ex -> {
+                    // Remove the user message we added before sendMessages (1 message)
+                    chatSession.removeLastMessages(1);
+                    Log.d(TAG, "Removed 1 message (user message) due to failure in generateNextIteration");
 
-        future.handle((assistantMessage, ex) -> {
-            if (ex != null) {
-                // Remove the user message we added before sendMessages (1 message)
-                chatSession.removeLastMessages(1);
-                Log.d(TAG, "Removed 1 message (user message) due to failure in generateNextIteration");
-                wrappedFuture.completeExceptionally(ex);
-            } else {
-                wrappedFuture.complete(assistantMessage);
-            }
-            return null;
-        });
-
-        return wrappedFuture;
+                    // Check if this is a cancellation exception, which is expected behavior
+                    if (ex instanceof CancellationException ||
+                            (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
+                        Log.d(TAG, "Stub next iteration generation was cancelled - this is expected behavior");
+                    } else {
+                        Log.e(TAG, "Error in next iteration generation", ex);
+                    }
+                    result.completeExceptionally(ex);
+                    return null;
+                });
+        return result;
     }
 
     private String generateStubResponse(String message) {
