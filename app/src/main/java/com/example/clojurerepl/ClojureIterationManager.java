@@ -103,12 +103,8 @@ public class ClojureIterationManager {
         generationFuture = wrapperFuture;
 
         // Call the LLM client which returns a CancellableCompletableFuture
-        LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> llmFuture;
-        if (initialCode != null && !initialCode.isEmpty()) {
-            llmFuture = llmClient.generateInitialCode(sessionId, description, initialCode);
-        } else {
-            llmFuture = llmClient.generateInitialCode(sessionId, description);
-        }
+        LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> llmFuture = llmClient
+                .generateInitialCode(sessionId, description, initialCode);
 
         // Handle the LLM response
         llmFuture.thenAccept(assistantMessage -> {

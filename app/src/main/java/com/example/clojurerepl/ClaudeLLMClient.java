@@ -162,60 +162,6 @@ public class ClaudeLLMClient extends LLMClient {
     }
 
     @Override
-    public CancellableCompletableFuture<AssistantMessage> generateInitialCode(UUID sessionId, String description) {
-        Log.d(TAG, "\n" +
-                "┌───────────────────────────────────────────┐\n" +
-                "│ CLAUDE STARTING INITIAL CODE GENERATION   │\n" +
-                "└───────────────────────────────────────────┘");
-
-        try {
-            ensureModelIsSet();
-
-            // Add debug to trace code execution
-            Log.d(TAG, "DEBUG: Starting generateInitialCode for Claude client with description: " +
-                    (description != null
-                            ? (description.length() > 50 ? description.substring(0, 50) + "..." : description)
-                            : "null"));
-
-            // Queue system prompt and format initial prompt
-            chatSession.queueSystemPrompt(new SystemPrompt(getSystemPrompt()));
-            String prompt = formatInitialPrompt(description, null);
-            chatSession.queueUserMessage(new UserMessage(prompt, null, null, null));
-            Log.d(TAG, "DEBUG: Created chat session, about to send messages to Claude API");
-
-            // Send all messages and get the response
-            CancellableCompletableFuture<AssistantMessage> result = new CancellableCompletableFuture<>();
-            sendMessages(chatSession)
-                    .thenAccept(assistantMessage -> {
-                        Log.d(TAG, "SUCCESS: Claude sendMessages completed successfully");
-                        result.complete(assistantMessage);
-                    })
-                    .exceptionally(ex -> {
-                        // Remove the messages we added before sendMessages (system prompt + user
-                        // message = 2 messages)
-                        chatSession.removeLastMessages(2);
-                        Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
-
-                        // Check if this is a cancellation exception, which is expected behavior
-                        if (ex instanceof CancellationException ||
-                                (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
-                            Log.d(TAG, "Claude initial code generation was cancelled - this is expected behavior");
-                        } else {
-                            Log.e(TAG, "ERROR: Failed in Claude sendMessages", ex);
-                        }
-                        result.completeExceptionally(ex);
-                        return null;
-                    });
-            return result;
-        } catch (Exception e) {
-            Log.e(TAG, "ERROR: Exception in generateInitialCode", e);
-            CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
-            future.completeExceptionally(e);
-            return future;
-        }
-    }
-
-    @Override
     public CancellableCompletableFuture<AssistantMessage> generateInitialCode(UUID sessionId, String description,
             String initialCode) {
         Log.d(TAG, "\n" +

@@ -193,9 +193,6 @@ public abstract class LLMClient {
         return promptTemplate + "\n\nAlways respond with Clojure code in a markdown code block.";
     }
 
-    public abstract CancellableCompletableFuture<AssistantMessage> generateInitialCode(UUID sessionId,
-            String description);
-
     /**
      * Generate initial code with optional starting code
      * 

@@ -102,41 +102,6 @@ public class StubLLMClient extends LLMClient {
     }
 
     @Override
-    public CancellableCompletableFuture<AssistantMessage> generateInitialCode(UUID sessionId, String description) {
-        Log.d(TAG, "Generating initial code for description: " + description + " using stub client");
-
-        // Queue system prompt and format initial prompt
-        chatSession.queueSystemPrompt(new SystemPrompt(getSystemPrompt()));
-        String prompt = formatInitialPrompt(description, null);
-        chatSession.queueUserMessage(new UserMessage(prompt, null, null, null));
-
-        // Send all messages and get the response
-        CancellableCompletableFuture<AssistantMessage> result = new CancellableCompletableFuture<>();
-        sendMessages(chatSession)
-                .thenAccept(assistantMessage -> {
-                    Log.d(TAG, "Got response, length: " + assistantMessage.content.length());
-                    result.complete(assistantMessage);
-                })
-                .exceptionally(ex -> {
-                    // Remove the messages we added before sendMessages (system prompt + user
-                    // message = 2 messages)
-                    chatSession.removeLastMessages(2);
-                    Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
-
-                    // Check if this is a cancellation exception, which is expected behavior
-                    if (ex instanceof CancellationException ||
-                            (ex instanceof RuntimeException && ex.getCause() instanceof CancellationException)) {
-                        Log.d(TAG, "Stub initial code generation was cancelled - this is expected behavior");
-                    } else {
-                        Log.e(TAG, "Error in initial code generation", ex);
-                    }
-                    result.completeExceptionally(ex);
-                    return null;
-                });
-        return result;
-    }
-
-    @Override
     public CancellableCompletableFuture<AssistantMessage> generateInitialCode(UUID sessionId, String description,
             String initialCode) {
         Log.d(TAG, "Generating initial code for description: " + description +
