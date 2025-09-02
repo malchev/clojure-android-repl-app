@@ -2,12 +2,6 @@ package com.example.clojurerepl;
 
 import android.content.Context;
 import android.util.Log;
-import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.UUID;
@@ -17,20 +11,12 @@ import com.example.clojurerepl.session.DesignSession;
 public class ClojureIterationManager {
     private static final String TAG = "ClojureIterationManager";
 
-    /**
-     * Callback interface for handling code extraction errors
-     */
-    public interface ExtractionErrorCallback {
-        void onExtractionError(String errorMessage);
-    }
-
     private final Context context;
     private final LLMClient llmClient;
     private final UUID sessionId;
-    private ExtractionErrorCallback extractionErrorCallback;
 
     private ExecutorService executor;
-    private LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> generationFuture;
+    private LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> currentFuture;
 
     public ClojureIterationManager(Context context, DesignSession session) {
         this.context = context.getApplicationContext();
@@ -43,28 +29,41 @@ public class ClojureIterationManager {
     }
 
     /**
-     * Sets the callback for handling code extraction errors
+     * Sends messages using the LLM client and returns a cancellable future
      * 
-     * @param callback The callback to handle extraction errors
+     * @param chatSession The chat session containing messages to send
+     * @return A CancellableCompletableFuture that will be completed with the
+     *         AssistantMessage
      */
-    public void setExtractionErrorCallback(ExtractionErrorCallback callback) {
-        this.extractionErrorCallback = callback;
+    public LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> sendMessages(
+            LLMClient.ChatSession chatSession) {
+        // Cancel any previous request that might be running
+        if (currentFuture != null && !currentFuture.isDone()) {
+            currentFuture.cancel(true);
+        }
+
+        Log.d(TAG, "Sending messages to LLM client");
+
+        // Call sendMessages directly and store the future
+        currentFuture = llmClient.sendMessages(chatSession);
+
+        return currentFuture;
     }
 
     /**
-     * Cancels the current code generation request if one is in progress
+     * Cancels the current request if one is in progress
      * 
      * @return true if a request was cancelled, false if no request was in progress
      */
-    public boolean cancelCurrentGeneration() {
-        Log.d(TAG, "Attempting to cancel current generation");
+    public boolean cancelCurrentRequest() {
+        Log.d(TAG, "Attempting to cancel current request");
 
         boolean cancelled = false;
 
-        // Cancel the generation future if it exists and is not done
-        if (generationFuture != null && !generationFuture.isDone()) {
-            Log.d(TAG, "Cancelling generation future");
-            cancelled = generationFuture.cancel(true);
+        // Cancel the current future if it exists and is not done
+        if (currentFuture != null && !currentFuture.isDone()) {
+            Log.d(TAG, "Cancelling current future");
+            cancelled = currentFuture.cancel(true);
         }
 
         // Cancel the underlying LLM client request
@@ -75,159 +74,6 @@ public class ClojureIterationManager {
 
         Log.d(TAG, "Cancellation result: " + cancelled);
         return cancelled;
-    }
-
-    /**
-     * Generates initial Clojure code based on a description and optional initial
-     * code.
-     * This allows providing existing code as a starting point for the generation.
-     * 
-     * @param description The app description to generate code for
-     * @param initialCode Optional initial code to use as a starting point (may be
-     *                    null)
-     * @return A CancellableCompletableFuture that will be completed with the
-     *         AssistantMessage
-     */
-    public LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> generateInitialCode(String description,
-            String initialCode) {
-        // Cancel any previous generation task that might be running
-        if (generationFuture != null && !generationFuture.isDone()) {
-            generationFuture.cancel(true);
-        }
-
-        Log.d(TAG, "Starting initial code generation with description: " + description +
-                ", initial code provided: " + (initialCode != null && !initialCode.isEmpty()));
-
-        // Create wrapper future that maintains CancellableCompletableFuture type
-        LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> wrapperFuture = new LLMClient.CancellableCompletableFuture<>();
-        generationFuture = wrapperFuture;
-
-        // Manage message history and call sendMessages directly
-        LLMClient.ChatSession chatSession = llmClient.getChatSession();
-
-        // Queue system prompt and format initial prompt
-        chatSession.queueSystemPrompt(new LLMClient.SystemPrompt(llmClient.getSystemPrompt()));
-        String prompt = llmClient.formatInitialPrompt(description, initialCode);
-        chatSession.queueUserMessage(new LLMClient.UserMessage(prompt, null, null, initialCode));
-
-        // Call sendMessages directly
-        LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> llmFuture = llmClient
-                .sendMessages(chatSession);
-
-        // Handle the LLM response
-        llmFuture.thenAccept(assistantMessage -> {
-            Log.d(TAG, "Received initial response from LLM, length: " +
-                    (assistantMessage.content != null ? assistantMessage.content.length() : "null"));
-
-            // Check if code extraction succeeded (now handled by AssistantMessage)
-            if (assistantMessage.getExtractedCode() == null) {
-                // Use callback if available, otherwise fall back to exception
-                if (extractionErrorCallback != null) {
-                    extractionErrorCallback.onExtractionError("No code found in LLM response");
-                    wrapperFuture.completeExceptionally(new IllegalArgumentException("No code found in LLM response"));
-                } else {
-                    wrapperFuture.completeExceptionally(new IllegalArgumentException("No code found in LLM response"));
-                }
-                return;
-            }
-
-            Log.d(TAG, "Extracted clean initial code. Length: " +
-                    (assistantMessage.getExtractedCode() != null ? assistantMessage.getExtractedCode().length()
-                            : "null"));
-
-            wrapperFuture.complete(assistantMessage);
-        }).exceptionally(ex -> {
-            // Remove the messages we added before sendMessages (system prompt + user
-            // message = 2 messages)
-            chatSession.removeLastMessages(2);
-            Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
-
-            Log.e(TAG, "Error generating initial code", ex);
-            wrapperFuture.completeExceptionally(ex);
-            return null;
-        });
-
-        return wrapperFuture;
-    }
-
-    public LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> generateNextIteration(String description,
-            String feedback,
-            String code,
-            String logcat,
-            List<File> images) {
-        // Cancel any previous generation task that might be running
-        if (generationFuture != null && !generationFuture.isDone()) {
-            generationFuture.cancel(true);
-        }
-
-        Log.d(TAG, "Starting new code generation with description: " + description + ", feedback: " + feedback);
-
-        // Create wrapper future that maintains CancellableCompletableFuture type
-        LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> wrapperFuture = new LLMClient.CancellableCompletableFuture<>();
-        generationFuture = wrapperFuture;
-
-        // Check if images are provided and model is multimodal
-        if (images != null && !images.isEmpty()) {
-            LLMClient.ModelProperties props = getModelProperties();
-            if (props == null || !props.isMultimodal) {
-                wrapperFuture.completeExceptionally(
-                        new UnsupportedOperationException("Images parameter provided but model is not multimodal"));
-                return wrapperFuture;
-            }
-        }
-
-        // Manage message history and call sendMessages directly
-        LLMClient.ChatSession chatSession = llmClient.getChatSession();
-
-        // Format the iteration prompt
-        String prompt = llmClient.formatIterationPrompt(description, code, logcat, feedback,
-                images != null && !images.isEmpty());
-
-        // Queue the user message (with images attachment if provided)
-        LLMClient.UserMessage userMessage = new LLMClient.UserMessage(prompt, images, logcat, feedback, null);
-        chatSession.queueUserMessage(userMessage);
-
-        // Call sendMessages directly
-        LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> llmFuture = llmClient
-                .sendMessages(chatSession);
-
-        // Handle the LLM response
-        llmFuture.thenAccept(assistantMessage -> {
-            Log.d(TAG, "Received response from LLM, length: " +
-                    (assistantMessage.content != null ? assistantMessage.content.length() : "null"));
-            Log.d(TAG, "LLM response first 100 chars: " +
-                    (assistantMessage.content != null && assistantMessage.content.length() > 100
-                            ? assistantMessage.content.substring(0, 100)
-                            : assistantMessage.content));
-
-            // Check if code extraction succeeded (now handled by AssistantMessage)
-            if (assistantMessage.getExtractedCode() == null) {
-                // Use callback if available, otherwise fall back to exception
-                if (extractionErrorCallback != null) {
-                    extractionErrorCallback.onExtractionError("No code found in LLM response");
-                    wrapperFuture.completeExceptionally(new IllegalArgumentException("No code found in LLM response"));
-                } else {
-                    wrapperFuture.completeExceptionally(new IllegalArgumentException("No code found in LLM response"));
-                }
-                return;
-            }
-
-            Log.d(TAG, "Extracted clean code. Length: " +
-                    (assistantMessage.getExtractedCode() != null ? assistantMessage.getExtractedCode().length()
-                            : "null"));
-
-            wrapperFuture.complete(assistantMessage);
-        }).exceptionally(ex -> {
-            // Remove the user message we added before sendMessages (1 message)
-            chatSession.removeLastMessages(1);
-            Log.d(TAG, "Removed 1 message (user message) due to failure in generateNextIteration");
-
-            Log.e(TAG, "Error generating next iteration", ex);
-            wrapperFuture.completeExceptionally(ex);
-            return null;
-        });
-
-        return wrapperFuture;
     }
 
     public void shutdown() {

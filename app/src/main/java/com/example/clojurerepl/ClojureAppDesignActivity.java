@@ -46,8 +46,7 @@ import java.util.Map;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletionException;
 
-public class ClojureAppDesignActivity extends AppCompatActivity
-        implements ClojureIterationManager.ExtractionErrorCallback {
+public class ClojureAppDesignActivity extends AppCompatActivity {
     private static final String TAG = "ClojureAppDesign";
     private static final String UNNAMED_SESSION = "(unnamed session)";
 
@@ -408,7 +407,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                 Log.d(TAG, "Session restore: Creating LLM client with model " + sessionRestoreModel);
                 assert iterationManager == null : "iterationManager should be null before creating new instance";
                 iterationManager = new ClojureIterationManager(this, currentSession);
-                iterationManager.setExtractionErrorCallback(this);
 
                 // We'll wait until llmTypeSpinner's selection listener fires to trigger model
                 // enumeration
@@ -618,7 +616,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         }
 
         iterationManager = new ClojureIterationManager(this, currentSession);
-        iterationManager.setExtractionErrorCallback(this);
 
         // Update paperclip button state for new iteration manager
         updatePaperclipButtonState();
@@ -666,8 +663,16 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         initialGenerationProgressDialog = builder.create();
         initialGenerationProgressDialog.show();
 
-        // Get the LLM to generate the code first - using IterationManager now
-        iterationManager.generateInitialCode(description, initialCode)
+        // Manage message history and call sendMessages directly
+        LLMClient.ChatSession chatSession = iterationManager.getLLMClient().getChatSession();
+
+        // Queue system prompt and format initial prompt
+        chatSession.queueSystemPrompt(new LLMClient.SystemPrompt(iterationManager.getLLMClient().getSystemPrompt()));
+        String prompt = iterationManager.getLLMClient().formatInitialPrompt(description, initialCode);
+        chatSession.queueUserMessage(new LLMClient.UserMessage(prompt, null, null, initialCode));
+
+        // Call sendMessages directly
+        iterationManager.sendMessages(chatSession)
                 .thenAccept(assistantMessage -> {
                     String code = assistantMessage.getExtractedCode();
                     runOnUiThread(() -> {
@@ -675,6 +680,15 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         if (initialGenerationProgressDialog != null) {
                             initialGenerationProgressDialog.dismiss();
                             initialGenerationProgressDialog = null;
+                        }
+
+                        // Check if code extraction succeeded
+                        if (code == null) {
+                            handleCodeExtractionError("No code found in LLM response");
+                            // Restore the user's input text since the operation failed
+                            feedbackInput.setText(originalFeedbackText);
+                            feedbackInput.setSelection(originalFeedbackText.length()); // Move cursor to end
+                            return;
                         }
 
                         // Update session with code
@@ -702,6 +716,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     });
                 })
                 .exceptionally(throwable -> {
+                    // Remove the messages we added before sendMessages (system prompt + user
+                    // message = 2 messages)
+                    chatSession.removeLastMessages(2);
+                    Log.d(TAG, "Removed 2 messages (system prompt + user message) due to failure");
+
                     // Check if this is a cancellation exception, which is expected behavior
                     if (throwable instanceof CancellationException ||
                             (throwable instanceof CompletionException &&
@@ -857,13 +876,32 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         iterationProgressDialog = builder.create();
         iterationProgressDialog.show();
 
-        // Generate next iteration using the iteration manager's method
-        iterationManager.generateNextIteration(
-                currentSession.getDescription(),
-                feedback,
-                currentCode,
-                logcatText,
-                images)
+        // Check if images are provided and model is multimodal
+        if (images != null && !images.isEmpty()) {
+            LLMClient.ModelProperties props = iterationManager.getModelProperties();
+            if (props == null || !props.isMultimodal) {
+                showLLMErrorDialog("Model Error", "Images parameter provided but model is not multimodal");
+                // Make sure buttons are enabled on error
+                thumbsUpButton.setEnabled(true);
+                runButton.setEnabled(true);
+                submitFeedbackButton.setEnabled(true);
+                return;
+            }
+        }
+
+        // Manage message history and call sendMessages directly
+        LLMClient.ChatSession chatSession = iterationManager.getLLMClient().getChatSession();
+
+        // Format the iteration prompt
+        String prompt = iterationManager.getLLMClient().formatIterationPrompt(currentSession.getDescription(),
+                currentCode, logcatText, feedback, images != null && !images.isEmpty());
+
+        // Queue the user message (with images attachment if provided)
+        LLMClient.UserMessage userMessage = new LLMClient.UserMessage(prompt, images, logcatText, feedback, null);
+        chatSession.queueUserMessage(userMessage);
+
+        // Call sendMessages directly
+        iterationManager.sendMessages(chatSession)
                 .thenAccept(assistantMessage -> {
                     String code = assistantMessage.getExtractedCode();
                     runOnUiThread(() -> {
@@ -871,6 +909,15 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         if (iterationProgressDialog != null) {
                             iterationProgressDialog.dismiss();
                             iterationProgressDialog = null;
+                        }
+
+                        // Check if code extraction succeeded
+                        if (code == null) {
+                            handleCodeExtractionError("No code found in LLM response");
+                            // Restore the user's input text since the operation failed
+                            feedbackInput.setText(feedback);
+                            feedbackInput.setSelection(feedback.length()); // Move cursor to end
+                            return;
                         }
 
                         assert currentSession != null;
@@ -892,6 +939,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     });
                 })
                 .exceptionally(throwable -> {
+                    // Remove the user message we added before sendMessages (1 message)
+                    chatSession.removeLastMessages(1);
+                    Log.d(TAG, "Removed 1 message (user message) due to failure in generateNextIteration");
+
                     // Check if this is a cancellation exception, which is expected behavior
                     if (throwable instanceof CancellationException ||
                             (throwable instanceof CompletionException &&
@@ -1397,7 +1448,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
                     iterationManager = new ClojureIterationManager(ClojureAppDesignActivity.this,
                             currentSession);
-                    iterationManager.setExtractionErrorCallback(ClojureAppDesignActivity.this);
 
                     // Update paperclip button state for new model
                     updatePaperclipButtonState();
@@ -2625,11 +2675,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity
     }
 
     /**
-     * Implementation of ExtractionErrorCallback to show popup dialog for extraction
-     * errors
+     * Handles code extraction errors by showing a popup dialog and re-enabling
+     * buttons
+     * 
+     * @param errorMessage The error message to display
      */
-    @Override
-    public void onExtractionError(String errorMessage) {
+    private void handleCodeExtractionError(String errorMessage) {
         runOnUiThread(() -> {
             // Re-enable buttons since the operation was cancelled
             Button submitFeedbackButton = findViewById(R.id.submit_feedback_button);
@@ -3024,13 +3075,20 @@ public class ClojureAppDesignActivity extends AppCompatActivity
         // Get the current logcat output from session
         String logcatText = currentSession.getLastLogcat() != null ? currentSession.getLastLogcat() : "";
 
-        // Generate next iteration using the iteration manager's method
-        iterationManager.generateNextIteration(
-                currentSession.getDescription(),
-                errorFeedback,
-                currentSession.getCurrentCode(),
-                logcatText,
-                new ArrayList<>()) // No images for automatic iteration
+        // Manage message history and call sendMessages directly
+        LLMClient.ChatSession chatSession = iterationManager.getLLMClient().getChatSession();
+
+        // Format the iteration prompt
+        String prompt = iterationManager.getLLMClient().formatIterationPrompt(currentSession.getDescription(),
+                currentSession.getCurrentCode(), logcatText, errorFeedback, false);
+
+        // Queue the user message (no images for automatic iteration)
+        LLMClient.UserMessage userMessage = new LLMClient.UserMessage(prompt, new ArrayList<>(), logcatText,
+                errorFeedback, null);
+        chatSession.queueUserMessage(userMessage);
+
+        // Call sendMessages directly
+        iterationManager.sendMessages(chatSession)
                 .thenAccept(assistantMessage -> {
                     String code = assistantMessage.getExtractedCode();
                     runOnUiThread(() -> {
@@ -3038,6 +3096,17 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                         if (iterationProgressDialog != null) {
                             iterationProgressDialog.dismiss();
                             iterationProgressDialog = null;
+                        }
+
+                        // Check if code extraction succeeded
+                        if (code == null) {
+                            handleCodeExtractionError("No code found in LLM response");
+                            // Re-enable buttons and show normal buttons
+                            isIterating = false;
+                            cancelIterationButton.setVisibility(View.GONE);
+                            thumbsUpButton.setVisibility(View.VISIBLE);
+                            runButton.setVisibility(View.VISIBLE);
+                            return;
                         }
 
                         assert currentSession != null;
@@ -3079,6 +3148,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity
                     });
                 })
                 .exceptionally(throwable -> {
+                    // Remove the user message we added before sendMessages (1 message)
+                    chatSession.removeLastMessages(1);
+                    Log.d(TAG, "Removed 1 message (user message) due to failure in automatic iteration");
+
                     // Check if this is a cancellation exception, which is expected behavior
                     if (throwable instanceof CancellationException ||
                             (throwable instanceof CompletionException &&
@@ -3143,7 +3216,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         // Cancel the underlying LLM request and generation
         if (iterationManager != null) {
-            boolean cancelled = iterationManager.cancelCurrentGeneration();
+            boolean cancelled = iterationManager.cancelCurrentRequest();
             Log.d(TAG, "Cancellation result: " + cancelled);
         }
 
@@ -3171,7 +3244,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         // Cancel the underlying LLM request and generation
         if (iterationManager != null) {
-            boolean cancelled = iterationManager.cancelCurrentGeneration();
+            boolean cancelled = iterationManager.cancelCurrentRequest();
             Log.d(TAG, "Initial generation cancellation result: " + cancelled);
         }
 
@@ -3193,7 +3266,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         // Cancel the underlying LLM request and generation
         if (iterationManager != null) {
-            boolean cancelled = iterationManager.cancelCurrentGeneration();
+            boolean cancelled = iterationManager.cancelCurrentRequest();
             Log.d(TAG, "Manual iteration cancellation result: " + cancelled);
         }
 
@@ -3521,7 +3594,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity
 
         // Create new iteration manager for the fork session
         iterationManager = new ClojureIterationManager(this, currentSession);
-        iterationManager.setExtractionErrorCallback(this);
 
         // Update UI to reflect the new session
         updateSessionStateAfterFork();
