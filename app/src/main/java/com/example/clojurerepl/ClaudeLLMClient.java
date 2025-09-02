@@ -299,20 +299,6 @@ public class ClaudeLLMClient extends LLMClient {
         Log.d(TAG, "Starting generateNextIteration with session containing " +
                 chatSession.getMessages().size() + " messages");
 
-        // Add logging of the current message types
-        List<Message> messages = chatSession.getMessages();
-        int systemCount = 0, userCount = 0, assistantCount = 0;
-        for (Message msg : messages) {
-            if (MessageRole.SYSTEM.equals(msg.role))
-                systemCount++;
-            else if (MessageRole.USER.equals(msg.role))
-                userCount++;
-            else if (MessageRole.ASSISTANT.equals(msg.role))
-                assistantCount++;
-        }
-        Log.d(TAG, "Current conversation has " + systemCount + " system, " +
-                userCount + " user, and " + assistantCount + " assistant messages");
-
         // Format the iteration prompt (now includes currentCode)
         String prompt = formatIterationPrompt(description, currentCode, logcat, feedback,
                 images != null && !images.isEmpty());
@@ -323,31 +309,6 @@ public class ClaudeLLMClient extends LLMClient {
 
         Log.d(TAG, "After queueing new user message, session now has " +
                 chatSession.getMessages().size() + " messages");
-
-        // Print the last few messages of the session for debugging
-        messages = chatSession.getMessages();
-        int startIdx = Math.max(0, messages.size() - 4); // Show last 4 messages or all if fewer
-        StringBuilder recentMessages = new StringBuilder("Recent messages in session:\n");
-        for (int i = startIdx; i < messages.size(); i++) {
-            Message msg = messages.get(i);
-            // Use the same role mapping as the API call for consistent logging
-            String claudeRole;
-            if (MessageRole.SYSTEM.equals(msg.role)) {
-                claudeRole = "system";
-            } else if (MessageRole.USER.equals(msg.role)) {
-                claudeRole = "user";
-            } else if (MessageRole.ASSISTANT.equals(msg.role)) {
-                claudeRole = "assistant";
-            } else {
-                claudeRole = msg.role.getApiValue();
-            }
-            recentMessages.append(i).append(": ")
-                    .append(claudeRole)
-                    .append(" - ")
-                    .append(msg.content.length() > 50 ? msg.content.substring(0, 50) + "..." : msg.content)
-                    .append("\n");
-        }
-        Log.d(TAG, recentMessages.toString());
 
         // Send all messages and get the response
         CancellableCompletableFuture<AssistantMessage> future = sendMessages(chatSession);

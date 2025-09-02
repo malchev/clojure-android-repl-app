@@ -78,17 +78,6 @@ public class ClojureIterationManager {
     }
 
     /**
-     * Generates initial Clojure code based on a description.
-     * This is the entry point for starting a new design.
-     * 
-     * @param description The app description to generate code for
-     * @return A CompletableFuture that will be completed with the AssistantMessage
-     */
-    public CompletableFuture<LLMClient.AssistantMessage> generateInitialCode(String description) {
-        return generateInitialCode(description, null);
-    }
-
-    /**
      * Generates initial Clojure code based on a description and optional initial
      * code.
      * This allows providing existing code as a starting point for the generation.
