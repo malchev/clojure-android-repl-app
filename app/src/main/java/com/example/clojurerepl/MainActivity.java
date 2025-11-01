@@ -339,10 +339,10 @@ public class MainActivity extends AppCompatActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
 
-        if (intent.hasExtra(RenderActivity.EXTRA_RESULT_SUCCESS)) {
-            boolean success = intent.getBooleanExtra(RenderActivity.EXTRA_RESULT_SUCCESS, false);
-            Log.d(TAG, "Result code execution: " + (success ? "success" : "failure"));
+        final boolean success = !intent.hasExtra(RenderActivity.EXTRA_RESULT_ERROR);
+        Log.d(TAG, "Result code execution: " + (success ? "success" : "failure"));
 
+        if (success) {
             String timings = intent.getStringExtra(RenderActivity.EXTRA_RESULT_TIMINGS);
             if (timings != null && currentProgram != null) {
                 runCount++;

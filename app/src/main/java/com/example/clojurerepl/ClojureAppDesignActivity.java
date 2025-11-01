@@ -1140,12 +1140,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Save the current code when returning from RenderActivity
         saveCodeToFile();
 
-        // Check if we have process logcat data
-        if (intent.hasExtra(RenderActivity.EXTRA_RESULT_SUCCESS)) {
-            boolean success = intent.getBooleanExtra(RenderActivity.EXTRA_RESULT_SUCCESS, false);
-            Log.d(TAG, "RenderActivity success: " + success);
-        }
-
         // Check for error feedback from RenderActivity
         if (intent.hasExtra(RenderActivity.EXTRA_RESULT_ERROR)) {
             Log.d(TAG, "RenderActivity returned error status: "

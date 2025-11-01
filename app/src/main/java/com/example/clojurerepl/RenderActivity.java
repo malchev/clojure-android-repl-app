@@ -62,10 +62,8 @@ public class RenderActivity extends AppCompatActivity {
 
     // results
     public static final String EXTRA_RESULT_SCREENSHOT_PATHS = "result_screenshot_paths";
-    public static final String EXTRA_RESULT_SUCCESS = "result_success";
     public static final String EXTRA_RESULT_ERROR = "result_error";
     public static final String EXTRA_RESULT_TIMINGS = "result_timings";
-    public static final String EXTRA_RESULT_PROCESS_LOGCAT = "result_process_logcat";
     public static final String EXTRA_RESULT_AUTO_RETURN_ON_ERROR = "result_return_on_error";
 
     private LinearLayout contentLayout;
@@ -496,9 +494,7 @@ public class RenderActivity extends AppCompatActivity {
             // Use FLAG_ACTIVITY_CLEAR_TOP to ensure we go back to the existing instance
             parentIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
 
-            boolean success = clojureStatus == null;
-            parentIntent.putExtra(EXTRA_RESULT_SUCCESS, success);
-
+            final boolean success = clojureStatus == null;
             if (success) {
                 parentIntent.putExtra(EXTRA_RESULT_TIMINGS, timingData.toString());
             }
@@ -665,7 +661,6 @@ public class RenderActivity extends AppCompatActivity {
             Thread.currentThread().setContextClassLoader(classLoader);
         }
 
-        boolean success = true;
         try {
             // Set up the Android delegate
             AndroidClassLoaderDelegate delegate = new AndroidClassLoaderDelegate(
@@ -813,7 +808,6 @@ public class RenderActivity extends AppCompatActivity {
                 intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
                 intent.putExtra(EXTRA_RESULT_ERROR, errorMessage);
                 intent.putExtra(EXTRA_RESULT_AUTO_RETURN_ON_ERROR, returnOnError);
-                intent.putExtra(EXTRA_RESULT_SUCCESS, false);
                 startActivity(intent);
                 finish();
             }
