@@ -3018,17 +3018,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
      * Starts automatic iteration when an error is returned from RenderActivity
      */
     private void startAutomaticIteration(String errorFeedback) {
-        if (isIterating) {
-            Log.d(TAG, "Already iterating, skipping automatic iteration");
-            return;
-        }
 
-        if (iterationManager == null) {
-            Log.w(TAG, "No iteration manager available for automatic iteration");
-            // Note: showFeedbackDialog() removed - feedback is now handled through the chat
-            // input
-            return;
-        }
+        assert isIterating == false;
+        assert iterationManager != null;
 
         Log.d(TAG, "Starting automatic iteration with error feedback: " + errorFeedback);
         isIterating = true;
@@ -3104,6 +3096,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 .thenAccept(assistantMessage -> {
                     String code = assistantMessage.getExtractedCode();
                     runOnUiThread(() -> {
+                        // Clear the flag, which we set only at the top of this method.
+                        isIterating = false;
+
                         // Dismiss progress dialog
                         if (iterationProgressDialog != null) {
                             iterationProgressDialog.dismiss();
@@ -3114,7 +3109,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                         if (code == null) {
                             handleCodeExtractionError("No code found in LLM response");
                             // Re-enable buttons and show normal buttons
-                            isIterating = false;
                             cancelIterationButton.setVisibility(View.GONE);
                             thumbsUpButton.setVisibility(View.VISIBLE);
                             runButton.setVisibility(View.VISIBLE);
@@ -3141,7 +3135,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                         displayCurrentCode();
 
                         // Re-enable buttons and show normal buttons
-                        isIterating = false;
                         cancelIterationButton.setVisibility(View.GONE);
                         thumbsUpButton.setVisibility(View.VISIBLE);
                         runButton.setVisibility(View.VISIBLE);
@@ -3160,39 +3153,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     });
                 })
                 .exceptionally(throwable -> {
+                    // Clear the flag, which we set only at the top of this method.
+                    isIterating = false;
+
                     // Remove the user message we added before sendMessages (1 message)
                     chatSession.removeLastMessages(1);
                     Log.d(TAG, "Removed 1 message (user message) due to failure in automatic iteration");
 
-                    // Check if this is a cancellation exception, which is expected behavior
-                    if (throwable instanceof CancellationException ||
-                            (throwable instanceof CompletionException &&
-                                    throwable.getCause() instanceof CancellationException)) {
-                        Log.d(TAG, "Automatic iteration was cancelled - this is expected behavior");
-                        runOnUiThread(() -> {
-                            // Dismiss progress dialog
-                            if (iterationProgressDialog != null) {
-                                iterationProgressDialog.dismiss();
-                                iterationProgressDialog = null;
-                            }
-
-                            // Re-enable buttons and show normal buttons
-                            isIterating = false;
-                            cancelIterationButton.setVisibility(View.GONE);
-                            thumbsUpButton.setVisibility(View.VISIBLE);
-                            runButton.setVisibility(View.VISIBLE);
-                            submitFeedbackButton.setEnabled(true);
-
-                            // Show feedback dialog for manual feedback since automatic iteration was
-                            // cancelled
-                            // Note: showFeedbackDialog() removed - feedback is now handled through the chat
-                            // input
-                        });
-                        return null;
-                    }
-
-                    // Handle actual errors
-                    Log.e(TAG, "Error in automatic iteration", throwable);
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
                         if (iterationProgressDialog != null) {
@@ -3201,14 +3168,23 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                         }
 
                         // Re-enable buttons and show normal buttons
-                        isIterating = false;
                         cancelIterationButton.setVisibility(View.GONE);
                         thumbsUpButton.setVisibility(View.VISIBLE);
                         runButton.setVisibility(View.VISIBLE);
                         submitFeedbackButton.setEnabled(true);
 
-                        showLLMErrorDialog("Automatic Iteration Error",
-                                "Error during automatic iteration: " + throwable.getMessage());
+                        final boolean gotCancelled = throwable instanceof CancellationException ||
+                            (throwable instanceof CompletionException &&
+                            throwable.getCause() instanceof CancellationException);
+
+                        if (!gotCancelled) {
+                            Log.e(TAG, "Error in automatic iteration", throwable);
+                            showLLMErrorDialog("Automatic Iteration Error",
+                                    "Error during automatic iteration: " + throwable.getMessage());
+                        }
+                        else {
+                            Log.d(TAG, "Automatic iteration was cancelled - this is expected behavior");
+                        }
                     });
                     return null;
                 });
