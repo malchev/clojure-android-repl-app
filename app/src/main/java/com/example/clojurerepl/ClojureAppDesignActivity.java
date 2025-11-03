@@ -74,9 +74,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     private boolean screenshotsExpanded = false;
     private boolean logcatExpanded = false;
 
-    // Add field to store current screenshots
-    private List<File> currentScreenshots = new ArrayList<>();
-
     // Add LLM type spinner
     private Spinner llmTypeSpinner;
     private Spinner llmSpinner;
@@ -403,31 +400,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         }
 
         // Note: Logcat output now shown in chat history, no separate display needed
-
-        // Restore latest screenshot set if available
-        List<String> paths = currentSession.getCurrentIterationScreenshots();
-        if (paths != null && !paths.isEmpty()) {
-            Log.d(TAG, "Restoring " + paths.size() + " screenshots from current iteration");
-
-            // Convert paths to File objects for currentScreenshots
-            currentScreenshots.clear();
-            List<String> validPaths = new ArrayList<>();
-
-            for (String path : paths) {
-                File screenshotFile = new File(path);
-                if (screenshotFile.exists()) {
-                    currentScreenshots.add(screenshotFile);
-                    validPaths.add(path);
-                    Log.d(TAG, "Found valid screenshot: " + path);
-                } else {
-                    Log.w(TAG, "Screenshot file no longer exists: " + path);
-                }
-            }
-        } else {
-            // No screenshots in latest set, clear currentScreenshots
-            currentScreenshots.clear();
-            Log.d(TAG, "No screenshots available in current iteration");
-        }
 
         // Restore error feedback if available
         // First check if we have an iteration-specific error for the latest AI response
@@ -1076,20 +1048,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
             // Save screenshots to session
             if (screenshotPaths.length > 0) {
-                // Add new screenshots to current screenshots list (don't clear to accumulate
-                // within iteration)
-                for (String path : screenshotPaths) {
-                    File screenshotFile = new File(path);
-                    if (screenshotFile.exists()) {
-                        currentScreenshots.add(screenshotFile);
-                        Log.d(TAG, "Saved screenshot for paperclip selection: " + path);
-                    } else {
-                        Log.e(TAG, "Screenshot file doesn't exist: " + path);
-                    }
-                }
-
-                Log.d(TAG, "Total screenshots available for selection: " + currentScreenshots.size());
-
                 List<String> paths = new ArrayList<>(Arrays.asList(screenshotPaths));
 
                 // Use the correct iteration number for the screenshot set
@@ -2631,11 +2589,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             availableScreenshots = getScreenshotsForIteration(selectedIteration);
             iterationInfo = " (Iteration " + selectedIteration + ")";
         } else {
-            // No message selected, show latest screenshots
-            availableScreenshots = new ArrayList<>();
-            for (File screenshot : currentScreenshots) {
-                availableScreenshots.add(screenshot.getAbsolutePath());
-            }
+            availableScreenshots = currentSession.getCurrentIterationScreenshots();
             iterationInfo = " (Latest)";
         }
 
@@ -2669,7 +2623,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         for (int i = 0; i < availableScreenshots.size(); i++) {
             String screenshotPath = availableScreenshots.get(i);
             File screenshot = new File(screenshotPath);
-            final int index = i;
+            if (!screenshot.exists()) {
+                Log.d(TAG, "Screenshot file no longer exists, skipping: " + screenshotPath);
+                continue;
+            }
 
             ImageView imageView = new ImageView(this);
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -3449,18 +3406,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Update paperclip button state
         updatePaperclipButtonState();
-
-        // Restore screenshot state for the fork session
-        List<String> paths = currentSession.getCurrentIterationScreenshots();
-        currentScreenshots.clear();
-        if (paths != null && !paths.isEmpty()) {
-            for (String path : paths) {
-                File screenshotFile = new File(path);
-                if (screenshotFile.exists()) {
-                    currentScreenshots.add(screenshotFile);
-                }
-            }
-        }
 
         Toast.makeText(this, "Created new fork session: " + currentSession.getSessionName(), Toast.LENGTH_LONG).show();
     }
