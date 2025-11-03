@@ -257,7 +257,7 @@ public class RenderActivity extends AppCompatActivity {
                         @Override
                         public void binderDied() {
                             logcatMonitor.stopMonitoring();
-                            String logcatOutput = logcatMonitor.getCollectedLogs();
+                            String logcatOutput = logcatMonitor.getCollectedLogs().trim();
                             logcatMonitor.shutdown();
 
                             // pidReceiver is already unregistered here when the

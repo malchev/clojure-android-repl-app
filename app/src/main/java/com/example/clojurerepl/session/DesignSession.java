@@ -73,7 +73,7 @@ public class DesignSession {
     }
 
     public void setSessionName(String sessionName) {
-        this.sessionName = sessionName;
+        this.sessionName = sessionName.trim();
     }
 
     public String getDescription() {
@@ -81,7 +81,7 @@ public class DesignSession {
     }
 
     public void setDescription(String description) {
-        this.description = description;
+        this.description = description.trim();
     }
 
     public Date getCreatedAt() {
@@ -93,7 +93,7 @@ public class DesignSession {
     }
 
     public void setInitialCode(String initialCode) {
-        this.initialCode = initialCode;
+        this.initialCode = initialCode.trim();
     }
 
     public String getInitialCode() {
@@ -322,7 +322,12 @@ public class DesignSession {
         if (this.iterationErrors == null) {
             this.iterationErrors = new HashMap<>();
         }
-        if (errorMessage == null || errorMessage.trim().isEmpty()) {
+
+        if (errorMessage != null) {
+            errorMessage = errorMessage.trim();
+        }
+
+        if (errorMessage == null || errorMessage.isEmpty()) {
             this.iterationErrors.remove(iteration);
         } else {
             this.iterationErrors.put(iteration, errorMessage);

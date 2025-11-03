@@ -90,11 +90,15 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     private SessionManager sessionManager;
     private DesignSession currentSession;
 
-    // Track selected chat entry
+    // Track selected chat entry.  Field selectedChatEntryIndex is the index of
+    // the message in the message history of the currentSession (i.e. its being
+    // non-negative implies currentSession != null).
     private int selectedChatEntryIndex = -1;
     private LinearLayout selectedChatEntry = null;
 
-    // Track the iteration number for the currently running code
+    // Track the iteration number for the currently running code.  It's derived
+    // from selectedChatEntryIndex in runSelectedCode() and used in
+    // onNewIntent(), then set to -1 again.
     private int currentRunningIteration = -1;
 
     // Add a flag to track when the models are loaded
@@ -173,8 +177,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
      */
     private void handleCodeFromMainActivity() {
         // Get the initial code and description from the intent
-        String initialCode = getIntent().getStringExtra("initial_code");
-        String description = getIntent().getStringExtra("description");
+        String initialCode = getIntent().getStringExtra("initial_code").trim();
+        String description = getIntent().getStringExtra("description").trim();
 
         if (initialCode == null || initialCode.isEmpty()) {
             Toast.makeText(this, "No code provided from MainActivity", Toast.LENGTH_SHORT).show();
@@ -417,7 +421,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                         // Only check for iteration-specific errors for AI responses that contain code
                         int latestIteration = getIterationNumberForMessage(i);
                         String iterationError = currentSession.getIterationError(latestIteration);
-                        if (iterationError != null && !iterationError.trim().isEmpty()) {
+                        if (iterationError != null && !iterationError.isEmpty()) {
                             errorToRestore = iterationError;
                             Log.d(TAG,
                                     "Found iteration-specific error for latest response (iteration " + latestIteration
@@ -1036,6 +1040,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // session.
         assert currentSession != null;
 
+        // Save the current code when returning from RenderActivity
+        saveCodeToFile();
+
         // Ensure submit button is enabled when returning from RenderActivity
         Button submitFeedbackButton = findViewById(R.id.submit_feedback_button);
         submitFeedbackButton.setEnabled(true);
@@ -1061,14 +1068,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     Log.w(TAG, "Added screenshots using legacy method (iteration number not available)");
                 }
                 doUpdateSession = true;
+                // Update paperclip button state now that we have screenshots
+                updatePaperclipButtonState();
             }
-
-            // Update paperclip button state now that we have screenshots
-            updatePaperclipButtonState();
         }
-
-        // Save the current code when returning from RenderActivity
-        saveCodeToFile();
 
         // Check for error feedback from RenderActivity
         if (intent.hasExtra(RenderActivity.EXTRA_RESULT_ERROR)) {
@@ -1082,21 +1085,19 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             }
 
             // Save error info to session (both legacy and iteration-specific)
-            if (currentSession != null) {
-                currentSession.setLastErrorFeedback(errorFeedback);
-                currentSession.setHasError(true);
+            currentSession.setLastErrorFeedback(errorFeedback);
+            currentSession.setHasError(true);
 
-                // Save error for the specific iteration that was just run
-                if (currentRunningIteration > 0) {
-                    currentSession.setIterationError(currentRunningIteration, errorFeedback);
-                    Log.d(TAG, "Saved error feedback for iteration " + currentRunningIteration + ": " + errorFeedback);
-                } else {
-                    Log.w(TAG, "No current running iteration to associate error with");
-                }
-
-                doUpdateSession = true;
-                Log.d(TAG, "Saved error feedback to session");
+            // Save error for the specific iteration that was just run
+            if (currentRunningIteration > 0) {
+                currentSession.setIterationError(currentRunningIteration, errorFeedback);
+                Log.d(TAG, "Saved error feedback for iteration " + currentRunningIteration + ": " + errorFeedback);
+            } else {
+                Log.w(TAG, "No current running iteration to associate error with");
             }
+
+            doUpdateSession = true;
+            Log.d(TAG, "Saved error feedback to session");
 
             // Check if we should automatically iterate on error
             if (intent.hasExtra(RenderActivity.EXTRA_RESULT_AUTO_RETURN_ON_ERROR) &&
@@ -1259,6 +1260,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
 
+                assert currentSession != null;
+
                 // Handle the prompt selection (position 0) - clear the model
                 if (position == 0) {
                     Log.d(TAG, "Prompt item selected, clearing LLM model");
@@ -1271,11 +1274,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     }
 
                     // Clear the model from the session
-                    if (currentSession != null) {
-                        currentSession.setLlmModel(null);
-                        sessionManager.updateSession(currentSession);
-                        Log.d(TAG, "Cleared LLM model from session");
-                    }
+                    currentSession.setLlmModel(null);
+                    sessionManager.updateSession(currentSession);
+                    Log.d(TAG, "Cleared LLM model from session");
 
                     // Update paperclip button state since no model is selected
                     updatePaperclipButtonState();
@@ -1301,7 +1302,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     }
 
                     // Update session with new model
-                    assert currentSession != null;
                     Log.d(TAG, "Type: " + currentType + ", LLM: " +
                             selectedModel + ". Session " + currentSession.getId().toString() +
                             " has " + currentSession.getChatHistory().size() + " messages.");
@@ -1527,6 +1527,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         }
 
         String codeToRun = codeResult.code;
+        // codeMessageIndex could be < selectedChatEntryIndex if the last
+        // AssistantMessage with code in it was prior to the currenty-selected
+        // message.
         int codeMessageIndex = codeResult.messageIndex;
 
         // Calculate the correct iteration number for the code message
@@ -1832,9 +1835,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
      */
     private void updateChatHistoryDisplayWithLatestSelection() {
         // Clear any saved selection to ensure we select the latest AI response
-        if (currentSession != null) {
-            currentSession.setSelectedMessageIndex(-1);
-        }
+        currentSession.setSelectedMessageIndex(-1);
         updateChatHistoryDisplay(true, true); // Auto-select last (will pick latest), auto-scroll
     }
 
@@ -1846,30 +1847,20 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
      * @param autoScroll     Whether to auto-scroll to bottom
      */
     private void updateChatHistoryDisplay(boolean autoSelectLast, boolean autoScroll) {
-        if (currentSession != null) {
-            List<LLMClient.Message> messages = currentSession.getChatHistory();
-            if (messages != null && !messages.isEmpty()) {
-                // Determine the correct selection BEFORE rendering the UI
-                if (autoSelectLast) {
-                    // First try to restore saved selection from session
-                    int savedSelection = currentSession.getSelectedMessageIndex();
-                    if (savedSelection >= 0 && savedSelection < messages.size()) {
-                        LLMClient.MessageRole savedRole = messages.get(savedSelection).role;
-                        // Allow both AI responses and user messages to be restored
-                        if (savedRole == LLMClient.MessageRole.ASSISTANT || savedRole == LLMClient.MessageRole.USER) {
-                            selectedChatEntryIndex = savedSelection;
-                            Log.d(TAG, "Restored saved message selection: " + savedSelection + " (" + savedRole + ")");
-                        } else {
-                            // Fall back to selecting the last (most recent) AI response
-                            selectedChatEntryIndex = -1; // Reset selection
-                            for (int i = messages.size() - 1; i >= 0; i--) {
-                                if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
-                                    selectedChatEntryIndex = i;
-                                    Log.d(TAG, "Auto-selected last AI response: " + selectedChatEntryIndex);
-                                    break;
-                                }
-                            }
-                        }
+        assert currentSession != null;
+
+        List<LLMClient.Message> messages = currentSession.getChatHistory();
+        if (messages != null && !messages.isEmpty()) {
+            // Determine the correct selection BEFORE rendering the UI
+            if (autoSelectLast) {
+                // First try to restore saved selection from session
+                int savedSelection = currentSession.getSelectedMessageIndex();
+                if (savedSelection >= 0 && savedSelection < messages.size()) {
+                    LLMClient.MessageRole savedRole = messages.get(savedSelection).role;
+                    // Allow both AI responses and user messages to be restored
+                    if (savedRole == LLMClient.MessageRole.ASSISTANT || savedRole == LLMClient.MessageRole.USER) {
+                        selectedChatEntryIndex = savedSelection;
+                        Log.d(TAG, "Restored saved message selection: " + savedSelection + " (" + savedRole + ")");
                     } else {
                         // Fall back to selecting the last (most recent) AI response
                         selectedChatEntryIndex = -1; // Reset selection
@@ -1881,102 +1872,112 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                             }
                         }
                     }
-
-                    // Save the selected message index to the session if we made a selection
-                    if (selectedChatEntryIndex >= 0) {
-                        currentSession.setSelectedMessageIndex(selectedChatEntryIndex);
-                        sessionManager.updateSession(currentSession);
-                        Log.d(TAG, "Saved auto-selected message index " + selectedChatEntryIndex + " to session");
+                } else {
+                    // Fall back to selecting the last (most recent) AI response
+                    selectedChatEntryIndex = -1; // Reset selection
+                    for (int i = messages.size() - 1; i >= 0; i--) {
+                        if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
+                            selectedChatEntryIndex = i;
+                            Log.d(TAG, "Auto-selected last AI response: " + selectedChatEntryIndex);
+                            break;
+                        }
                     }
                 }
 
-                // Clear existing views
-                chatHistoryLayout.removeAllViews();
-
-                int messageIndex = 0;
-                for (LLMClient.Message message : messages) {
-                    // Create message container with margin for better separation
-                    LinearLayout messageContainer = new LinearLayout(this);
-                    LinearLayout.LayoutParams containerParams = new LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT);
-                    containerParams.setMargins(8, 4, 8, 4); // Add margins between entries
-                    messageContainer.setLayoutParams(containerParams);
-                    messageContainer.setOrientation(LinearLayout.VERTICAL);
-                    messageContainer.setPadding(16, 12, 16, 12);
-
-                    // Make both AI responses and user messages selectable
-                    boolean isSelectableMessage = (message.role == LLMClient.MessageRole.ASSISTANT ||
-                            message.role == LLMClient.MessageRole.USER);
-                    if (isSelectableMessage) {
-                        messageContainer.setClickable(true);
-                        messageContainer.setFocusable(true);
-
-                        // Set up selection behavior for AI responses and user messages
-                        final int currentMessageIndex = messageIndex;
-                        messageContainer.setOnClickListener(v -> {
-                            selectChatEntry(currentMessageIndex, messageContainer);
-                        });
-                    }
-
-                    // Add alternating background colors for visual distinction
-                    boolean isEvenIndex = (messageIndex % 2 == 0);
-                    int defaultBackgroundColor = isEvenIndex ? 0xFFF8F8F8 : 0xFFFFFFFF; // Light gray vs white
-                    messageContainer.setBackgroundColor(defaultBackgroundColor);
-
-                    // Add rounded corners and subtle border effect
-                    messageContainer.setElevation(2.0f);
-
-                    // Apply selection state if this entry is currently selected (and it's
-                    // selectable)
-                    if (messageIndex == selectedChatEntryIndex && isSelectableMessage) {
-                        messageContainer.setBackgroundColor(0x4400FF00); // Light green selection
-                        selectedChatEntry = messageContainer;
-                    }
-
-                    // Create role label with better styling
-                    TextView roleLabel = new TextView(this);
-                    roleLabel.setLayoutParams(new LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT));
-                    roleLabel.setTextSize(13);
-                    roleLabel.setTypeface(null, android.graphics.Typeface.BOLD);
-                    roleLabel.setPadding(8, 4, 8, 8);
-                    roleLabel.setBackgroundColor(0x15000000); // Very light gray background
-
-                    if (message.role == LLMClient.MessageRole.USER) {
-                        roleLabel.setText("👤 You:");
-                    } else if (message.role == LLMClient.MessageRole.ASSISTANT) {
-                        roleLabel.setText("🤖 AI:");
-                    } else {
-                        roleLabel.setText("⚙️ System:");
-                    }
-                    messageContainer.addView(roleLabel);
-
-                    // Handle system prompts
-                    if (message.role == LLMClient.MessageRole.SYSTEM) {
-                        createSystemPromptView(messageContainer, messageIndex);
-                    } else {
-                        // Handle regular messages with potential code
-                        createMessageView(messageContainer, message, messageIndex);
-                    }
-
-                    chatHistoryLayout.addView(messageContainer);
-                    messageIndex++;
+                // Save the selected message index to the session if we made a selection
+                if (selectedChatEntryIndex >= 0) {
+                    currentSession.setSelectedMessageIndex(selectedChatEntryIndex);
+                    sessionManager.updateSession(currentSession);
+                    Log.d(TAG, "Saved auto-selected message index " + selectedChatEntryIndex + " to session");
                 }
+            }
 
-                // Update action buttons based on selection
-                updateActionButtonsForSelection();
+            // Clear existing views
+            chatHistoryLayout.removeAllViews();
 
-                // Update selection status text
-                updateSelectionStatusText();
+            int messageIndex = 0;
+            for (LLMClient.Message message : messages) {
+                // Create message container with margin for better separation
+                LinearLayout messageContainer = new LinearLayout(this);
+                LinearLayout.LayoutParams containerParams = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                containerParams.setMargins(8, 4, 8, 4); // Add margins between entries
+                messageContainer.setLayoutParams(containerParams);
+                messageContainer.setOrientation(LinearLayout.VERTICAL);
+                messageContainer.setPadding(16, 12, 16, 12);
 
-                // Auto-scroll to bottom after updating chat history only if requested
-                if (autoScroll) {
-                    chatHistoryContainer.post(() -> {
-                        chatHistoryContainer.fullScroll(View.FOCUS_DOWN);
+                // Make both AI responses and user messages selectable
+                boolean isSelectableMessage = (message.role == LLMClient.MessageRole.ASSISTANT ||
+                        message.role == LLMClient.MessageRole.USER);
+                if (isSelectableMessage) {
+                    messageContainer.setClickable(true);
+                    messageContainer.setFocusable(true);
+
+                    // Set up selection behavior for AI responses and user messages
+                    final int currentMessageIndex = messageIndex;
+                    messageContainer.setOnClickListener(v -> {
+                        selectChatEntry(currentMessageIndex, messageContainer);
                     });
                 }
+
+                // Add alternating background colors for visual distinction
+                boolean isEvenIndex = (messageIndex % 2 == 0);
+                int defaultBackgroundColor = isEvenIndex ? 0xFFF8F8F8 : 0xFFFFFFFF; // Light gray vs white
+                messageContainer.setBackgroundColor(defaultBackgroundColor);
+
+                // Add rounded corners and subtle border effect
+                messageContainer.setElevation(2.0f);
+
+                // Apply selection state if this entry is currently selected (and it's
+                // selectable)
+                if (messageIndex == selectedChatEntryIndex && isSelectableMessage) {
+                    messageContainer.setBackgroundColor(0x4400FF00); // Light green selection
+                    selectedChatEntry = messageContainer;
+                }
+
+                // Create role label with better styling
+                TextView roleLabel = new TextView(this);
+                roleLabel.setLayoutParams(new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+                roleLabel.setTextSize(13);
+                roleLabel.setTypeface(null, android.graphics.Typeface.BOLD);
+                roleLabel.setPadding(8, 4, 8, 8);
+                roleLabel.setBackgroundColor(0x15000000); // Very light gray background
+
+                if (message.role == LLMClient.MessageRole.USER) {
+                    roleLabel.setText("👤 You:");
+                } else if (message.role == LLMClient.MessageRole.ASSISTANT) {
+                    roleLabel.setText("🤖 AI:");
+                } else {
+                    roleLabel.setText("⚙️ System:");
+                }
+                messageContainer.addView(roleLabel);
+
+                // Handle system prompts
+                if (message.role == LLMClient.MessageRole.SYSTEM) {
+                    createSystemPromptView(messageContainer, messageIndex);
+                } else {
+                    // Handle regular messages with potential code
+                    createMessageView(messageContainer, message, messageIndex);
+                }
+
+                chatHistoryLayout.addView(messageContainer);
+                messageIndex++;
+            }
+
+            // Update action buttons based on selection
+            updateActionButtonsForSelection();
+
+            // Update selection status text
+            updateSelectionStatusText();
+
+            // Auto-scroll to bottom after updating chat history only if requested
+            if (autoScroll) {
+                chatHistoryContainer.post(() -> {
+                    chatHistoryContainer.fullScroll(View.FOCUS_DOWN);
+                });
             }
         }
     }
@@ -1985,6 +1986,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
      * Handles selection of a chat entry (AI responses and user messages)
      */
     private void selectChatEntry(int messageIndex, LinearLayout messageContainer) {
+
+        assert currentSession != null;
+
         // Clear previous selection by restoring its default background
         if (selectedChatEntry != null) {
             // Calculate the default background for the previously selected entry
@@ -1999,11 +2003,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         messageContainer.setBackgroundColor(0x4400FF00); // Light green selection
 
         // Save selection to session
-        if (currentSession != null) {
-            currentSession.setSelectedMessageIndex(messageIndex);
-            sessionManager.updateSession(currentSession);
-            Log.d(TAG, "Saved selected message index " + messageIndex + " to session");
-        }
+        currentSession.setSelectedMessageIndex(messageIndex);
+        sessionManager.updateSession(currentSession);
+        Log.d(TAG, "Saved selected message index " + messageIndex + " to session");
 
         List<LLMClient.Message> messages = currentSession.getChatHistory();
         LLMClient.Message selectedMessage = messages.get(messageIndex);
@@ -2011,7 +2013,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         Log.d(TAG, "Selected " + selectedMessage.role + " message at index: " + messageIndex);
 
         // Handle different message types for input field population
-        if (currentSession != null && feedbackInput != null && messageIndex >= 0 && messageIndex < messages.size()) {
+        if (feedbackInput != null && messageIndex >= 0 && messageIndex < messages.size()) {
             if (selectedMessage.role == LLMClient.MessageRole.ASSISTANT) {
                 // AI response selected - load iteration-specific error if it exists
                 // Check if this AI response contains code
@@ -2024,7 +2026,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     int selectedIteration = getIterationNumberForMessage(messageIndex);
                     String iterationError = currentSession.getIterationError(selectedIteration);
 
-                    if (iterationError != null && !iterationError.trim().isEmpty()) {
+                    if (iterationError != null && !iterationError.isEmpty()) {
                         // Load the error into the text input
                         feedbackInput.setText(iterationError);
                         feedbackInput.setSelection(iterationError.length()); // Move cursor to end
@@ -2045,7 +2047,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
                 // Pre-fill feedback text
                 String originalFeedback = userMsg.getFeedback();
-                if (originalFeedback != null && !originalFeedback.trim().isEmpty()) {
+                if (originalFeedback != null && !originalFeedback.isEmpty()) {
                     feedbackInput.setText(originalFeedback);
                     feedbackInput.setSelection(originalFeedback.length()); // Move cursor to end
                     Log.d(TAG, "Pre-filled input with original feedback: " + originalFeedback);
@@ -2085,7 +2087,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
      * or user message)
      */
     private void updateActionButtonsForSelection() {
-        if (selectedChatEntryIndex >= 0 && currentSession != null) {
+        assert currentSession != null;
+        if (selectedChatEntryIndex >= 0) {
             List<LLMClient.Message> messages = currentSession.getChatHistory();
             if (selectedChatEntryIndex < messages.size()) {
                 LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
@@ -3217,7 +3220,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         String currentSessionName = currentSession.getSessionName();
         String forkedSessionName = "(fork) " +
-                ((currentSessionName == null || currentSessionName.trim().isEmpty()) ? UNNAMED_SESSION
+                ((currentSessionName == null || currentSessionName.isEmpty()) ? UNNAMED_SESSION
                         : currentSessionName);
 
         List<LLMClient.Message> messages = currentSession.getChatHistory();
@@ -3414,21 +3417,20 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
      * Updates the session name display in the activity title
      */
     private void updateSessionNameDisplay() {
-        if (currentSession != null) {
-            String sessionName = currentSession.getSessionName();
-            if (sessionName == null || sessionName.trim().isEmpty()) {
-                // Use description as fallback or generate a default name
-                sessionName = currentSession.getDescription();
-                if (sessionName == null || sessionName.trim().isEmpty()) {
-                    sessionName = "Untitled Session";
-                }
-                // Truncate if too long for display (action bar titles should be shorter)
-                if (sessionName.length() > 30) {
-                    sessionName = sessionName.substring(0, 27) + "...";
-                }
+        assert currentSession != null;
+        String sessionName = currentSession.getSessionName();
+        if (sessionName == null || sessionName.isEmpty()) {
+            // Use description as fallback or generate a default name
+            sessionName = currentSession.getDescription();
+            if (sessionName == null || sessionName.isEmpty()) {
+                sessionName = "Untitled Session";
             }
-            setTitle(sessionName);
+            // Truncate if too long for display (action bar titles should be shorter)
+            if (sessionName.length() > 30) {
+                sessionName = sessionName.substring(0, 27) + "...";
+            }
         }
+        setTitle(sessionName);
     }
 
     /**
@@ -3464,9 +3466,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Set current session name or description as default
         String currentName = currentSession.getSessionName();
-        if (currentName == null || currentName.trim().isEmpty() || currentName.equals(UNNAMED_SESSION)) {
+        if (currentName == null || currentName.isEmpty() || currentName.equals(UNNAMED_SESSION)) {
             String description = currentSession.getDescription();
-            if (description != null && !description.trim().isEmpty()) {
+            if (description != null && !description.isEmpty()) {
                 // Truncate long descriptions to make reasonable session names
                 if (description.length() > 50) {
                     currentName = description.substring(0, 47) + "...";
