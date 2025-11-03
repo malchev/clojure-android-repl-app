@@ -54,7 +54,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     private LinearLayout chatHistoryLayout;
     private EditText feedbackInput;
     private Button paperclipButton;
-    private ImageView screenshotView;
     private LinearLayout feedbackButtonsContainer;
     private Button thumbsUpButton;
     private Button runButton;
@@ -221,7 +220,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         chatHistoryLayout = findViewById(R.id.chat_history_layout);
         feedbackInput = findViewById(R.id.feedback_input);
         paperclipButton = findViewById(R.id.paperclip_button);
-        screenshotView = findViewById(R.id.screenshot_view);
 
         // Note: currentCodeView and logcatOutput removed as they're now handled in chat
         // history
@@ -336,17 +334,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Make feedback input always visible for chat-like interface
         feedbackInput.setVisibility(View.VISIBLE);
-
-        // Note: screenshotsContainer no longer needed as screenshots are handled via
-        // paperclip button
-
-        // Note: Screenshots now handled via paperclip button in chat input
-
-        // Make sure screenshot view is initially visible
-        if (screenshotView != null) {
-            screenshotView.setVisibility(View.VISIBLE);
-        }
-
     }
 
     /**
@@ -435,21 +422,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 } else {
                     Log.w(TAG, "Screenshot file no longer exists: " + path);
                 }
-            }
-
-            // Only display screenshots if we have valid ones
-            if (!currentScreenshots.isEmpty()) {
-                // Convert to array for display function
-                String[] pathsArray = validPaths.toArray(new String[0]);
-
-                // Display both in the main view and in the container
-                displayScreenshot(currentScreenshots.get(0));
-                Log.d(TAG, "Displayed first screenshot in main view: " + validPaths.get(0));
-
-                displayScreenshots(pathsArray);
-                Log.d(TAG, "Displayed " + pathsArray.length + " screenshots in container");
-            } else {
-                Log.w(TAG, "No valid screenshots to display");
             }
         } else {
             // No screenshots in latest set, clear currentScreenshots
@@ -826,12 +798,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             return;
         }
 
-        // Get the current screenshot if any
-        File currentScreenshot = null;
-        if (!currentScreenshots.isEmpty()) {
-            currentScreenshot = currentScreenshots.get(currentScreenshots.size() - 1);
-        }
-
         // Get the current logcat output from session
         String logcatText = currentSession.getLastLogcat() != null ? currentSession.getLastLogcat() : "";
 
@@ -1093,13 +1059,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         super.onNewIntent(intent);
         Log.d(TAG, "onNewIntent called with intent: " + intent);
 
+        // This is invoked when RenderActivity terminates.  The only reason
+        // RenderActivity was started in the first place was from an active
+        // session.
+        assert currentSession != null;
+
         // Ensure submit button is enabled when returning from RenderActivity
         Button submitFeedbackButton = findViewById(R.id.submit_feedback_button);
         submitFeedbackButton.setEnabled(true);
-
-        // Make sure view containers are visible
-        screenshotView.setVisibility(View.VISIBLE);
-        // Note: screenshotsContainer removed - handled via paperclip
 
         boolean doUpdateSession = false;
         // First check for screenshot data (existing functionality)
@@ -1107,17 +1074,22 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             String[] screenshotPaths = intent.getStringArrayExtra(RenderActivity.EXTRA_RESULT_SCREENSHOT_PATHS);
             Log.d(TAG, "Received " + screenshotPaths.length + " screenshots in onNewIntent");
 
-            // Save the screenshots for future reference
-            // Don't clear if we're adding to the same iteration
-            for (String path : screenshotPaths) {
-                currentScreenshots.add(new File(path));
-            }
-
-            // Display all screenshots
-            displayScreenshots(screenshotPaths);
-
             // Save screenshots to session
-            if (currentSession != null && screenshotPaths.length > 0) {
+            if (screenshotPaths.length > 0) {
+                // Add new screenshots to current screenshots list (don't clear to accumulate
+                // within iteration)
+                for (String path : screenshotPaths) {
+                    File screenshotFile = new File(path);
+                    if (screenshotFile.exists()) {
+                        currentScreenshots.add(screenshotFile);
+                        Log.d(TAG, "Saved screenshot for paperclip selection: " + path);
+                    } else {
+                        Log.e(TAG, "Screenshot file doesn't exist: " + path);
+                    }
+                }
+
+                Log.d(TAG, "Total screenshots available for selection: " + currentScreenshots.size());
+
                 List<String> paths = new ArrayList<>(Arrays.asList(screenshotPaths));
 
                 // Use the correct iteration number for the screenshot set
@@ -1203,67 +1175,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Reset the running iteration after all processing is complete
         currentRunningIteration = -1;
-    }
-
-    // Move screenshot display logic to a separate method
-    private void displayScreenshot(File screenshotFile) {
-        if (screenshotFile == null) {
-            Log.d(TAG, "Screenshot file is null");
-            return;
-        }
-
-        Log.d(TAG, "Displaying screenshot: " + screenshotFile.getAbsolutePath() +
-                " exists: " + screenshotFile.exists());
-
-        try {
-            if (screenshotFile.exists()) {
-                // Load bitmap directly
-                Bitmap bitmap = BitmapFactory.decodeFile(screenshotFile.getAbsolutePath());
-
-                if (bitmap != null) {
-                    // Make sure the view is visible
-                    screenshotView.setVisibility(View.VISIBLE);
-
-                    // Set the bitmap
-                    screenshotView.setImageBitmap(bitmap);
-                    Log.d(TAG, "Successfully loaded screenshot bitmap, dimensions: "
-                            + bitmap.getWidth() + "x" + bitmap.getHeight());
-                } else {
-                    Log.e(TAG, "Failed to decode bitmap from: " + screenshotFile.getAbsolutePath());
-                }
-            } else {
-                Log.e(TAG, "Screenshot file doesn't exist: " + screenshotFile.getAbsolutePath());
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error displaying screenshot", e);
-        }
-    }
-
-    // New method to display multiple screenshots
-    private void displayScreenshots(String[] screenshotPaths) {
-        // Screenshots are now handled via paperclip button in chat input
-        // Just save them to currentScreenshots for selection via paperclip
-
-        if (screenshotPaths == null || screenshotPaths.length == 0) {
-            Log.d(TAG, "No screenshots to save");
-            return;
-        }
-
-        Log.d(TAG, "Saving " + screenshotPaths.length + " screenshots for paperclip selection");
-
-        // Add new screenshots to current screenshots list (don't clear to accumulate
-        // within iteration)
-        for (String path : screenshotPaths) {
-            File screenshotFile = new File(path);
-            if (screenshotFile.exists()) {
-                currentScreenshots.add(screenshotFile);
-                Log.d(TAG, "Saved screenshot for paperclip selection: " + path);
-            } else {
-                Log.e(TAG, "Screenshot file doesn't exist: " + path);
-            }
-        }
-
-        Log.d(TAG, "Total screenshots available for selection: " + currentScreenshots.size());
     }
 
     // Helper method to convert dp to pixels
@@ -2694,76 +2605,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     }
 
     /**
-     * Shows a dialog for selecting a screenshot from the current screenshots
-     */
-    private void showScreenshotSelectionDialog(CheckBox screenshotCheckbox) {
-        if (currentScreenshots.isEmpty()) {
-            Toast.makeText(this, "No screenshots available", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Select Screenshot");
-
-        // Create a horizontal scrollable layout for screenshots
-        LinearLayout container = new LinearLayout(this);
-        container.setOrientation(LinearLayout.HORIZONTAL);
-        container.setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16));
-
-        // Create the dialog first so we can reference it in the click listeners
-        final AlertDialog[] dialogRef = new AlertDialog[1];
-
-        for (int i = 0; i < currentScreenshots.size(); i++) {
-            File screenshot = currentScreenshots.get(i);
-
-            // Create ImageView for each screenshot
-            ImageView imageView = new ImageView(this);
-            imageView.setLayoutParams(new LinearLayout.LayoutParams(
-                    dpToPx(120), dpToPx(200)));
-            imageView.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            imageView.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4));
-            imageView.setBackgroundResource(android.R.drawable.btn_default);
-
-            // Load and set the bitmap
-            try {
-                Bitmap bitmap = BitmapFactory.decodeFile(screenshot.getAbsolutePath());
-                if (bitmap != null) {
-                    imageView.setImageBitmap(bitmap);
-
-                    // Set click listener
-                    final int index = i;
-                    imageView.setOnClickListener(v -> {
-                        selectedScreenshots.clear();
-                        selectedScreenshots.add(screenshot);
-                        Toast.makeText(this, "Screenshot " + (index + 1) + " selected", Toast.LENGTH_SHORT).show();
-                        if (dialogRef[0] != null) {
-                            dialogRef[0].dismiss();
-                        }
-                    });
-
-                    container.addView(imageView);
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Error loading screenshot " + screenshot.getPath(), e);
-            }
-        }
-
-        // Create a HorizontalScrollView to make it horizontally scrollable
-        HorizontalScrollView scrollView = new HorizontalScrollView(this);
-        scrollView.addView(container);
-
-        builder.setView(scrollView);
-        builder.setPositiveButton("OK", (d, which) -> d.dismiss());
-        builder.setNegativeButton("Cancel", (d, which) -> {
-            selectedScreenshots.clear();
-            d.dismiss();
-            screenshotCheckbox.setChecked(false);
-        });
-
-        dialogRef[0] = builder.show();
-    }
-
-    /**
      * Shows screenshot selection dialog for chat input with multi-selection support
      */
     private void showScreenshotSelectionForChat() {
@@ -3069,12 +2910,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Disable other buttons during iteration
         Button submitFeedbackButton = findViewById(R.id.submit_feedback_button);
         submitFeedbackButton.setEnabled(false);
-
-        // Get the current screenshot if any
-        File currentScreenshot = null;
-        if (!currentScreenshots.isEmpty()) {
-            currentScreenshot = currentScreenshots.get(currentScreenshots.size() - 1);
-        }
 
         // Get the current logcat output from session
         String logcatText = currentSession.getLastLogcat() != null ? currentSession.getLastLogcat() : "";
@@ -3624,9 +3459,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 if (screenshotFile.exists()) {
                     currentScreenshots.add(screenshotFile);
                 }
-            }
-            if (!currentScreenshots.isEmpty()) {
-                displayScreenshot(currentScreenshots.get(0));
             }
         }
 
