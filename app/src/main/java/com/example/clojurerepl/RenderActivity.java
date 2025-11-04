@@ -55,6 +55,7 @@ public class RenderActivity extends AppCompatActivity {
     public static final String EXTRA_LAUNCHING_ACTIVITY = "launching_activity";
     public static final String EXTRA_CODE = "code";
     public static final String EXTRA_SESSION_ID = "session_id";
+    public static final String EXTRA_MESSAGE_INDEX = "message_index";
     public static final String EXTRA_ITERATION = "iteration";
     public static final String EXTRA_ENABLE_SCREENSHOTS = "enable_screenshots";
     public static final String EXTRA_PID_FILE = "pid_file";
@@ -65,6 +66,11 @@ public class RenderActivity extends AppCompatActivity {
     public static final String EXTRA_RESULT_ERROR = "result_error";
     public static final String EXTRA_RESULT_TIMINGS = "result_timings";
     public static final String EXTRA_RESULT_AUTO_RETURN_ON_ERROR = "result_return_on_error";
+    // these are copies of EXTRA_SESSION_ID, EXTRA_MESSAGE_INDEX,
+    // EXTRA_ITERATION that we pass back to the caller upon return
+    public static final String EXTRA_RESULT_SESSION_ID  = "result_session_id";
+    public static final String EXTRA_RESULT_MESSAGE_INDEX = "result_message_index";
+    public static final String EXTRA_RESULT_ITERATION = "result_iteration";
 
     private LinearLayout contentLayout;
     private Var contextVar;
@@ -82,6 +88,7 @@ public class RenderActivity extends AppCompatActivity {
 
     // Add fields for session ID and iteration count
     private String sessionId;
+    private int messageIndex;
     private int iteration;
 
     // Add flag for controlling screenshots
@@ -231,7 +238,8 @@ public class RenderActivity extends AppCompatActivity {
 
     public static boolean launch(Context context, Class<?> launchingActivity,
             ExitCallback cb,
-            String code, String sessionId, int iteration, boolean enableScreenshots, boolean returnOnError) {
+            String code, String sessionId, int messageIndex, int iteration,
+            boolean enableScreenshots, boolean returnOnError) {
         try {
             LogcatMonitor logcatMonitor = new LogcatMonitor();
 
@@ -291,6 +299,7 @@ public class RenderActivity extends AppCompatActivity {
             Intent launchIntent = new Intent(context, RenderActivity.class);
             launchIntent.putExtra(RenderActivity.EXTRA_CODE, code);
             launchIntent.putExtra(RenderActivity.EXTRA_SESSION_ID, sessionId);
+            launchIntent.putExtra(RenderActivity.EXTRA_MESSAGE_INDEX, messageIndex);
             launchIntent.putExtra(RenderActivity.EXTRA_ITERATION, iteration);
             launchIntent.putExtra(RenderActivity.EXTRA_ENABLE_SCREENSHOTS, enableScreenshots);
             launchIntent.putExtra(RenderActivity.EXTRA_AUTO_RETURN_ON_ERROR, returnOnError);
@@ -377,11 +386,13 @@ public class RenderActivity extends AppCompatActivity {
                 assert parentActivity != null;
                 Class<?> parentActivityClass = getParentActivityClass();
 
-                // Extract session ID and iteration count from intent
+                // Extract session ID, message index, and iteration count from intent
                 sessionId = intent.getStringExtra(EXTRA_SESSION_ID);
                 assert sessionId != null;
+                messageIndex = intent.getIntExtra(EXTRA_MESSAGE_INDEX, 0);
                 iteration = intent.getIntExtra(EXTRA_ITERATION, 0);
-                Log.d(TAG, "Session ID: " + sessionId + ", Iteration: " + iteration);
+                Log.d(TAG, "Session ID: " + sessionId + ", Message index: " +
+                        messageIndex + ", Iteration: " + iteration);
 
                 // Extract screenshot flag from intent
                 screenshotsEnabled = intent.getBooleanExtra(EXTRA_ENABLE_SCREENSHOTS, false);
@@ -514,6 +525,10 @@ public class RenderActivity extends AppCompatActivity {
                 parentIntent.putExtra(EXTRA_RESULT_ERROR, clojureStatus);
                 parentIntent.putExtra(EXTRA_RESULT_AUTO_RETURN_ON_ERROR, false);
             }
+
+            parentIntent.putExtra(EXTRA_RESULT_SESSION_ID, sessionId);
+            parentIntent.putExtra(EXTRA_RESULT_MESSAGE_INDEX, messageIndex);
+            parentIntent.putExtra(EXTRA_RESULT_ITERATION, iteration);
 
             startActivity(parentIntent);
 
@@ -808,6 +823,9 @@ public class RenderActivity extends AppCompatActivity {
                 intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
                 intent.putExtra(EXTRA_RESULT_ERROR, errorMessage);
                 intent.putExtra(EXTRA_RESULT_AUTO_RETURN_ON_ERROR, returnOnError);
+                intent.putExtra(EXTRA_RESULT_SESSION_ID, sessionId);
+                intent.putExtra(EXTRA_RESULT_MESSAGE_INDEX, messageIndex);
+                intent.putExtra(EXTRA_RESULT_ITERATION, iteration);
                 startActivity(intent);
                 finish();
             }

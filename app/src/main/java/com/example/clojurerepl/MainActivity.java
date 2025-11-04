@@ -235,6 +235,7 @@ public class MainActivity extends AppCompatActivity {
                 code,
                 UUID.randomUUID().toString(),
                 0,
+                0,
                 false, // do not collect screenshots
                 false); // do not return on error
     }

@@ -1047,6 +1047,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         int selectedMessageIndex = currentSession.getSelectedMessageIndex();
         int currentRunningIteration = getIterationNumberForMessage(selectedMessageIndex);
 
+        // Get the session ID, message index, and iteration count back from RenderActivity.
+        String UUIDStr = intent.getStringExtra(RenderActivity.EXTRA_RESULT_SESSION_ID);
+        assert currentSession.getId().equals(UUID.fromString(UUIDStr));
+        int iteration = intent.getIntExtra(RenderActivity.EXTRA_RESULT_ITERATION, -1);
+        assert iteration == currentRunningIteration;
+        int codeMessageIndex = intent.getIntExtra(RenderActivity.EXTRA_RESULT_MESSAGE_INDEX, -1);
+
         // First check for screenshot data (existing functionality)
         if (intent.hasExtra(RenderActivity.EXTRA_RESULT_SCREENSHOT_PATHS)) {
             String[] screenshotPaths = intent.getStringArrayExtra(RenderActivity.EXTRA_RESULT_SCREENSHOT_PATHS);
@@ -1544,6 +1551,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 },
                 codeToRun,
                 currentSession.getId().toString(),
+                codeMessageIndex,
                 selectedIteration, // Use the correct iteration number
                 true,
                 returnOnError); // Enable return_on_error flag
