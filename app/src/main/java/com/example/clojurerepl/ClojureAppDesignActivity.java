@@ -96,11 +96,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     private int selectedChatEntryIndex = -1;
     private LinearLayout selectedChatEntry = null;
 
-    // Track the iteration number for the currently running code.  It's derived
-    // from selectedChatEntryIndex in runSelectedCode() and used in
-    // onNewIntent(), then set to -1 again.
-    private int currentRunningIteration = -1;
-
     // Add a flag to track when the models are loaded
     private boolean modelsLoaded = false;
 
@@ -1048,6 +1043,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         submitFeedbackButton.setEnabled(true);
 
         boolean doUpdateSession = false;
+
+        int selectedMessageIndex = currentSession.getSelectedMessageIndex();
+        int currentRunningIteration = getIterationNumberForMessage(selectedMessageIndex);
+
         // First check for screenshot data (existing functionality)
         if (intent.hasExtra(RenderActivity.EXTRA_RESULT_SCREENSHOT_PATHS)) {
             String[] screenshotPaths = intent.getStringArrayExtra(RenderActivity.EXTRA_RESULT_SCREENSHOT_PATHS);
@@ -1056,17 +1055,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             // Save screenshots to session
             if (screenshotPaths.length > 0) {
                 List<String> paths = new ArrayList<>(Arrays.asList(screenshotPaths));
-
-                // Use the correct iteration number for the screenshot set
-                if (currentRunningIteration > 0) {
-                    currentSession.addScreenshotSet(paths, currentRunningIteration);
-                    Log.d(TAG, "Added a new set of " + paths.size() + " screenshots to session for iteration "
-                            + currentRunningIteration);
-                } else {
-                    // Fallback to legacy method if iteration number not available
-                    currentSession.addScreenshotSet(paths);
-                    Log.w(TAG, "Added screenshots using legacy method (iteration number not available)");
-                }
+                currentSession.addScreenshotSet(paths, currentRunningIteration);
+                Log.d(TAG, "Added a new set of " + paths.size() + " screenshots to session for iteration "
+                        + currentRunningIteration);
                 doUpdateSession = true;
                 // Update paperclip button state now that we have screenshots
                 updatePaperclipButtonState();
@@ -1131,9 +1122,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         if (doUpdateSession) {
             sessionManager.updateSession(currentSession);
         }
-
-        // Reset the running iteration after all processing is complete
-        currentRunningIteration = -1;
     }
 
     // Helper method to convert dp to pixels
@@ -1534,9 +1522,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Calculate the correct iteration number for the code message
         int selectedIteration = getIterationNumberForMessage(codeMessageIndex);
-
-        // Store the iteration number for use when screenshots are returned
-        currentRunningIteration = selectedIteration;
 
         Log.d(TAG,
                 "Running code from iteration " + selectedIteration + " (AI response at index " + codeMessageIndex +

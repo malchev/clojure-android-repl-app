@@ -42,6 +42,8 @@ public class DesignSession {
     private String lastLogcat;
     private String lastErrorFeedback;
     private boolean hasError;
+    // screenshotSets and screenshotSetIterations are not serialized to/from
+    // JSON.  They are reconstructed from a filesystem scan.
     private List<List<String>> screenshotSets;
     private List<Integer> screenshotSetIterations; // Tracks which iteration each screenshot set belongs to
     private String currentInputText;
