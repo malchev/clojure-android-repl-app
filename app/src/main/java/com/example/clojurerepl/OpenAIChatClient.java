@@ -190,10 +190,28 @@ public class OpenAIChatClient extends LLMClient {
     }
 
     @Override
-    protected CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session) {
+    protected CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session, MessageFilter messageFilter) {
         Log.d(TAG, "Sending " + session.getMessages().size() + " messages in session: " + session.getSessionId());
+
+        // Cancel any existing request
+        cancelCurrentRequest();
+
+        // Filter messages if filter is provided
+        final List<Message> messagesToSend;
+        if (messageFilter != null) {
+            messagesToSend = new ArrayList<>();
+            for (Message msg : session.getMessages()) {
+                if (messageFilter.shouldSend(msg)) {
+                    messagesToSend.add(msg);
+                }
+            }
+            Log.d(TAG, "Filtered messages: " + session.getMessages().size() + " -> " + messagesToSend.size());
+        } else {
+            messagesToSend = session.getMessages();
+        }
+
         // Print the message types and the first 50 characters of the content
-        for (Message msg : session.getMessages()) {
+        for (Message msg : messagesToSend) {
             // Use the same role mapping as the API call for consistent logging
             String openaiRole;
             if (MessageRole.SYSTEM.equals(msg.role)) {
@@ -210,9 +228,6 @@ public class OpenAIChatClient extends LLMClient {
             Log.d(TAG, "Message type: " + openaiRole + ", content: " + msg.content);
         }
 
-        // Cancel any existing request
-        cancelCurrentRequest();
-
         // Create a new cancellable future
         CancellableCompletableFuture<AssistantResponse> future = new CancellableCompletableFuture<>();
         currentRequest.set(future);
@@ -225,7 +240,7 @@ public class OpenAIChatClient extends LLMClient {
                     return;
                 }
 
-                String response = callOpenAIAPI(session.getMessages(), future);
+                String response = callOpenAIAPI(messagesToSend, future);
 
                 // Check if cancelled after API call
                 if (future.isCancelled()) {

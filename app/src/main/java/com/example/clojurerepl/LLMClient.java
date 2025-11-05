@@ -712,14 +712,31 @@ public abstract class LLMClient {
     }
 
     /**
+     * Functional interface for filtering messages before sending to the LLM
+     */
+    @FunctionalInterface
+    public interface MessageFilter {
+        /**
+         * Determines whether a message should be sent to the LLM
+         *
+         * @param message The message to check
+         * @return true if the message should be sent, false to filter it out
+         */
+        boolean shouldSend(Message message);
+    }
+
+    /**
      * Sends messages from a chat session to the appropriate API
      * This method must be implemented by each LLMClient subclass
      *
-     * @param session The chat session containing messages to send
+     * @param session       The chat session containing messages to send
+     * @param messageFilter A filter that determines which messages to send. If
+     *                      null, all messages are sent.
      * @return A CancellableCompletableFuture containing the API response as an
      *         AssistantResponse
      */
-    protected abstract CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session);
+    protected abstract CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session,
+            MessageFilter messageFilter);
 
     /**
      * Clears the API key for this client type

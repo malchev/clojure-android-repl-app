@@ -614,8 +614,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         String prompt = iterationManager.getLLMClient().formatInitialPrompt(description, initialCode);
         chatSession.queueUserMessage(new LLMClient.UserMessage(prompt, null, null, initialCode));
 
-        // Call sendMessages directly
-        iterationManager.sendMessages(chatSession)
+        // Call sendMessages directly with a filter that permits all messages
+        iterationManager.sendMessages(chatSession, message -> true)
                 .thenAccept(assistantMessage -> {
                     // Queue the assistant response to the chat session
                     chatSession.queueAssistantResponse(assistantMessage);
@@ -840,8 +840,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         LLMClient.UserMessage userMessage = new LLMClient.UserMessage(prompt, images, logcatText, feedback, null);
         chatSession.queueUserMessage(userMessage);
 
-        // Call sendMessages directly
-        iterationManager.sendMessages(chatSession)
+        // Call sendMessages directly with a filter that permits all messages
+        iterationManager.sendMessages(chatSession, message -> true)
                 .thenAccept(assistantMessage -> {
                     // Queue the assistant response to the chat session
                     chatSession.queueAssistantResponse(assistantMessage);
@@ -2885,8 +2885,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 errorFeedback, null);
         chatSession.queueUserMessage(userMessage);
 
-        // Call sendMessages directly
-        iterationManager.sendMessages(chatSession)
+        // Call sendMessages directly with a filter that permits all messages
+        iterationManager.sendMessages(chatSession, message -> true)
                 .thenAccept(assistantMessage -> {
                     // Queue the assistant response to the chat session
                     chatSession.queueAssistantResponse(assistantMessage);

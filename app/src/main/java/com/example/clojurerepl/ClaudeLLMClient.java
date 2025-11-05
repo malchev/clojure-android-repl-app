@@ -65,7 +65,7 @@ public class ClaudeLLMClient extends LLMClient {
     }
 
     @Override
-    protected CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session) {
+    protected CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session, MessageFilter messageFilter) {
         Log.d(TAG,
                 "DEBUG: ClaudeLLMClient.sendMessages called with " + session.getMessages().size()
                         + " messages in session: "
@@ -74,12 +74,26 @@ public class ClaudeLLMClient extends LLMClient {
         // Cancel any existing request
         cancelCurrentRequest();
 
+        // Filter messages if filter is provided
+        final List<Message> messagesToSend;
+        if (messageFilter != null) {
+            messagesToSend = new ArrayList<>();
+            for (Message msg : session.getMessages()) {
+                if (messageFilter.shouldSend(msg)) {
+                    messagesToSend.add(msg);
+                }
+            }
+            Log.d(TAG, "Filtered messages: " + session.getMessages().size() + " -> " + messagesToSend.size());
+        } else {
+            messagesToSend = session.getMessages();
+        }
+
         // Create a new cancellable future
         CancellableCompletableFuture<AssistantResponse> future = new CancellableCompletableFuture<>();
         currentRequest.set(future);
 
         // Log message types and short previews for debugging
-        for (Message msg : session.getMessages()) {
+        for (Message msg : messagesToSend) {
             String preview = msg.content.length() > 50 ? msg.content.substring(0, 50) + "..." : msg.content;
             // Use the same role mapping as the API call for consistent logging
             String claudeRole;
@@ -108,7 +122,7 @@ public class ClaudeLLMClient extends LLMClient {
                 Log.d(TAG, "DEBUG: About to call Claude API in thread: " + Thread.currentThread().getName());
                 String response = null;
                 try {
-                    response = callClaudeAPI(session.getMessages(), future);
+                    response = callClaudeAPI(messagesToSend, future);
                     Log.d(TAG, "DEBUG: Claude API call completed successfully");
                 } catch (Exception e) {
                     Log.e(TAG, "ERROR: callClaudeAPI failed", e);

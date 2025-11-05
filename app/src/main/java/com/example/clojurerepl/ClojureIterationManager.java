@@ -32,11 +32,12 @@ public class ClojureIterationManager {
      * Sends messages using the LLM client and returns a cancellable future
      * 
      * @param chatSession The chat session containing messages to send
+     * @param messageFilter A filter that determines which messages to send. If null, all messages are sent.
      * @return A CancellableCompletableFuture that will be completed with the
      *         AssistantResponse
      */
     public LLMClient.CancellableCompletableFuture<LLMClient.AssistantResponse> sendMessages(
-            LLMClient.ChatSession chatSession) {
+            LLMClient.ChatSession chatSession, LLMClient.MessageFilter messageFilter) {
         // Cancel any previous request that might be running
         if (currentFuture != null && !currentFuture.isDone()) {
             currentFuture.cancel(true);
@@ -45,7 +46,7 @@ public class ClojureIterationManager {
         Log.d(TAG, "Sending messages to LLM client");
 
         // Call sendMessages directly and store the future
-        currentFuture = llmClient.sendMessages(chatSession);
+        currentFuture = llmClient.sendMessages(chatSession, messageFilter);
 
         return currentFuture;
     }

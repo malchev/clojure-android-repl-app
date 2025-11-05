@@ -479,12 +479,26 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     @Override
-    protected CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session) {
+    protected CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session, MessageFilter messageFilter) {
         Log.d(TAG, "Sending " + session.getMessages().size() + " messages in session: " + session.getSessionId());
         Log.d(TAG, "System prompt available: " + (session.hasSystemPrompt() ? "yes" : "no"));
 
         // Cancel any existing request
         cancelCurrentRequest();
+
+        // Filter messages if filter is provided
+        final List<Message> messagesToSend;
+        if (messageFilter != null) {
+            messagesToSend = new ArrayList<>();
+            for (Message msg : session.getMessages()) {
+                if (messageFilter.shouldSend(msg)) {
+                    messagesToSend.add(msg);
+                }
+            }
+            Log.d(TAG, "Filtered messages: " + session.getMessages().size() + " -> " + messagesToSend.size());
+        } else {
+            messagesToSend = session.getMessages();
+        }
 
         // Create a new cancellable future
         CancellableCompletableFuture<AssistantResponse> future = new CancellableCompletableFuture<>();
@@ -498,8 +512,8 @@ public class GeminiLLMClient extends LLMClient {
                     return;
                 }
 
-                // Call the API with the full context including system prompt
-                String response = callGeminiAPI(session.getMessages(), session.getSystemPrompt(), future);
+                // Call the API with the filtered messages and system prompt
+                String response = callGeminiAPI(messagesToSend, session.getSystemPrompt(), future);
 
                 // Check if cancelled after API call
                 if (future.isCancelled()) {

@@ -19,8 +19,22 @@ public class StubLLMClient extends LLMClient {
     }
 
     @Override
-    protected CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session) {
+    protected CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session, MessageFilter messageFilter) {
         Log.d(TAG, "Sending " + session.getMessages().size() + " messages in stub session: " + session.getSessionId());
+
+        // Filter messages if filter is provided
+        final List<Message> messagesToSend;
+        if (messageFilter != null) {
+            messagesToSend = new ArrayList<>();
+            for (Message msg : session.getMessages()) {
+                if (messageFilter.shouldSend(msg)) {
+                    messagesToSend.add(msg);
+                }
+            }
+            Log.d(TAG, "Filtered messages: " + session.getMessages().size() + " -> " + messagesToSend.size());
+        } else {
+            messagesToSend = session.getMessages();
+        }
 
         CancellableCompletableFuture<AssistantResponse> future = new CancellableCompletableFuture<>();
 
@@ -34,9 +48,9 @@ public class StubLLMClient extends LLMClient {
 
                 // Find the latest user message
                 String userMessage = "";
-                for (int i = session.getMessages().size() - 1; i >= 0; i--) {
-                    if (MessageRole.USER.equals(session.getMessages().get(i).role)) {
-                        userMessage = session.getMessages().get(i).content;
+                for (int i = messagesToSend.size() - 1; i >= 0; i--) {
+                    if (MessageRole.USER.equals(messagesToSend.get(i).role)) {
+                        userMessage = messagesToSend.get(i).content;
                         break;
                     }
                 }
