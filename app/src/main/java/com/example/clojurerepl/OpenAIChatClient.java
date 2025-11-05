@@ -238,9 +238,6 @@ public class OpenAIChatClient extends LLMClient {
                 // Create AssistantResponse with model information
                 AssistantResponse assistantResponse = new AssistantResponse(response, getType(), getModel());
 
-                // Add assistant response to history
-                session.queueAssistantResponse(assistantResponse);
-
                 future.complete(assistantResponse);
             } catch (Exception e) {
                 // Check if this is a cancellation exception, which is expected behavior

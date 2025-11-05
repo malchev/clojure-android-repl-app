@@ -53,9 +53,6 @@ public class StubLLMClient extends LLMClient {
                 // Create AssistantResponse with model information
                 AssistantResponse assistantResponse = new AssistantResponse(response, getType(), getModel());
 
-                // Add assistant response to history
-                session.queueAssistantResponse(assistantResponse);
-
                 future.complete(assistantResponse);
             } catch (Exception e) {
                 Log.e(TAG, "Error in stub chat session", e);

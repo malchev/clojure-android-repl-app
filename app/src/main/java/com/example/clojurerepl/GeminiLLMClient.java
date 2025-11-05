@@ -510,9 +510,6 @@ public class GeminiLLMClient extends LLMClient {
                 // Create AssistantResponse with model information
                 AssistantResponse assistantResponse = new AssistantResponse(response, getType(), getModel());
 
-                // Save the assistant response to history
-                session.queueAssistantResponse(assistantResponse);
-
                 // Complete the future with the AssistantResponse
                 future.complete(assistantResponse);
             } catch (Exception e) {

@@ -617,6 +617,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Call sendMessages directly
         iterationManager.sendMessages(chatSession)
                 .thenAccept(assistantMessage -> {
+                    // Queue the assistant response to the chat session
+                    chatSession.queueAssistantResponse(assistantMessage);
+
                     String code = assistantMessage.getExtractedCode();
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
@@ -840,6 +843,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Call sendMessages directly
         iterationManager.sendMessages(chatSession)
                 .thenAccept(assistantMessage -> {
+                    // Queue the assistant response to the chat session
+                    chatSession.queueAssistantResponse(assistantMessage);
+
                     String code = assistantMessage.getExtractedCode();
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
@@ -2882,6 +2888,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Call sendMessages directly
         iterationManager.sendMessages(chatSession)
                 .thenAccept(assistantMessage -> {
+                    // Queue the assistant response to the chat session
+                    chatSession.queueAssistantResponse(assistantMessage);
+
                     String code = assistantMessage.getExtractedCode();
                     runOnUiThread(() -> {
                         // Clear the flag, which we set only at the top of this method.

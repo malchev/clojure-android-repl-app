@@ -132,9 +132,6 @@ public class ClaudeLLMClient extends LLMClient {
                 // Create AssistantResponse with model information
                 AssistantResponse assistantResponse = new AssistantResponse(response, getType(), getModel());
 
-                // Add assistant response to history
-                session.queueAssistantResponse(assistantResponse);
-
                 future.complete(assistantResponse);
             } catch (Exception e) {
                 Log.e(TAG, "ERROR: Exception in sendMessages CompletableFuture", e);
