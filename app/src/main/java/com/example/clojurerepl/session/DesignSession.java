@@ -106,7 +106,7 @@ public class DesignSession {
         List<String> code = new ArrayList<>();
         for (LLMClient.Message message : chatSession.getMessages()) {
             if (LLMClient.MessageRole.ASSISTANT.equals(message.role)) {
-                LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) message;
+                LLMClient.AssistantResponse assistantMsg = (LLMClient.AssistantResponse) message;
                 String extractedCode = assistantMsg.getExtractedCode();
                 if (extractedCode != null && !extractedCode.isEmpty()) {
                     code.add(extractedCode);
@@ -559,9 +559,9 @@ public class DesignSession {
             messageJson.put("role", message.role.getApiValue());
             messageJson.put("content", message.content);
 
-            // Add model information and extracted code for assistant messages
+            // Add model information and extracted code for assistant responses
             if (message.role == LLMClient.MessageRole.ASSISTANT) {
-                LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) message;
+                LLMClient.AssistantResponse assistantMsg = (LLMClient.AssistantResponse) message;
                 if (assistantMsg.getModelProvider() != null && assistantMsg.getModelName() != null) {
                     messageJson.put("modelProvider", assistantMsg.getModelProvider().name());
                     messageJson.put("modelName", assistantMsg.getModelName());
@@ -724,7 +724,7 @@ public class DesignSession {
                     role = LLMClient.MessageRole.USER;
                 }
 
-                // Get model information for assistant messages
+                // Get model information for assistant responses
                 LLMClientFactory.LLMType modelProvider = null;
                 String modelName = null;
                 if (role == LLMClient.MessageRole.ASSISTANT && messageJson.has("modelProvider")
@@ -766,7 +766,7 @@ public class DesignSession {
                         }
 
                         // Use constructor with explicit CodeExtractionResult
-                        chatHistory.add(new LLMClient.AssistantMessage(content, modelProvider, modelName, codeResult));
+                        chatHistory.add(new LLMClient.AssistantResponse(content, modelProvider, modelName, codeResult));
                     } else if (messageJson.has("extractedCode")) {
                         // TODO(extractedCode): remove this else if
                         // Backwards compatibility: old format with just extractedCode
@@ -775,14 +775,14 @@ public class DesignSession {
 
                         // Use backwards compatibility constructor with extractedCode string
                         chatHistory
-                                .add(new LLMClient.AssistantMessage(content, modelProvider, modelName, extractedCode));
+                                .add(new LLMClient.AssistantResponse(content, modelProvider, modelName, extractedCode));
                     } else {
                         // For compatibility: no code field exists, use regular constructor (which will
                         // auto-extract)
                         if (modelProvider != null && modelName != null) {
-                            chatHistory.add(new LLMClient.AssistantMessage(content, modelProvider, modelName));
+                            chatHistory.add(new LLMClient.AssistantResponse(content, modelProvider, modelName));
                         } else {
-                            chatHistory.add(new LLMClient.AssistantMessage(content));
+                            chatHistory.add(new LLMClient.AssistantResponse(content));
                         }
                     }
                 } else if (role == LLMClient.MessageRole.USER) {
@@ -872,7 +872,7 @@ public class DesignSession {
                 LLMClient.UserMessage userMsg = (LLMClient.UserMessage) message;
                 session.chatSession.queueUserMessage(userMsg);
             } else if (LLMClient.MessageRole.ASSISTANT.equals(message.role)) {
-                LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) message;
+                LLMClient.AssistantResponse assistantMsg = (LLMClient.AssistantResponse) message;
                 session.chatSession.queueAssistantResponse(assistantMsg);
                 String extractedCode = assistantMsg.getExtractedCode();
                 if (extractedCode != null && !extractedCode.isEmpty()) {

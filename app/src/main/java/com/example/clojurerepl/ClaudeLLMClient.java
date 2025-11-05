@@ -34,7 +34,7 @@ public class ClaudeLLMClient extends LLMClient {
     private String currentModel = null;
 
     // Track the current request for cancellation
-    private final AtomicReference<CancellableCompletableFuture<AssistantMessage>> currentRequest = new AtomicReference<>();
+    private final AtomicReference<CancellableCompletableFuture<AssistantResponse>> currentRequest = new AtomicReference<>();
 
     // Static cache for available models
     private static List<String> cachedModels = null;
@@ -65,7 +65,7 @@ public class ClaudeLLMClient extends LLMClient {
     }
 
     @Override
-    protected CancellableCompletableFuture<AssistantMessage> sendMessages(ChatSession session) {
+    protected CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session) {
         Log.d(TAG,
                 "DEBUG: ClaudeLLMClient.sendMessages called with " + session.getMessages().size()
                         + " messages in session: "
@@ -75,7 +75,7 @@ public class ClaudeLLMClient extends LLMClient {
         cancelCurrentRequest();
 
         // Create a new cancellable future
-        CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantResponse> future = new CancellableCompletableFuture<>();
         currentRequest.set(future);
 
         // Log message types and short previews for debugging
@@ -129,13 +129,13 @@ public class ClaudeLLMClient extends LLMClient {
                                 ? (response.length() > 1000 ? response.substring(0, 1000) + "..." : response)
                                 : "NULL RESPONSE"));
 
-                // Create AssistantMessage with model information
-                AssistantMessage assistantMessage = new AssistantMessage(response, getType(), getModel());
+                // Create AssistantResponse with model information
+                AssistantResponse assistantResponse = new AssistantResponse(response, getType(), getModel());
 
-                // Add assistant message to history
-                session.queueAssistantResponse(assistantMessage);
+                // Add assistant response to history
+                session.queueAssistantResponse(assistantResponse);
 
-                future.complete(assistantMessage);
+                future.complete(assistantResponse);
             } catch (Exception e) {
                 Log.e(TAG, "ERROR: Exception in sendMessages CompletableFuture", e);
                 // Check if this is a cancellation exception, which is expected behavior
@@ -178,7 +178,7 @@ public class ClaudeLLMClient extends LLMClient {
 
     @Override
     public boolean cancelCurrentRequest() {
-        CancellableCompletableFuture<AssistantMessage> request = currentRequest.get();
+        CancellableCompletableFuture<AssistantResponse> request = currentRequest.get();
         if (request != null && !request.isCancelledOrCompleted()) {
             Log.d(TAG, "Cancelling current Claude API request");
             boolean cancelled = request.cancel(true);
@@ -192,7 +192,7 @@ public class ClaudeLLMClient extends LLMClient {
      * Helper method to call the Claude API with message history.
      * Claude API requires converting multiple messages into a special format.
      */
-    private String callClaudeAPI(List<Message> history, CancellableCompletableFuture<AssistantMessage> future) {
+    private String callClaudeAPI(List<Message> history, CancellableCompletableFuture<AssistantResponse> future) {
         try {
             Log.d(TAG, "DEBUG: callClaudeAPI started in thread: " + Thread.currentThread().getName());
             Log.d(TAG, "=== Calling Claude API ===");

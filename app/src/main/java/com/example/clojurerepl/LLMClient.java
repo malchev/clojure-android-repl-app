@@ -399,20 +399,20 @@ public abstract class LLMClient {
         }
     }
 
-    // Assistant message - can have model provider info
-    public static class AssistantMessage extends Message {
+    // Assistant response - can have model provider info
+    public static class AssistantResponse extends Message {
         public final LLMClientFactory.LLMType modelProvider;
         public final String modelName;
         public final CodeExtractionResult codeExtractionResult; // Complete code extraction result
 
-        public AssistantMessage(String content) {
+        public AssistantResponse(String content) {
             super(MessageRole.ASSISTANT, content);
             this.modelProvider = null;
             this.modelName = null;
             this.codeExtractionResult = extractClojureCode(content);
         }
 
-        public AssistantMessage(String content, LLMClientFactory.LLMType modelProvider, String modelName) {
+        public AssistantResponse(String content, LLMClientFactory.LLMType modelProvider, String modelName) {
             super(MessageRole.ASSISTANT, content);
             this.modelProvider = modelProvider;
             this.modelName = modelName;
@@ -422,7 +422,7 @@ public abstract class LLMClient {
         /**
          * Constructor for deserialization with explicit code extraction result
          */
-        public AssistantMessage(String content, LLMClientFactory.LLMType modelProvider, String modelName,
+        public AssistantResponse(String content, LLMClientFactory.LLMType modelProvider, String modelName,
                 CodeExtractionResult codeExtractionResult) {
             super(MessageRole.ASSISTANT, content);
             this.modelProvider = modelProvider;
@@ -434,7 +434,7 @@ public abstract class LLMClient {
          * Constructor for backwards compatibility with extractedCode string
          * TODO(extractedCode): remove this else if
          */
-        public AssistantMessage(String content, LLMClientFactory.LLMType modelProvider, String modelName,
+        public AssistantResponse(String content, LLMClientFactory.LLMType modelProvider, String modelName,
                 String extractedCode) {
             super(MessageRole.ASSISTANT, content);
             this.modelProvider = modelProvider;
@@ -448,7 +448,7 @@ public abstract class LLMClient {
         }
 
         /**
-         * Get the model provider for this assistant message
+         * Get the model provider for this assistant response
          * 
          * @return The model provider, or null if not set
          */
@@ -457,7 +457,7 @@ public abstract class LLMClient {
         }
 
         /**
-         * Get the model name for this assistant message
+         * Get the model name for this assistant response
          * 
          * @return The model name, or null if not set
          */
@@ -466,7 +466,7 @@ public abstract class LLMClient {
         }
 
         /**
-         * Get the extracted code for this assistant message
+         * Get the extracted code for this assistant response
          *
          * @return The extracted Clojure code, or null if no code was found
          */
@@ -479,7 +479,7 @@ public abstract class LLMClient {
         }
 
         /**
-         * Get the complete code extraction result for this assistant message
+         * Get the complete code extraction result for this assistant response
          *
          * @return The CodeExtractionResult containing code, text before/after, and
          *         success status
@@ -623,15 +623,15 @@ public abstract class LLMClient {
         }
 
         /**
-         * Queues an assistant message object directly to the chat session
+         * Queues an assistant response object directly to the chat session
          *
-         * @param assistantMessage The AssistantMessage object to queue
+         * @param assistantResponse The AssistantResponse object to queue
          */
-        public void queueAssistantResponse(AssistantMessage assistantMessage) {
-            Log.d(TAG, "Queuing assistant message object in session: " + sessionId +
-                    " (provider: " + assistantMessage.getModelProvider() +
-                    ", model: " + assistantMessage.getModelName() + ")");
-            messages.add(assistantMessage);
+        public void queueAssistantResponse(AssistantResponse assistantResponse) {
+            Log.d(TAG, "Queuing assistant response object in session: " + sessionId +
+                    " (provider: " + assistantResponse.getModelProvider() +
+                    ", model: " + assistantResponse.getModelName() + ")");
+            messages.add(assistantResponse);
         }
 
         /**
@@ -717,9 +717,9 @@ public abstract class LLMClient {
      *
      * @param session The chat session containing messages to send
      * @return A CancellableCompletableFuture containing the API response as an
-     *         AssistantMessage
+     *         AssistantResponse
      */
-    protected abstract CancellableCompletableFuture<AssistantMessage> sendMessages(ChatSession session);
+    protected abstract CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session);
 
     /**
      * Clears the API key for this client type

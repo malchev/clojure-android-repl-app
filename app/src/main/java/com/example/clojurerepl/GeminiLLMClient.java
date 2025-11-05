@@ -38,7 +38,7 @@ public class GeminiLLMClient extends LLMClient {
     private static final int RETRY_DELAY_MS = 2000; // 2 seconds between retries
 
     // Track the current request for cancellation
-    private final AtomicReference<CancellableCompletableFuture<AssistantMessage>> currentRequest = new AtomicReference<>();
+    private final AtomicReference<CancellableCompletableFuture<AssistantResponse>> currentRequest = new AtomicReference<>();
 
     // Static cache for available models
     private static List<String> cachedModels = null;
@@ -479,7 +479,7 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     @Override
-    protected CancellableCompletableFuture<AssistantMessage> sendMessages(ChatSession session) {
+    protected CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session) {
         Log.d(TAG, "Sending " + session.getMessages().size() + " messages in session: " + session.getSessionId());
         Log.d(TAG, "System prompt available: " + (session.hasSystemPrompt() ? "yes" : "no"));
 
@@ -487,7 +487,7 @@ public class GeminiLLMClient extends LLMClient {
         cancelCurrentRequest();
 
         // Create a new cancellable future
-        CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantResponse> future = new CancellableCompletableFuture<>();
         currentRequest.set(future);
 
         CompletableFuture.runAsync(() -> {
@@ -507,14 +507,14 @@ public class GeminiLLMClient extends LLMClient {
                     return;
                 }
 
-                // Create AssistantMessage with model information
-                AssistantMessage assistantMessage = new AssistantMessage(response, getType(), getModel());
+                // Create AssistantResponse with model information
+                AssistantResponse assistantResponse = new AssistantResponse(response, getType(), getModel());
 
-                // Save the assistant message to history
-                session.queueAssistantResponse(assistantMessage);
+                // Save the assistant response to history
+                session.queueAssistantResponse(assistantResponse);
 
-                // Complete the future with the AssistantMessage
-                future.complete(assistantMessage);
+                // Complete the future with the AssistantResponse
+                future.complete(assistantResponse);
             } catch (Exception e) {
                 // Check if this is a cancellation exception, which is expected behavior
                 if (e instanceof CancellationException ||
@@ -556,7 +556,7 @@ public class GeminiLLMClient extends LLMClient {
 
     @Override
     public boolean cancelCurrentRequest() {
-        CancellableCompletableFuture<AssistantMessage> request = currentRequest.get();
+        CancellableCompletableFuture<AssistantResponse> request = currentRequest.get();
         if (request != null && !request.isCancelledOrCompleted()) {
             Log.d(TAG, "Cancelling current Gemini API request");
             boolean cancelled = request.cancel(true);
@@ -568,7 +568,7 @@ public class GeminiLLMClient extends LLMClient {
 
     // Helper method to call the Gemini API with message history
     private String callGeminiAPI(List<Message> history, String systemPrompt,
-            CancellableCompletableFuture<AssistantMessage> future) {
+            CancellableCompletableFuture<AssistantResponse> future) {
         int retryCount = 0;
         Exception lastException = null;
         int currentTokenLimit = getMaxOutputTokens(currentModel);
@@ -664,7 +664,7 @@ public class GeminiLLMClient extends LLMClient {
 
     // Actual API call implementation
     private ExtractionResult performGeminiAPICall(List<Message> history, String systemPrompt, int tokenLimit,
-            CancellableCompletableFuture<AssistantMessage> future)
+            CancellableCompletableFuture<AssistantResponse> future)
             throws java.io.IOException {
         try {
             // Manage conversation history to prevent context overflow

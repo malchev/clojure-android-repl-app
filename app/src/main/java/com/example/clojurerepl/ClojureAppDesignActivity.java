@@ -409,7 +409,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             for (int i = messages.size() - 1; i >= 0; i--) {
                 if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
                     // Check if this AI response contains code
-                    LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) messages.get(i);
+                    LLMClient.AssistantResponse assistantMsg = (LLMClient.AssistantResponse) messages.get(i);
                     String extractedCode = assistantMsg.getExtractedCode();
 
                     if (extractedCode != null && !extractedCode.isEmpty()) {
@@ -1523,7 +1523,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         String codeToRun = codeResult.code;
         // codeMessageIndex could be < selectedChatEntryIndex if the last
-        // AssistantMessage with code in it was prior to the currenty-selected
+        // AssistantResponse with code in it was prior to the currently-selected
         // message.
         int codeMessageIndex = codeResult.messageIndex;
 
@@ -1633,7 +1633,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         for (int i = startIndex; i >= 0; i--) {
             if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
                 // Check if this AI response contains code
-                LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) messages.get(i);
+                LLMClient.AssistantResponse assistantMsg = (LLMClient.AssistantResponse) messages.get(i);
                 String extractedCode = assistantMsg.getExtractedCode();
                 if (extractedCode != null && !extractedCode.isEmpty()) {
                     return CodeSearchResult.success(i, extractedCode);
@@ -1667,7 +1667,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             return result;
         } else if (selectedMessage.role == LLMClient.MessageRole.ASSISTANT) {
             // AI response selected - check if it has code, otherwise fall back to search
-            LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) selectedMessage;
+            LLMClient.AssistantResponse assistantMsg = (LLMClient.AssistantResponse) selectedMessage;
             String extractedCode = assistantMsg.getExtractedCode();
 
             if (extractedCode != null && !extractedCode.isEmpty()) {
@@ -1691,7 +1691,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
     /**
      * Calculates the iteration number for a given message index.
-     * Assistant messages with code are numbered starting from 1.
+     * Assistant responses with code are numbered starting from 1.
      *
      * @param messageIndex The index of the message in the chat history
      * @return The iteration number (1-based) for the message
@@ -1703,13 +1703,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         List<LLMClient.Message> messages = currentSession.getChatHistory();
         assert messages != null && messageIndex >= 0 && messageIndex < messages.size();
 
-        // Count assistant messages with code up to and including the selected message
+        // Count assistant responses with code up to and including the selected message
         int iterationNumber = 0;
         for (int i = 0; i <= messageIndex; i++) {
             LLMClient.Message message = messages.get(i);
             if (message.role == LLMClient.MessageRole.ASSISTANT) {
-                // Check if this assistant message contains code
-                LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) message;
+                // Check if this assistant response contains code
+                LLMClient.AssistantResponse assistantMsg = (LLMClient.AssistantResponse) message;
                 String extractedCode = assistantMsg.getExtractedCode();
                 if (extractedCode != null && !extractedCode.isEmpty()) {
                     iterationNumber++;
@@ -2010,7 +2010,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             if (selectedMessage.role == LLMClient.MessageRole.ASSISTANT) {
                 // AI response selected - load iteration-specific error if it exists
                 // Check if this AI response contains code
-                LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) selectedMessage;
+                LLMClient.AssistantResponse assistantMsg = (LLMClient.AssistantResponse) selectedMessage;
 
                 String extractedCode = assistantMsg.getExtractedCode();
                 if (extractedCode != null && !extractedCode.isEmpty()) {
@@ -2088,7 +2088,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
                 if (selectedMessage.role == LLMClient.MessageRole.ASSISTANT) {
                     // AI response selected - check if it has code
-                    LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) selectedMessage;
+                    LLMClient.AssistantResponse assistantMsg = (LLMClient.AssistantResponse) selectedMessage;
                     String extractedCode = assistantMsg.getExtractedCode();
 
                     // Enable/disable buttons based on whether we have code (either in selected
@@ -2339,14 +2339,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // No logcat found, check for code
         String extractedCode = null;
         if (message.role == LLMClient.MessageRole.ASSISTANT) {
-            LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) message;
+            LLMClient.AssistantResponse assistantMsg = (LLMClient.AssistantResponse) message;
             extractedCode = assistantMsg.getExtractedCode();
         }
 
         if (extractedCode != null && !extractedCode.isEmpty()) {
             // Show text before code - get the complete extraction result from
-            // AssistantMessage
-            LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) message;
+            // AssistantResponse
+            LLMClient.AssistantResponse assistantMsg = (LLMClient.AssistantResponse) message;
             LLMClient.CodeExtractionResult result = assistantMsg.getCodeExtractionResult();
             if (result != null && result.textBeforeCode != null && !result.textBeforeCode.isEmpty()) {
                 TextView beforeTextView = new TextView(this);
@@ -3310,7 +3310,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 LLMClient.UserMessage userMsg = (LLMClient.UserMessage) message;
                 forkChatSession.queueUserMessage(userMsg);
             } else if (message.role == LLMClient.MessageRole.ASSISTANT) {
-                LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) message;
+                LLMClient.AssistantResponse assistantMsg = (LLMClient.AssistantResponse) message;
                 forkChatSession.queueAssistantResponse(assistantMsg);
             }
         }
@@ -3318,7 +3318,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         // Set the current code to the code from the fork point (AI response)
         LLMClient.Message forkPointMessage = messages.get(forkPointIndex);
         if (forkPointMessage.role == LLMClient.MessageRole.ASSISTANT) {
-            LLMClient.AssistantMessage assistantMsg = (LLMClient.AssistantMessage) forkPointMessage;
+            LLMClient.AssistantResponse assistantMsg = (LLMClient.AssistantResponse) forkPointMessage;
             String extractedCode = assistantMsg.getExtractedCode();
             if (extractedCode != null && !extractedCode.isEmpty()) {
                 forkedSession.setCurrentCode(extractedCode);

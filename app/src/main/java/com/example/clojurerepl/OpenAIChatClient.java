@@ -29,7 +29,7 @@ public class OpenAIChatClient extends LLMClient {
     private String modelName = null;
 
     // Track the current request for cancellation
-    private final AtomicReference<CancellableCompletableFuture<AssistantMessage>> currentRequest = new AtomicReference<>();
+    private final AtomicReference<CancellableCompletableFuture<AssistantResponse>> currentRequest = new AtomicReference<>();
 
     // Static cache for available models
     private static List<String> cachedModels = null;
@@ -190,7 +190,7 @@ public class OpenAIChatClient extends LLMClient {
     }
 
     @Override
-    protected CancellableCompletableFuture<AssistantMessage> sendMessages(ChatSession session) {
+    protected CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session) {
         Log.d(TAG, "Sending " + session.getMessages().size() + " messages in session: " + session.getSessionId());
         // Print the message types and the first 50 characters of the content
         for (Message msg : session.getMessages()) {
@@ -214,7 +214,7 @@ public class OpenAIChatClient extends LLMClient {
         cancelCurrentRequest();
 
         // Create a new cancellable future
-        CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantResponse> future = new CancellableCompletableFuture<>();
         currentRequest.set(future);
 
         CompletableFuture.runAsync(() -> {
@@ -235,13 +235,13 @@ public class OpenAIChatClient extends LLMClient {
 
                 Log.d(TAG, "=== FULL OPENAI RESPONSE ===\n" + response);
 
-                // Create AssistantMessage with model information
-                AssistantMessage assistantMessage = new AssistantMessage(response, getType(), getModel());
+                // Create AssistantResponse with model information
+                AssistantResponse assistantResponse = new AssistantResponse(response, getType(), getModel());
 
-                // Add assistant message to history
-                session.queueAssistantResponse(assistantMessage);
+                // Add assistant response to history
+                session.queueAssistantResponse(assistantResponse);
 
-                future.complete(assistantMessage);
+                future.complete(assistantResponse);
             } catch (Exception e) {
                 // Check if this is a cancellation exception, which is expected behavior
                 if (e instanceof CancellationException ||
@@ -283,7 +283,7 @@ public class OpenAIChatClient extends LLMClient {
 
     @Override
     public boolean cancelCurrentRequest() {
-        CancellableCompletableFuture<AssistantMessage> request = currentRequest.get();
+        CancellableCompletableFuture<AssistantResponse> request = currentRequest.get();
         if (request != null && !request.isCancelledOrCompleted()) {
             Log.d(TAG, "Cancelling current OpenAI API request");
             boolean cancelled = request.cancel(true);
@@ -293,7 +293,7 @@ public class OpenAIChatClient extends LLMClient {
         return false;
     }
 
-    private String callOpenAIAPI(List<Message> messages, CancellableCompletableFuture<AssistantMessage> future) {
+    private String callOpenAIAPI(List<Message> messages, CancellableCompletableFuture<AssistantResponse> future) {
         ensureModelIsSet();
         Log.d(TAG, "=== Calling OpenAI API with " + messages.size() + " messages ===");
 
@@ -340,7 +340,7 @@ public class OpenAIChatClient extends LLMClient {
         }
     }
 
-    private String callOpenAIAPI(String requestBody, CancellableCompletableFuture<AssistantMessage> future) {
+    private String callOpenAIAPI(String requestBody, CancellableCompletableFuture<AssistantResponse> future) {
         ensureModelIsSet();
         Log.d(TAG, "=== Calling OpenAI API ===");
         Log.d(TAG, "Request length: " + requestBody.length());

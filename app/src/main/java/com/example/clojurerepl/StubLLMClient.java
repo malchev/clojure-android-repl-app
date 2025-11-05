@@ -19,10 +19,10 @@ public class StubLLMClient extends LLMClient {
     }
 
     @Override
-    protected CancellableCompletableFuture<AssistantMessage> sendMessages(ChatSession session) {
+    protected CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session) {
         Log.d(TAG, "Sending " + session.getMessages().size() + " messages in stub session: " + session.getSessionId());
 
-        CancellableCompletableFuture<AssistantMessage> future = new CancellableCompletableFuture<>();
+        CancellableCompletableFuture<AssistantResponse> future = new CancellableCompletableFuture<>();
 
         CompletableFuture.runAsync(() -> {
             try {
@@ -50,13 +50,13 @@ public class StubLLMClient extends LLMClient {
                     return;
                 }
 
-                // Create AssistantMessage with model information
-                AssistantMessage assistantMessage = new AssistantMessage(response, getType(), getModel());
+                // Create AssistantResponse with model information
+                AssistantResponse assistantResponse = new AssistantResponse(response, getType(), getModel());
 
-                // Add assistant message to history
-                session.queueAssistantResponse(assistantMessage);
+                // Add assistant response to history
+                session.queueAssistantResponse(assistantResponse);
 
-                future.complete(assistantMessage);
+                future.complete(assistantResponse);
             } catch (Exception e) {
                 Log.e(TAG, "Error in stub chat session", e);
                 if (!future.isCancelled()) {

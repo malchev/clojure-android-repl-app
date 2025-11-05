@@ -16,7 +16,7 @@ public class ClojureIterationManager {
     private final UUID sessionId;
 
     private ExecutorService executor;
-    private LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> currentFuture;
+    private LLMClient.CancellableCompletableFuture<LLMClient.AssistantResponse> currentFuture;
 
     public ClojureIterationManager(Context context, DesignSession session) {
         this.context = context.getApplicationContext();
@@ -33,9 +33,9 @@ public class ClojureIterationManager {
      * 
      * @param chatSession The chat session containing messages to send
      * @return A CancellableCompletableFuture that will be completed with the
-     *         AssistantMessage
+     *         AssistantResponse
      */
-    public LLMClient.CancellableCompletableFuture<LLMClient.AssistantMessage> sendMessages(
+    public LLMClient.CancellableCompletableFuture<LLMClient.AssistantResponse> sendMessages(
             LLMClient.ChatSession chatSession) {
         // Cancel any previous request that might be running
         if (currentFuture != null && !currentFuture.isDone()) {
