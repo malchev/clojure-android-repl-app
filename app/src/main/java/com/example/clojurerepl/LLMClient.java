@@ -94,7 +94,8 @@ public abstract class LLMClient {
     public enum MessageRole {
         SYSTEM("system"),
         USER("user"),
-        ASSISTANT("assistant");
+        ASSISTANT("assistant"),
+        MARKER("marker");
 
         private final String apiValue;
 
@@ -399,6 +400,39 @@ public abstract class LLMClient {
         }
     }
 
+    // Abstract marker class for internal markers
+    public static abstract class Marker extends Message {
+        protected Marker(String content) {
+            super(MessageRole.MARKER, content);
+        }
+    }
+
+    // Auto iteration marker - marks automatic iteration events
+    public static class AutoIterationMarker extends Marker {
+        public enum AutoIterationEvent {
+            START,
+            DONE,
+            ERROR,
+            CANCEL
+        }
+
+        public final AutoIterationEvent event;
+
+        public AutoIterationMarker(AutoIterationEvent event) {
+            super(""); // Content is empty for markers
+            this.event = event;
+        }
+
+        /**
+         * Get the auto iteration event type
+         *
+         * @return The event type
+         */
+        public AutoIterationEvent getEvent() {
+            return event;
+        }
+    }
+
     // Assistant response - can have model provider info
     public static class AssistantResponse extends Message {
         public final LLMClientFactory.LLMType modelProvider;
@@ -654,6 +688,16 @@ public abstract class LLMClient {
             Log.d(TAG, "Queuing user message object in session: " + sessionId +
                     " (has images: " + userMessage.hasImages() + ")");
             messages.add(userMessage);
+        }
+
+        /**
+         * Queues a marker object directly to the chat session
+         *
+         * @param marker The Marker object to queue
+         */
+        public void queueMarker(Marker marker) {
+            Log.d(TAG, "Queuing marker object in session: " + sessionId);
+            messages.add(marker);
         }
 
         /**

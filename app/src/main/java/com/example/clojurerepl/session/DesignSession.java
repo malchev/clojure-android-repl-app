@@ -626,6 +626,15 @@ public class DesignSession {
                 }
             }
 
+            // Add marker-specific fields
+            if (message.role == LLMClient.MessageRole.MARKER) {
+                if (message instanceof LLMClient.AutoIterationMarker) {
+                    LLMClient.AutoIterationMarker marker = (LLMClient.AutoIterationMarker) message;
+                    messageJson.put("markerType", "AutoIterationMarker");
+                    messageJson.put("autoIterationEvent", marker.getEvent().name());
+                }
+            }
+
             messagesJson.put(messageJson);
         }
         json.put("chatHistory", messagesJson);
@@ -740,6 +749,24 @@ public class DesignSession {
                 // Create appropriate message type based on role
                 if (role == LLMClient.MessageRole.SYSTEM) {
                     chatHistory.add(new LLMClient.SystemPrompt(content));
+                } else if (role == LLMClient.MessageRole.MARKER) {
+                    // Handle marker deserialization
+                    if (messageJson.has("markerType")) {
+                        String markerType = messageJson.getString("markerType");
+                        if ("AutoIterationMarker".equals(markerType) && messageJson.has("autoIterationEvent")) {
+                            try {
+                                LLMClient.AutoIterationMarker.AutoIterationEvent event = LLMClient.AutoIterationMarker.AutoIterationEvent
+                                        .valueOf(messageJson.getString("autoIterationEvent"));
+                                chatHistory.add(new LLMClient.AutoIterationMarker(event));
+                            } catch (IllegalArgumentException e) {
+                                Log.w(TAG, "Invalid auto iteration event: " + messageJson.getString("autoIterationEvent"));
+                            }
+                        } else {
+                            Log.w(TAG, "Unknown or incomplete marker type: " + markerType);
+                        }
+                    } else {
+                        Log.w(TAG, "Marker message missing markerType field");
+                    }
                 } else if (role == LLMClient.MessageRole.ASSISTANT) {
                     // Handle code extraction result field
                     LLMClient.CodeExtractionResult codeResult = null;
@@ -885,6 +912,9 @@ public class DesignSession {
                         lastCode = extractionResult.code;
                     }
                 }
+            } else if (LLMClient.MessageRole.MARKER.equals(message.role)) {
+                LLMClient.Marker marker = (LLMClient.Marker) message;
+                session.chatSession.queueMarker(marker);
             } else {
                 throw new JSONException("Unknown message type " + message.role);
             }
