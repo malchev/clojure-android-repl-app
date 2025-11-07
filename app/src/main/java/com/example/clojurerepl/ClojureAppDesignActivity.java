@@ -630,6 +630,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                             // Restore the user's input text since the operation failed
                             feedbackInput.setText(originalFeedbackText);
                             feedbackInput.setSelection(originalFeedbackText.length()); // Move cursor to end
+                            updateChatHistoryDisplayWithLatestSelection();
                             return;
                         }
 
@@ -856,6 +857,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                             // Restore the user's input text since the operation failed
                             feedbackInput.setText(feedback);
                             feedbackInput.setSelection(feedback.length()); // Move cursor to end
+                            updateChatHistoryDisplayWithLatestSelection();
                             return;
                         }
 
