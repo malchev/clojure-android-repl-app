@@ -701,6 +701,22 @@ public abstract class LLMClient {
         }
 
         /**
+         * Inserts a START AutoIterationMarker object.
+         *
+         * Needs to be done before the last-queued message in the history,
+         * which must exist and be an AssistantResponse with code that errored
+         * out.
+         */
+        public void queueAutoIterationStartMarker() {
+            assert !messages.isEmpty() : "Chat session must have at least one message when auto-iteration starts";
+            LLMClient.Message lastMessage = messages.get(messages.size() - 1);
+            assert lastMessage.role == LLMClient.MessageRole.ASSISTANT : "Last message must be an AssistantResponse when auto-iteration starts";
+            int insertPosition = messages.size() - 1;
+            Log.d(TAG, "Inserting marker object at index " + insertPosition + " in session: " + sessionId);
+            messages.add(insertPosition, new LLMClient.AutoIterationMarker(LLMClient.AutoIterationMarker.AutoIterationEvent.START));
+        }
+
+        /**
          * Retrieves the current list of messages in the chat session
          *
          * @return A list of Message objects representing the chat history

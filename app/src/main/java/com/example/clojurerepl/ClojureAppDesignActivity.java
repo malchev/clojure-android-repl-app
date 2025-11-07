@@ -610,8 +610,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         String prompt = iterationManager.getLLMClient().formatInitialPrompt(description, initialCode);
         chatSession.queueUserMessage(new LLMClient.UserMessage(prompt, null, null, initialCode));
 
-        // Call sendMessages directly with a filter that permits all messages
-        iterationManager.sendMessages(chatSession, message -> true)
+        // Call sendMessages directly with a filter that excludes marker messages
+        iterationManager.sendMessages(chatSession, message -> message.role != LLMClient.MessageRole.MARKER)
                 .thenAccept(assistantMessage -> {
                     // Queue the assistant response to the chat session
                     chatSession.queueAssistantResponse(assistantMessage);
@@ -836,8 +836,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         LLMClient.UserMessage userMessage = new LLMClient.UserMessage(prompt, images, logcatText, feedback, null);
         chatSession.queueUserMessage(userMessage);
 
-        // Call sendMessages directly with a filter that permits all messages
-        iterationManager.sendMessages(chatSession, message -> true)
+        // Call sendMessages directly with a filter that excludes marker messages
+        iterationManager.sendMessages(chatSession, message -> message.role != LLMClient.MessageRole.MARKER)
                 .thenAccept(assistantMessage -> {
                     // Queue the assistant response to the chat session
                     chatSession.queueAssistantResponse(assistantMessage);
@@ -950,8 +950,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         thumbsUpButton.setEnabled(true);
         runButton.setEnabled(true);
 
-        // Get code from the selected message (AI response or last AI response before
-        // user message)
+        // Get code from the selected message (AI response, or last AI response before
+        // user message or marker)
         if (selectedChatEntryIndex < 0 || currentSession == null) {
             Toast.makeText(this, "No message selected", Toast.LENGTH_SHORT).show();
             return;
@@ -1129,6 +1129,15 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 assert autoIterateOnError == true;
                 // This is the successful completion of an auto-iteration.
                 Log.d(TAG, "Auto-iterating completed in " + autoIterationCount + " steps.");
+
+                // Queue DONE marker
+                if (iterationManager != null) {
+                    LLMClient.ChatSession chatSession = iterationManager.getLLMClient().getChatSession();
+                    chatSession.queueMarker(new LLMClient.AutoIterationMarker(LLMClient.AutoIterationMarker.AutoIterationEvent.DONE));
+                    // Update chat history to show the done marker
+                    updateChatHistoryDisplay(false, false);
+                }
+
                 autoIterationCount = 0;
             }
         }
@@ -1503,7 +1512,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
     /**
      * Runs the code from the selected message (AI response) or the last AI response
-     * before selected user message
+     * before selected user message or marker
      */
     private void runSelectedCode(boolean returnOnError) {
         if (selectedChatEntryIndex < 0 || currentSession == null) {
@@ -1653,7 +1662,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
     /**
      * Gets code for execution based on the selected message with smart fallback.
-     * Handles both AI responses and user messages with consistent fallback logic.
+     * Handles AI responses, user messages, and markers with consistent fallback logic.
      *
      * @param selectedMessage The currently selected message
      * @param selectedIndex   The index of the selected message
@@ -1669,6 +1678,14 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             CodeSearchResult result = findLastAiResponseWithCode(selectedIndex);
             if (result.found) {
                 Log.d(TAG, "User message selected for " + operation + ", using code from AI response at index "
+                        + result.messageIndex);
+            }
+            return result;
+        } else if (selectedMessage.role == LLMClient.MessageRole.MARKER) {
+            // Marker selected - search backwards for any AI response with code (same as user messages)
+            CodeSearchResult result = findLastAiResponseWithCode(selectedIndex);
+            if (result.found) {
+                Log.d(TAG, "Marker selected for " + operation + ", using code from AI response at index "
                         + result.messageIndex);
             }
             return result;
@@ -1907,9 +1924,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 messageContainer.setOrientation(LinearLayout.VERTICAL);
                 messageContainer.setPadding(16, 12, 16, 12);
 
-                // Make both AI responses and user messages selectable
+                // Make AI responses, user messages, and markers selectable
                 boolean isSelectableMessage = (message.role == LLMClient.MessageRole.ASSISTANT ||
-                        message.role == LLMClient.MessageRole.USER);
+                        message.role == LLMClient.MessageRole.USER ||
+                        message.role == LLMClient.MessageRole.MARKER);
                 if (isSelectableMessage) {
                     messageContainer.setClickable(true);
                     messageContainer.setFocusable(true);
@@ -1950,6 +1968,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     roleLabel.setText("👤 You:");
                 } else if (message.role == LLMClient.MessageRole.ASSISTANT) {
                     roleLabel.setText("🤖 AI:");
+                } else if (message.role == LLMClient.MessageRole.MARKER) {
+                    roleLabel.setText("📍 Marker:");
                 } else {
                     roleLabel.setText("⚙️ System:");
                 }
@@ -1958,6 +1978,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 // Handle system prompts
                 if (message.role == LLMClient.MessageRole.SYSTEM) {
                     createSystemPromptView(messageContainer, messageIndex);
+                } else if (message.role == LLMClient.MessageRole.MARKER) {
+                    // Handle marker messages
+                    createMarkerView(messageContainer, message, messageIndex);
                 } else {
                     // Handle regular messages with potential code
                     createMessageView(messageContainer, message, messageIndex);
@@ -1983,7 +2006,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     }
 
     /**
-     * Handles selection of a chat entry (AI responses and user messages)
+     * Handles selection of a chat entry (AI responses, user messages, and markers)
      */
     private void selectChatEntry(int messageIndex, LinearLayout messageContainer) {
 
@@ -2072,6 +2095,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     paperclipButton.setText("📎");
                     Log.d(TAG, "No images to restore from user message");
                 }
+            } else if (selectedMessage.role == LLMClient.MessageRole.MARKER) {
+                // Marker selected - clear the input field
+                feedbackInput.setText("");
+                paperclipButton.setText("📎");
+                selectedScreenshots.clear();
+                Log.d(TAG, "Selected marker message, cleared input field");
             }
         }
 
@@ -2083,8 +2112,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     }
 
     /**
-     * Updates action buttons based on the currently selected message (AI response
-     * or user message)
+     * Updates action buttons based on the currently selected message (AI response,
+     * user message, or marker)
      */
     private void updateActionButtonsForSelection() {
         assert currentSession != null;
@@ -2127,6 +2156,17 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     Log.d(TAG,
                             "Updated action buttons for selected user message. Has code in history: "
                                     + hasCodeInHistory);
+                } else if (selectedMessage.role == LLMClient.MessageRole.MARKER) {
+                    // Marker selected - search backwards for any AI response with code (same as user messages)
+                    CodeSearchResult searchResult = findLastAiResponseWithCode(selectedChatEntryIndex);
+                    boolean hasCodeInHistory = searchResult.found;
+
+                    runButton.setEnabled(hasCodeInHistory);
+                    thumbsUpButton.setEnabled(hasCodeInHistory);
+
+                    Log.d(TAG,
+                            "Updated action buttons for selected marker message. Has code in history: "
+                                    + hasCodeInHistory);
                 }
             }
         } else {
@@ -2149,11 +2189,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             return;
         }
 
-        // Count total AI responses and user messages
+        // Count total AI responses, user messages, and markers
         int totalAiResponses = 0;
         int totalUserMessages = 0;
+        int totalMarkers = 0;
         int selectedAiResponseNumber = 0;
         int selectedUserMessageNumber = 0;
+        int selectedMarkerNumber = 0;
 
         for (int i = 0; i < messages.size(); i++) {
             if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
@@ -2166,10 +2208,15 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 if (i == selectedChatEntryIndex) {
                     selectedUserMessageNumber = totalUserMessages;
                 }
+            } else if (messages.get(i).role == LLMClient.MessageRole.MARKER) {
+                totalMarkers++;
+                if (i == selectedChatEntryIndex) {
+                    selectedMarkerNumber = totalMarkers;
+                }
             }
         }
 
-        if (totalAiResponses == 0 && totalUserMessages == 0) {
+        if (totalAiResponses == 0 && totalUserMessages == 0 && totalMarkers == 0) {
             selectionStatusText.setText("No messages available");
             selectionStatusText.setVisibility(View.GONE);
         } else if (selectedChatEntryIndex >= 0) {
@@ -2180,19 +2227,27 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             } else if (selectedMessage.role == LLMClient.MessageRole.USER && selectedUserMessageNumber > 0) {
                 selectionStatusText
                         .setText("Selected user message " + selectedUserMessageNumber + " of " + totalUserMessages);
+            } else if (selectedMessage.role == LLMClient.MessageRole.MARKER && selectedMarkerNumber > 0) {
+                selectionStatusText
+                        .setText("Selected marker " + selectedMarkerNumber + " of " + totalMarkers);
             } else {
                 selectionStatusText.setText("Selected message (unknown type)");
             }
             selectionStatusText.setVisibility(View.VISIBLE);
         } else {
             String statusText = "No message selected";
-            if (totalAiResponses > 0 && totalUserMessages > 0) {
-                statusText += " (" + totalAiResponses + " AI responses, " + totalUserMessages
-                        + " user messages available)";
-            } else if (totalAiResponses > 0) {
-                statusText += " (" + totalAiResponses + " AI responses available)";
-            } else if (totalUserMessages > 0) {
-                statusText += " (" + totalUserMessages + " user messages available)";
+            List<String> parts = new ArrayList<>();
+            if (totalAiResponses > 0) {
+                parts.add(totalAiResponses + " AI response" + (totalAiResponses != 1 ? "s" : ""));
+            }
+            if (totalUserMessages > 0) {
+                parts.add(totalUserMessages + " user message" + (totalUserMessages != 1 ? "s" : ""));
+            }
+            if (totalMarkers > 0) {
+                parts.add(totalMarkers + " marker" + (totalMarkers != 1 ? "s" : ""));
+            }
+            if (!parts.isEmpty()) {
+                statusText += " (" + String.join(", ", parts) + " available)";
             }
             selectionStatusText.setText(statusText);
             selectionStatusText.setVisibility(View.VISIBLE);
@@ -2245,6 +2300,57 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             contentView.setBackgroundColor(getResources().getColor(android.R.color.white));
             contentView.setText(systemContent);
             container.addView(contentView);
+        }
+    }
+
+    /**
+     * Creates a view for marker messages
+     */
+    private void createMarkerView(LinearLayout container, LLMClient.Message message, int messageIndex) {
+        if (message instanceof LLMClient.AutoIterationMarker) {
+            LLMClient.AutoIterationMarker marker = (LLMClient.AutoIterationMarker) message;
+            LLMClient.AutoIterationMarker.AutoIterationEvent event = marker.getEvent();
+
+            TextView markerView = new TextView(this);
+            markerView.setLayoutParams(new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            markerView.setTextSize(14);
+            markerView.setPadding(0, 4, 0, 4);
+            markerView.setTypeface(null, android.graphics.Typeface.ITALIC);
+
+            String markerText;
+            switch (event) {
+                case START:
+                    markerText = "🔄 Auto-iteration started";
+                    break;
+                case DONE:
+                    markerText = "✅ Auto-iteration completed successfully";
+                    break;
+                case ERROR:
+                    markerText = "❌ Auto-iteration stopped due to error";
+                    break;
+                case CANCEL:
+                    markerText = "⏹️ Auto-iteration cancelled";
+                    break;
+                default:
+                    markerText = "📍 Auto-iteration marker: " + event.name();
+                    break;
+            }
+
+            markerView.setText(markerText);
+            container.addView(markerView);
+        } else {
+            // Generic marker display
+            TextView markerView = new TextView(this);
+            markerView.setLayoutParams(new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            markerView.setTextSize(14);
+            markerView.setPadding(0, 4, 0, 4);
+            markerView.setTypeface(null, android.graphics.Typeface.ITALIC);
+            markerView.setText("📍 " + message.content);
+            container.addView(markerView);
         }
     }
 
@@ -2824,6 +2930,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         Log.d(TAG, "Starting automatic iteration with error feedback: " + errorFeedback);
 
+        LLMClient.ChatSession chatSession = iterationManager.getLLMClient().getChatSession();
+
+        // Queue START marker one position before the last message.
+        if (autoIterationCount == 1) {
+            chatSession.queueAutoIterationStartMarker();
+        }
+
         // Create a custom progress dialog with cancel button
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Automatically Fixing Error");
@@ -2871,7 +2984,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         String logcatText = currentSession.getLastLogcat() != null ? currentSession.getLastLogcat() : "";
 
         // Manage message history and call sendMessages directly
-        LLMClient.ChatSession chatSession = iterationManager.getLLMClient().getChatSession();
 
         // Format the iteration prompt
         String prompt = iterationManager.getLLMClient().formatIterationPrompt(currentSession.getDescription(),
@@ -2882,8 +2994,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 errorFeedback, null);
         chatSession.queueUserMessage(userMessage);
 
-        // Call sendMessages directly with a filter that permits all messages
-        iterationManager.sendMessages(chatSession, message -> true)
+        // Call sendMessages directly with a filter that excludes marker messages
+        iterationManager.sendMessages(chatSession, message -> message.role != LLMClient.MessageRole.MARKER)
                 .thenAccept(assistantMessage -> {
                     // Queue the assistant response to the chat session
                     chatSession.queueAssistantResponse(assistantMessage);
@@ -2903,10 +3015,16 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                                     " steps: no code in assistant response.");
                             autoIterationCount = 0;
 
+                            // Queue ERROR marker
+                            chatSession.queueMarker(new LLMClient.AutoIterationMarker(LLMClient.AutoIterationMarker.AutoIterationEvent.ERROR));
+
                             handleCodeExtractionError("No code found in LLM response");
                             // Re-enable buttons and show normal buttons
                             thumbsUpButton.setVisibility(View.VISIBLE);
                             runButton.setVisibility(View.VISIBLE);
+
+                            // Update chat history to show the error marker
+                            updateChatHistoryDisplayWithLatestSelection();
                             return;
                         }
 
@@ -2961,6 +3079,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     // Mark the auto-iteration process as stopped by clearing the counter.
                     autoIterationCount = 0;
 
+                    // Queue appropriate marker based on cancellation status
+                    if (gotCancelled) {
+                        chatSession.queueMarker(new LLMClient.AutoIterationMarker(LLMClient.AutoIterationMarker.AutoIterationEvent.CANCEL));
+                    } else {
+                        chatSession.queueMarker(new LLMClient.AutoIterationMarker(LLMClient.AutoIterationMarker.AutoIterationEvent.ERROR));
+                    }
+
                     // Remove the user message we added before sendMessages (1 message)
                     chatSession.removeLastMessages(1);
                     Log.d(TAG, "Removed 1 message (user message) due to failure in automatic iteration");
@@ -2976,6 +3101,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                         thumbsUpButton.setVisibility(View.VISIBLE);
                         runButton.setVisibility(View.VISIBLE);
                         submitFeedbackButton.setEnabled(true);
+
+                        // Update chat history to show the marker
+                        updateChatHistoryDisplayWithLatestSelection();
 
                         if (!gotCancelled) {
                             showLLMErrorDialog("Automatic Iteration Error",
@@ -2997,12 +3125,19 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         Log.d(TAG, "Cancelling current iteration");
 
-        // Cancel the underlying LLM request and generation
         if (iterationManager != null) {
+            // Queue CANCEL marker
+            LLMClient.ChatSession chatSession = iterationManager.getLLMClient().getChatSession();
+            chatSession.queueMarker(new LLMClient.AutoIterationMarker(LLMClient.AutoIterationMarker.AutoIterationEvent.CANCEL));
+
+            // Cancel the underlying LLM request and generation
             Toast.makeText(this, "Iteration " + autoIterationCount + " cancelled", Toast.LENGTH_SHORT).show();
             boolean cancelled = iterationManager.cancelCurrentRequest();
             Log.d(TAG, "Cancellation result: " + cancelled);
         }
+
+        // Mark the auto-iteration process as stopped by clearing the counter
+        autoIterationCount = 0;
 
         // Dismiss progress dialog
         if (iterationProgressDialog != null) {
@@ -3015,6 +3150,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         runButton.setVisibility(View.VISIBLE);
         Button submitFeedbackButton = findViewById(R.id.submit_feedback_button);
         submitFeedbackButton.setEnabled(true);
+
+        // Update chat history to show the cancel marker
+        updateChatHistoryDisplayWithLatestSelection();
     }
 
     private void cancelInitialGeneration() {
