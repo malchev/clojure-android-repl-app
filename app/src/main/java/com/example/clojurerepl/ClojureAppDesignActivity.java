@@ -532,7 +532,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         }
 
         // Check if we have an existing session with AI responses to provide feedback on
-        boolean hasExistingSession = currentSession.getIterationCount() > 0;
+        boolean hasExistingSession = currentSession.getIterationCount() > 0 || hasAssistantResponses();
 
         Log.d(TAG, "handleSubmitFeedbackClick: hasExistingSession=" + hasExistingSession +
                 ", iterationCount=" + currentSession.getIterationCount() +
@@ -623,7 +623,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         paperclipButton.setText("📎"); // Reset paperclip button
 
         // Disable the submit button during generation
-        Button submitFeedbackButton = findViewById(R.id.submit_feedback_button);
+        final Button submitFeedbackButton = findViewById(R.id.submit_feedback_button);
         submitFeedbackButton.setEnabled(false);
 
         if (iterationManager != null) {
@@ -646,7 +646,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Create a custom progress dialog with cancel button
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Generating Initial Code");
+        builder.setTitle("Starting Collaboration");
 
         // Create a custom layout for the dialog
         LinearLayout layout = new LinearLayout(this);
@@ -655,7 +655,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Add progress message
         TextView progressText = new TextView(this);
-        progressText.setText("Generating initial code...");
+        progressText.setText("Waiting for assistant response...");
         progressText.setTextSize(16);
         layout.addView(progressText);
 
@@ -667,7 +667,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Add cancel button
         Button dialogCancelButton = new Button(this);
-        dialogCancelButton.setText("Cancel Generation");
+        dialogCancelButton.setText("Cancel Request");
         dialogCancelButton.setOnClickListener(v -> {
             cancelInitialGeneration();
             // The dialog will be dismissed in cancelInitialGeneration()
@@ -696,44 +696,30 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
                     String code = assistantMessage.getExtractedCode();
                     runOnUiThread(() -> {
-                        // Dismiss progress dialog
                         if (initialGenerationProgressDialog != null) {
                             initialGenerationProgressDialog.dismiss();
                             initialGenerationProgressDialog = null;
                         }
 
-                        // Check if code extraction succeeded
-                        if (code == null) {
-                            handleCodeExtractionError("No code found in LLM response");
-                            // Restore the user's input text since the operation failed
-                            feedbackInput.setText(originalFeedbackText);
-                            feedbackInput.setSelection(originalFeedbackText.length()); // Move cursor to end
-                            updateChatHistoryDisplayWithLatestSelection();
-                            return;
-                        }
-
-                        // Update session with code
-                        currentSession.setCurrentCode(code);
-                        sessionManager.updateSession(currentSession);
-
-                        displayCurrentCode();
-
-                        // Show the feedback buttons
-                        feedbackButtonsContainer.setVisibility(View.VISIBLE);
-                        thumbsUpButton.setVisibility(View.VISIBLE);
-                        runButton.setVisibility(View.VISIBLE);
-
-                        // Show chat history
-                        chatHistoryContainer.setVisibility(View.VISIBLE);
-                        updateChatHistoryDisplayWithLatestSelection();
-
-                        // Only launch RenderActivity after we have the code
-                        if (code != null && !code.isEmpty()) {
-                            runSelectedCode(true);
-                        }
-
-                        // Re-enable the submit button
                         submitFeedbackButton.setEnabled(true);
+
+                        chatHistoryContainer.setVisibility(View.VISIBLE);
+
+                        boolean hasCode = code != null && !code.isEmpty();
+                        if (hasCode) {
+                            currentSession.setCurrentCode(code);
+                            sessionManager.updateSession(currentSession);
+
+                            feedbackButtonsContainer.setVisibility(View.VISIBLE);
+                            thumbsUpButton.setVisibility(View.VISIBLE);
+                            runButton.setVisibility(View.VISIBLE);
+
+                            updateChatHistoryDisplayWithLatestSelection();
+                            runSelectedCode(true);
+                        } else {
+                            Log.d(TAG, "Initial assistant response did not contain code; continuing conversation.");
+                            updateChatHistoryDisplayWithLatestSelection();
+                        }
                     });
                 })
                 .exceptionally(throwable -> {
@@ -839,13 +825,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Ensure we have current code
         String currentCode = currentSession.getCurrentCode();
-        if (currentCode == null || currentCode.isEmpty()) {
-            Toast.makeText(this, "No code to improve. Please generate initial code first.", Toast.LENGTH_SHORT).show();
-            // Keep the text in the input field by restoring it
-            feedbackInput.setText(feedback);
-            feedbackInput.setSelection(feedback.length()); // Move cursor to end
-            return;
-        }
 
         // Get the current logcat output from session
         String logcatText = currentSession.getLastLogcat() != null ? currentSession.getLastLogcat() : "";
@@ -909,7 +888,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Format the iteration prompt
         String prompt = iterationManager.getLLMClient().formatIterationPrompt(currentSession.getDescription(),
-                currentCode, logcatText, feedback, images != null && !images.isEmpty());
+                currentCode, logcatText, feedback, images != null && !images.isEmpty(), false);
 
         // Queue the user message (with images attachment if provided)
         LLMClient.UserMessage userMessage = new LLMClient.UserMessage(prompt, images, logcatText, feedback, null);
@@ -923,38 +902,30 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
                     String code = assistantMessage.getExtractedCode();
                     runOnUiThread(() -> {
-                        // Dismiss progress dialog
                         if (iterationProgressDialog != null) {
                             iterationProgressDialog.dismiss();
                             iterationProgressDialog = null;
                         }
 
-                        // Check if code extraction succeeded
-                        if (code == null) {
-                            handleCodeExtractionError("No code found in LLM response");
-                            // Restore the user's input text since the operation failed
-                            feedbackInput.setText(feedback);
-                            feedbackInput.setSelection(feedback.length()); // Move cursor to end
-                            updateChatHistoryDisplayWithLatestSelection();
-                            return;
-                        }
-
-                        assert currentSession != null;
-
-                        currentSession.setCurrentCode(code);
-                        sessionManager.updateSession(currentSession);
-
-                        displayCurrentCode();
-
-                        // Make sure buttons are enabled after response
-                        thumbsUpButton.setEnabled(true);
-                        runButton.setEnabled(true);
                         submitFeedbackButton.setEnabled(true);
+                        chatHistoryContainer.setVisibility(View.VISIBLE);
 
-                        // Update chat history and force selection of the latest AI response
-                        updateChatHistoryDisplayWithLatestSelection();
+                        boolean hasCode = code != null && !code.isEmpty();
+                        if (hasCode) {
+                            assert currentSession != null;
 
-                        runSelectedCode(true);
+                            currentSession.setCurrentCode(code);
+                            sessionManager.updateSession(currentSession);
+
+                            thumbsUpButton.setEnabled(true);
+                            runButton.setEnabled(true);
+
+                            updateChatHistoryDisplayWithLatestSelection();
+                            runSelectedCode(true);
+                        } else {
+                            Log.d(TAG, "Assistant response contained no code; continuing conversation.");
+                            updateChatHistoryDisplayWithLatestSelection();
+                        }
                     });
                 })
                 .exceptionally(throwable -> {
@@ -1736,6 +1707,24 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         }
 
         return CodeSearchResult.notFound();
+    }
+
+    private boolean hasAssistantResponses() {
+        if (currentSession == null) {
+            return false;
+        }
+
+        List<LLMClient.Message> messages = currentSession.getChatHistory();
+        if (messages == null || messages.isEmpty()) {
+            return false;
+        }
+
+        for (LLMClient.Message message : messages) {
+            if (message.role == LLMClient.MessageRole.ASSISTANT) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -3104,7 +3093,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         // Format the iteration prompt
         String prompt = iterationManager.getLLMClient().formatIterationPrompt(currentSession.getDescription(),
-                currentSession.getCurrentCode(), logcatText, errorFeedback, false);
+                currentSession.getCurrentCode(), logcatText, errorFeedback, false, true);
 
         // Queue the user message (no images for automatic iteration)
         LLMClient.UserMessage userMessage = new LLMClient.UserMessage(prompt, new ArrayList<>(), logcatText,

@@ -144,23 +144,19 @@ public abstract class LLMClient {
 
     private void loadPromptTemplate() {
         Log.d(TAG, "Loading prompt template");
-        try {
-            // Try to load from assets
-            StringBuilder sb = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(context.getAssets().open(PROMPT_TEMPLATE_PATH)))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    sb.append(line).append("\n");
-                }
-                promptTemplate = sb.toString();
-                Log.d(TAG, "Loaded prompt template from assets");
+        // Try to load from assets
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(context.getAssets().open(PROMPT_TEMPLATE_PATH)))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                sb.append(line).append("\n");
             }
+            promptTemplate = sb.toString();
+            Log.d(TAG, "Loaded prompt template from assets");
         } catch (IOException e) {
-            Log.w(TAG, "Could not load prompt template from assets: " + e.getMessage());
-            // Provide a default prompt if loading fails
-            promptTemplate = "Create a Clojure app for Android. Use the following Android APIs as needed: " +
-                    "android.widget, android.view, android.graphics, com.google.android.material.";
+            Log.e(TAG, "Failed to load prompt template from assets: " + PROMPT_TEMPLATE_PATH, e);
+            promptTemplate = "";
         }
     }
 
@@ -176,14 +172,18 @@ public abstract class LLMClient {
         Log.d(TAG, "Formatting initial prompt with description: " + description +
                 ", initial code provided: " + (initialCode != null && !initialCode.isEmpty()));
 
+        StringBuilder prompt = new StringBuilder();
+        prompt.append(description != null ? description.trim() : "")
+              .append("\n");
+
         if (initialCode != null && !initialCode.isEmpty()) {
-            return "Implement the following app: " + description +
-                    "\n\nUse the following code as a starting point. Improve and expand upon it to meet all requirements:\n```clojure\n"
-                    +
-                    initialCode + "\n```";
-        } else {
-            return "Implement the following app: " + description;
+            prompt.append(
+                    "\nExisting code for context (do not rewrite unless I request an updated version):\n```clojure\n")
+                    .append(initialCode)
+                    .append("\n```");
         }
+
+        return prompt.toString();
     }
 
     /**
@@ -191,33 +191,61 @@ public abstract class LLMClient {
      * This prompt provides instruction on how to generate Clojure code.
      */
     public String getSystemPrompt() {
-        return promptTemplate + "\n\nAlways respond with Clojure code in a markdown code block.";
+        return promptTemplate;
     }
 
     public String formatIterationPrompt(String description,
             String currentCode,
             String logcat,
-            String feedback, boolean hasImages) {
+            String feedback,
+            boolean hasImages,
+            boolean forceCodeGeneration) {
         Log.d(TAG, "Formatting iteration prompt with description: " + description +
                 ", feedback: " + feedback +
-                ", hasImages: " + hasImages);
+                ", hasImages: " + hasImages +
+                ", forceCodeGeneration: " + forceCodeGeneration);
+
         boolean hasLogcat = logcat != null && !logcat.isEmpty();
-        if (hasLogcat) {
-            return String.format(
-                    "The app needs work. Provide an improved version addressing the feedback%s logcat output%s.\n" +
-                            "User feedback: %s\n" +
-                            "Logcat output:\n```\n%s\n```\n\n",
-                    hasImages ? "," : " and",
-                    hasImages ? ", and attached images" : "",
-                    feedback,
-                    logcat);
-        } else {
-            return String.format(
-                    "The app needs work. Provide an improved version addressing the feedback%s.\n" +
-                            "User feedback: %s\n",
-                    hasImages ? " and attached images" : "",
-                    feedback);
+        String sanitizedFeedback = feedback != null ? feedback.trim() : "";
+
+        if (forceCodeGeneration) {
+            if (hasLogcat) {
+                return String.format(
+                        "The app needs work. Provide an improved version addressing the feedback%s logcat output%s.\n" +
+                                "User feedback: %s\n" +
+                                "Logcat output:\n```\n%s\n```\n\n" +
+                                "Return the complete updated Clojure app in a single ```clojure``` block. Include any brief rationale before the code.",
+                        hasImages ? "," : " and",
+                        hasImages ? ", and attached images" : "",
+                        sanitizedFeedback,
+                        logcat);
+            } else {
+                return String.format(
+                        "The app needs work. Provide an improved version addressing the feedback%s.\n" +
+                                "User feedback: %s\n\n" +
+                                "Return the complete updated Clojure app in a single ```clojure``` block. Include any brief rationale before the code.",
+                        hasImages ? " and attached images" : "",
+                        sanitizedFeedback);
+            }
         }
+
+        StringBuilder prompt = new StringBuilder();
+        if (sanitizedFeedback != null && !sanitizedFeedback.isEmpty()) {
+            prompt.append(sanitizedFeedback)
+                  .append("\n\n");
+        }
+
+        if (hasLogcat) {
+            prompt.append("Relevant logcat output:\n```\n")
+                    .append(logcat)
+                    .append("\n```\n\n");
+        }
+
+        if (hasImages) {
+            prompt.append("The user also provided screenshots/images for additional context.\n\n");
+        }
+
+        return prompt.toString().trim();
     }
 
     // Base Message class for chat history
