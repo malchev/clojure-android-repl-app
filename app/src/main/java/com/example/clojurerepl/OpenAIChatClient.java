@@ -197,20 +197,7 @@ public class OpenAIChatClient extends LLMClient {
         cancelCurrentRequest();
 
         // Filter messages if filter is provided
-        final List<Message> messagesToSend;
-        if (messageFilter != null) {
-            messagesToSend = new ArrayList<>();
-            List<Message> allMessages = session.getMessages();
-            for (int i = 0; i < allMessages.size(); i++) {
-                Message msg = allMessages.get(i);
-                if (messageFilter.shouldSend(msg, i)) {
-                    messagesToSend.add(msg);
-                }
-            }
-            Log.d(TAG, "Filtered messages: " + session.getMessages().size() + " -> " + messagesToSend.size());
-        } else {
-            messagesToSend = session.getMessages();
-        }
+        final List<Message> messagesToSend = filterMessages(session, messageFilter);
 
         // Print the message types and the first 50 characters of the content
         for (Message msg : messagesToSend) {

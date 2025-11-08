@@ -774,18 +774,49 @@ public abstract class LLMClient {
     }
 
     /**
-     * Functional interface for filtering messages before sending to the LLM
+     * Functional interface for filtering and transforming messages before sending
+     * to the LLM
      */
     @FunctionalInterface
     public interface MessageFilter {
         /**
-         * Determines whether a message should be sent to the LLM
+         * Determines whether a message should be sent to the LLM and optionally
+         * transforms it
          *
          * @param message The message to check
          * @param index   The index of the message in the message list
-         * @return true if the message should be sent, false to filter it out
+         * @return The message to send (may be the original or a transformed version),
+         *         or null to filter it out
          */
-        boolean shouldSend(Message message, int index);
+        Message shouldSend(Message message, int index);
+    }
+
+    /**
+     * Filters messages using the provided filter and logs the result.
+     * This is a helper method to centralize filtering logic and logging.
+     *
+     * @param session       The chat session containing messages to filter
+     * @param messageFilter A filter that determines which messages to send. If
+     *                      null, all messages are returned.
+     * @return The filtered list of messages to send
+     */
+    protected List<Message> filterMessages(ChatSession session, MessageFilter messageFilter) {
+        if (messageFilter == null) {
+            return session.getMessages();
+        }
+
+        List<Message> messagesToSend = new ArrayList<>();
+        List<Message> allMessages = session.getMessages();
+        for (int i = 0; i < allMessages.size(); i++) {
+            Message msg = allMessages.get(i);
+            Message filteredMsg = messageFilter.shouldSend(msg, i);
+            if (filteredMsg != null) {
+                messagesToSend.add(filteredMsg);
+            }
+        }
+
+        Log.d(TAG, "Filtered messages: " + allMessages.size() + " -> " + messagesToSend.size());
+        return messagesToSend;
     }
 
     /**

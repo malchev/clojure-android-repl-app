@@ -75,20 +75,7 @@ public class ClaudeLLMClient extends LLMClient {
         cancelCurrentRequest();
 
         // Filter messages if filter is provided
-        final List<Message> messagesToSend;
-        if (messageFilter != null) {
-            messagesToSend = new ArrayList<>();
-            List<Message> allMessages = session.getMessages();
-            for (int i = 0; i < allMessages.size(); i++) {
-                Message msg = allMessages.get(i);
-                if (messageFilter.shouldSend(msg, i)) {
-                    messagesToSend.add(msg);
-                }
-            }
-            Log.d(TAG, "Filtered messages: " + session.getMessages().size() + " -> " + messagesToSend.size());
-        } else {
-            messagesToSend = session.getMessages();
-        }
+        final List<Message> messagesToSend = filterMessages(session, messageFilter);
 
         // Create a new cancellable future
         CancellableCompletableFuture<AssistantResponse> future = new CancellableCompletableFuture<>();

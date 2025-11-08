@@ -612,7 +612,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         chatSession.queueUserMessage(new LLMClient.UserMessage(prompt, null, null, initialCode));
 
         // Call sendMessages directly with a filter that excludes marker messages and previous auto-iteration sequences
-        iterationManager.sendMessages(chatSession, (message, index) -> message.role != LLMClient.MessageRole.MARKER)
+        iterationManager.sendMessages(chatSession, (message, index) -> message.role != LLMClient.MessageRole.MARKER ? message : null)
                 .thenAccept(assistantMessage -> {
                     // Queue the assistant response to the chat session
                     chatSession.queueAssistantResponse(assistantMessage);
@@ -839,7 +839,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         chatSession.queueUserMessage(userMessage);
 
         // Call sendMessages directly with a filter that excludes marker messages and previous auto-iteration sequences
-        iterationManager.sendMessages(chatSession, (message, index) -> message.role != LLMClient.MessageRole.MARKER)
+        iterationManager.sendMessages(chatSession, (message, index) -> message.role != LLMClient.MessageRole.MARKER ? message : null)
                 .thenAccept(assistantMessage -> {
                     // Queue the assistant response to the chat session
                     chatSession.queueAssistantResponse(assistantMessage);
@@ -3035,7 +3035,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         chatSession.queueUserMessage(userMessage);
 
         // Call sendMessages directly with a filter that excludes marker messages and previous auto-iteration sequences
-        iterationManager.sendMessages(chatSession, (message, index) -> message.role != LLMClient.MessageRole.MARKER)
+        iterationManager.sendMessages(chatSession, (message, index) -> message.role != LLMClient.MessageRole.MARKER ? message : null)
                 .thenAccept(assistantMessage -> {
                     // Queue the assistant response to the chat session
                     chatSession.queueAssistantResponse(assistantMessage);
