@@ -13,34 +13,36 @@ Each Clojure app you write has the following structure:
 
 4. The app's entry point is a -main function that takes ZERO arguments. It can access *context*, *content-layout*, and *cache-dir* directly.
 
-5. If you see in logcat: "Error invoking -main function directly: Wrong number of args (0) passed to: clojure.core/-main", it means that you have incorrectly generated a main- function that takes some arguments.
+5. DO NOT wrap the -main function body in a try-catch block. Exceptions must be allowed to propagate to the Java code so they can be properly reported. If you catch exceptions inside -main, they will be silently swallowed and the error reporting system will not detect them. Let exceptions bubble up naturally.
 
-6. The app ALWAYS uses Logcat with a tag of "ClojureApp".  The tag is defined at the top of the file and uses in any logcat statements.
+6. If you see in logcat: "Error invoking -main function directly: Wrong number of args (0) passed to: clojure.core/-main", it means that you have incorrectly generated a main- function that takes some arguments.
 
-7. Be ESPECIALLY careful to balance the parentheses and brackets in Clojure.
+7. The app ALWAYS uses Logcat with a tag of "ClojureApp".  The tag is defined at the top of the file and uses in any logcat statements.
+
+8. Be ESPECIALLY careful to balance the parentheses and brackets in Clojure.
 	An error on logcat containing "clojure.lang.LispReader$ReaderException:
 	java.lang.RuntimeException: EOF while reading, starting at line" usually
 	indicates mismatched parentheses.
 
-8. ALWAYS fully qualify LinearLayout.LayoutParams, like so: android.widget.LinearLayout$LayoutParams.
+9. ALWAYS fully qualify LinearLayout.LayoutParams, like so: android.widget.LinearLayout$LayoutParams.
 
-9. Make sure to import everything you use.
+10. Make sure to import everything you use.
 
-10. In let statements, make sure to not use a label before its definition.
+11. In let statements, make sure to not use a label before its definition.
 
-11. The first line should be a brief one-line Clojure comment describing the purpose of the app
+12. The first line should be a brief one-line Clojure comment describing the purpose of the app
 
-12. DO NOT try to create or switch to any namespace at all.
+13. DO NOT try to create or switch to any namespace at all.
 	Just use the "user" namespace that's been established
 	Import what we need directly without namespace manipulation
 
-13. Follow Java-to-Clojure naming conventions:
-	13.a. Inner classes are accessed with $ instead of . (e.g., Lifecycle$Event not Lifecycle.Event)
-	13.b. Static fields are accessed with / (e.g., View/VISIBLE)
-	13.c. For interfaces without concrete implementations, use proxy instead of reify
-	13.d. For event listeners and callbacks, consider using separate handler functions
+14. Follow Java-to-Clojure naming conventions:
+	14.a. Inner classes are accessed with $ instead of . (e.g., Lifecycle$Event not Lifecycle.Event)
+	14.b. Static fields are accessed with / (e.g., View/VISIBLE)
+	14.c. For interfaces without concrete implementations, use proxy instead of reify
+	14.d. For event listeners and callbacks, consider using separate handler functions
 
-14. The code will run within a single Android Activity. Implement the Android application lifecycle callbacks using the AndroidX LifecycleObserver:
+15. The code will run within a single Android Activity. Implement the Android application lifecycle callbacks using the AndroidX LifecycleObserver:
 	- Import androidx.lifecycle.LifecycleEventObserver
 	- Use (proxy [LifecycleEventObserver] [] (onStateChanged [source event] ...))
 	- Get lifecycle with (.. *context* (getLifecycle))
@@ -51,23 +53,23 @@ Each Clojure app you write has the following structure:
 	- Be aware that Java annotations (@OnLifecycleEvent) don't translate directly to Clojure
 	- Remember to include all necessary inner classes in imports (e.g., Lifecycle$Event, Lifecycle$State)
 
-15. Lifecycle debugging tips:
-    18.a. Add specific debugging for lifecycle registration issues
-    18.b. Log the current lifecycle state before attempting to observe changes
-    18.c. Check logcat for specific exception messages related to interface implementation
-    18.d. Wrap lifecycle registration in try/catch to prevent app crashes
+16. Lifecycle debugging tips:
+    16.a. Add specific debugging for lifecycle registration issues
+    16.b. Log the current lifecycle state before attempting to observe changes
+    16.c. Check logcat for specific exception messages related to interface implementation
+    16.d. Wrap lifecycle registration (but NOT the -main function itself) in try/catch to prevent app crashes
 
-16. Pay attention to contrast.  Use black text on bright backgrond.
+17. Pay attention to contrast.  Use black text on bright backgrond.
 
-17. Add debug logging to help troubleshoot issues:
-	16.a. Create named handler functions instead of anonymous functions for callbacks.
-	16.b. Log the entry to each lifecycle callback with the parameters received.
-	16.c. Include a utility function for debug logging.
+18. Add debug logging to help troubleshoot issues:
+	18.a. Create named handler functions instead of anonymous functions for callbacks.
+	18.b. Log the entry to each lifecycle callback with the parameters received.
+	18.c. Include a utility function for debug logging.
 
-18. VERY IMPORTANT: When providing the final code, enclose it with as follows:
+19. VERY IMPORTANT: When providing the final code, enclose it with as follows:
 ```clojure
 	... code ...
 ```
 	EXTREMELY IMPORTANT: NEVER INCLUDE OTHER CODE snippets enclosed with ```clojure and ```, ONLY the final answer.
 
-19. Show your reasoning steps AND final result in a single response.
+20. Show your reasoning steps AND final result in a single response.
