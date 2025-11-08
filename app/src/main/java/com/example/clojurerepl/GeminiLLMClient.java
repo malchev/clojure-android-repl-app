@@ -490,8 +490,10 @@ public class GeminiLLMClient extends LLMClient {
         final List<Message> messagesToSend;
         if (messageFilter != null) {
             messagesToSend = new ArrayList<>();
-            for (Message msg : session.getMessages()) {
-                if (messageFilter.shouldSend(msg)) {
+            List<Message> allMessages = session.getMessages();
+            for (int i = 0; i < allMessages.size(); i++) {
+                Message msg = allMessages.get(i);
+                if (messageFilter.shouldSend(msg, i)) {
                     messagesToSend.add(msg);
                 }
             }

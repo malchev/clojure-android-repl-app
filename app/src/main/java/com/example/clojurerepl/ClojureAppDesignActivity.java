@@ -611,8 +611,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         String prompt = iterationManager.getLLMClient().formatInitialPrompt(description, initialCode);
         chatSession.queueUserMessage(new LLMClient.UserMessage(prompt, null, null, initialCode));
 
-        // Call sendMessages directly with a filter that excludes marker messages
-        iterationManager.sendMessages(chatSession, message -> message.role != LLMClient.MessageRole.MARKER)
+        // Call sendMessages directly with a filter that excludes marker messages and previous auto-iteration sequences
+        iterationManager.sendMessages(chatSession, (message, index) -> message.role != LLMClient.MessageRole.MARKER)
                 .thenAccept(assistantMessage -> {
                     // Queue the assistant response to the chat session
                     chatSession.queueAssistantResponse(assistantMessage);
@@ -838,8 +838,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         LLMClient.UserMessage userMessage = new LLMClient.UserMessage(prompt, images, logcatText, feedback, null);
         chatSession.queueUserMessage(userMessage);
 
-        // Call sendMessages directly with a filter that excludes marker messages
-        iterationManager.sendMessages(chatSession, message -> message.role != LLMClient.MessageRole.MARKER)
+        // Call sendMessages directly with a filter that excludes marker messages and previous auto-iteration sequences
+        iterationManager.sendMessages(chatSession, (message, index) -> message.role != LLMClient.MessageRole.MARKER)
                 .thenAccept(assistantMessage -> {
                     // Queue the assistant response to the chat session
                     chatSession.queueAssistantResponse(assistantMessage);
@@ -3034,8 +3034,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 errorFeedback, null);
         chatSession.queueUserMessage(userMessage);
 
-        // Call sendMessages directly with a filter that excludes marker messages
-        iterationManager.sendMessages(chatSession, message -> message.role != LLMClient.MessageRole.MARKER)
+        // Call sendMessages directly with a filter that excludes marker messages and previous auto-iteration sequences
+        iterationManager.sendMessages(chatSession, (message, index) -> message.role != LLMClient.MessageRole.MARKER)
                 .thenAccept(assistantMessage -> {
                     // Queue the assistant response to the chat session
                     chatSession.queueAssistantResponse(assistantMessage);
