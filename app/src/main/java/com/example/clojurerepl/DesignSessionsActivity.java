@@ -98,6 +98,8 @@ public class DesignSessionsActivity extends AppCompatActivity implements DesignS
 
     private void startNewDesignSession() {
         Intent intent = new Intent(this, ClojureAppDesignActivity.class);
+        // Force a new instance by clearing the task and starting fresh
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         startActivity(intent);
     }
 
@@ -105,6 +107,8 @@ public class DesignSessionsActivity extends AppCompatActivity implements DesignS
     public void onOpenSessionClicked(DesignSession session) {
         Intent intent = new Intent(this, ClojureAppDesignActivity.class);
         intent.putExtra("session_id", session.getId().toString());
+        // Force a new instance by clearing the task and starting fresh
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         //This line is useful if we want to commit back to the JSON file any
         //changes to DesignSession done between loading it from JSON and
         //launching ClojureAppDesignActivity.
