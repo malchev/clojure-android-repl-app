@@ -440,6 +440,83 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     }
 
     /**
+     * Creates a message filter that excludes marker messages and previous
+     * auto-iteration sequences when in an active auto-iteration.
+     * When encountering a DONE marker, transforms the previous AssistantResponse
+     * to contain only the code (no rationale text).
+     *
+     * @param chatSession The chat session containing all messages
+     * @return A MessageFilter that filters and transforms messages appropriately
+     */
+    private LLMClient.MessageFilter createMessageFilter(LLMClient.ChatSession chatSession) {
+        List<LLMClient.Message> allMessages = chatSession.getMessages();
+
+        // Determine the stop index: if we're in an auto-iteration, stop at its start marker
+        // Otherwise, process all messages (exclude all auto-iteration sequences)
+        final int stopIndex = autoIterationStartMarkerIndex >= 0 ? autoIterationStartMarkerIndex : allMessages.size();
+
+        // Pre-process messages to determine exclusion state at each index
+        // Build a map of message index -> whether it should be excluded
+        Set<Integer> excludedIndices = new HashSet<>();
+        boolean excludingSequence = false;
+
+        for (int i = 0; i < stopIndex; i++) {
+            LLMClient.Message msg = allMessages.get(i);
+            if (msg.role == LLMClient.MessageRole.MARKER && msg instanceof LLMClient.AutoIterationMarker) {
+                LLMClient.AutoIterationMarker marker = (LLMClient.AutoIterationMarker) msg;
+                LLMClient.AutoIterationMarker.AutoIterationEvent event = marker.getEvent();
+                excludingSequence = (event == LLMClient.AutoIterationMarker.AutoIterationEvent.START);
+            }
+
+            // If we're in an excluding sequence, mark this message index as excluded
+            if (excludingSequence) {
+                excludedIndices.add(i);
+            }
+        }
+
+        final Set<Integer> finalExcludedIndices = excludedIndices;
+        return (message, index) -> {
+            // Always exclude markers
+            if (message.role == LLMClient.MessageRole.MARKER) {
+                return null;
+            }
+
+            // For AssistantResponse messages, check if the next message is a DONE marker
+            // If so, return a transformed version with only code
+            if (message.role == LLMClient.MessageRole.ASSISTANT && index + 1 < allMessages.size()) {
+                LLMClient.Message nextMessage = allMessages.get(index + 1);
+                if (nextMessage.role == LLMClient.MessageRole.MARKER &&
+                        nextMessage instanceof LLMClient.AutoIterationMarker) {
+                    LLMClient.AutoIterationMarker nextMarker = (LLMClient.AutoIterationMarker) nextMessage;
+                    if (nextMarker.getEvent() == LLMClient.AutoIterationMarker.AutoIterationEvent.DONE) {
+                        // Next message is a DONE marker, so return transformed version with only code
+                        LLMClient.AssistantResponse response = (LLMClient.AssistantResponse) message;
+                        String code = response.getExtractedCode();
+                        if (code != null && !code.isEmpty()) {
+                            // Create a new AssistantResponse with only the code
+                            LLMClient.CodeExtractionResult codeOnly = LLMClient.CodeExtractionResult.success(
+                                    code, "", ""); // No text before or after code
+                            return new LLMClient.AssistantResponse(
+                                    "```clojure\n" + code + "\n```",
+                                    response.getModelProvider(),
+                                    response.getModelName(),
+                                    codeOnly);
+                        }
+                    }
+                }
+            }
+
+            // Check if this message is in an excluded auto-iteration sequence
+            if (finalExcludedIndices.contains(index)) {
+                return null; // Exclude this message
+            }
+
+            // Include this message as-is
+            return message;
+        };
+    }
+
+    /**
      * Handles clicks on the Generate button
      * - Initial click: generates the first version
      * - Subsequent clicks: shows feedback dialog for iteration
@@ -612,7 +689,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         chatSession.queueUserMessage(new LLMClient.UserMessage(prompt, null, null, initialCode));
 
         // Call sendMessages directly with a filter that excludes marker messages and previous auto-iteration sequences
-        iterationManager.sendMessages(chatSession, (message, index) -> message.role != LLMClient.MessageRole.MARKER ? message : null)
+        iterationManager.sendMessages(chatSession, createMessageFilter(chatSession))
                 .thenAccept(assistantMessage -> {
                     // Queue the assistant response to the chat session
                     chatSession.queueAssistantResponse(assistantMessage);
@@ -839,7 +916,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         chatSession.queueUserMessage(userMessage);
 
         // Call sendMessages directly with a filter that excludes marker messages and previous auto-iteration sequences
-        iterationManager.sendMessages(chatSession, (message, index) -> message.role != LLMClient.MessageRole.MARKER ? message : null)
+        iterationManager.sendMessages(chatSession, createMessageFilter(chatSession))
                 .thenAccept(assistantMessage -> {
                     // Queue the assistant response to the chat session
                     chatSession.queueAssistantResponse(assistantMessage);
@@ -3035,7 +3112,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         chatSession.queueUserMessage(userMessage);
 
         // Call sendMessages directly with a filter that excludes marker messages and previous auto-iteration sequences
-        iterationManager.sendMessages(chatSession, (message, index) -> message.role != LLMClient.MessageRole.MARKER ? message : null)
+        iterationManager.sendMessages(chatSession, createMessageFilter(chatSession))
                 .thenAccept(assistantMessage -> {
                     // Queue the assistant response to the chat session
                     chatSession.queueAssistantResponse(assistantMessage);
