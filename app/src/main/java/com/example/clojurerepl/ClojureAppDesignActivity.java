@@ -356,6 +356,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 feedbackInput.setSelection(0, currentSession.getDescription().length());
             }
 
+            List<LLMClient.Message> chatHistory = currentSession.getChatHistory();
+            boolean hasChatHistory = chatHistory != null && !chatHistory.isEmpty();
+
             if (currentSession.getCurrentCode() != null) {
                 String currentCode = currentSession.getCurrentCode();
 
@@ -365,8 +368,10 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 feedbackButtonsContainer.setVisibility(View.VISIBLE);
                 thumbsUpButton.setVisibility(View.VISIBLE);
                 runButton.setVisibility(View.VISIBLE);
+            }
 
-                // Show chat history
+            if (hasChatHistory) {
+                // Show chat history regardless of whether code has been generated yet
                 chatHistoryContainer.setVisibility(View.VISIBLE);
                 updateChatHistoryDisplay();
             }
