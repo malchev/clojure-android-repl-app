@@ -993,12 +993,14 @@ public class GeminiLLMClient extends LLMClient {
 
             JSONObject firstCandidate = candidates.getJSONObject(0);
 
+            boolean maxTokens = false;
+
             // Check for finish reason - if MAX_TOKENS, the response was truncated
             if (firstCandidate.has("finishReason")) {
                 String finishReason = firstCandidate.getString("finishReason");
                 if ("MAX_TOKENS".equals(finishReason)) {
                     Log.w(TAG, "Response truncated due to MAX_TOKENS limit");
-                    return new ExtractionResult(ResponseStatus.MAX_TOKENS, null, jsonResponse);
+                    maxTokens = true;
                 } else if ("SAFETY".equals(finishReason)) {
                     Log.w(TAG, "Response blocked due to safety filters");
                     return new ExtractionResult(ResponseStatus.SAFETY_BLOCKED, null, jsonResponse);
@@ -1051,7 +1053,9 @@ public class GeminiLLMClient extends LLMClient {
             }
 
             if (text != null) {
-                return new ExtractionResult(ResponseStatus.SUCCESS, text, jsonResponse);
+                return new ExtractionResult(maxTokens ?
+                        ResponseStatus.MAX_TOKENS : ResponseStatus.SUCCESS,
+                        text, jsonResponse);
             } else {
                 Log.e(TAG, "Could not extract text from any known response structure");
                 Log.e(TAG, "Content structure: " + content.toString());
