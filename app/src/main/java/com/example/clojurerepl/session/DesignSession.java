@@ -95,7 +95,7 @@ public class DesignSession {
     }
 
     public void setInitialCode(String initialCode) {
-        this.initialCode = initialCode.trim();
+        this.initialCode = initialCode != null ? initialCode.trim() : null;
     }
 
     public String getInitialCode() {
