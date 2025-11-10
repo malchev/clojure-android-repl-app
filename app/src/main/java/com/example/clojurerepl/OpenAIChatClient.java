@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 import java.io.File;
 import java.io.IOException;
 import java.util.UUID;
@@ -33,6 +35,8 @@ public class OpenAIChatClient extends LLMClient {
 
     // Static cache for available models
     private static List<String> cachedModels = null;
+    private static final Map<String, Boolean> MODEL_COMPLETION_TOKEN_SUPPORT = new ConcurrentHashMap<>();
+    private static final Map<String, Boolean> MODEL_TEMPERATURE_LIMITED = new ConcurrentHashMap<>();
 
     public OpenAIChatClient(Context context, ChatSession chatSession) {
         super(context, chatSession);
@@ -190,7 +194,8 @@ public class OpenAIChatClient extends LLMClient {
     }
 
     @Override
-    protected CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session, MessageFilter messageFilter) {
+    protected CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session,
+            MessageFilter messageFilter) {
         Log.d(TAG, "Sending " + session.getMessages().size() + " messages in session: " + session.getSessionId());
 
         // Cancel any existing request
@@ -229,7 +234,7 @@ public class OpenAIChatClient extends LLMClient {
                     return;
                 }
 
-                String response = callOpenAIAPI(messagesToSend, future);
+                OpenAICompletion completion = callOpenAIAPI(messagesToSend, future);
 
                 // Check if cancelled after API call
                 if (future.isCancelled()) {
@@ -237,10 +242,14 @@ public class OpenAIChatClient extends LLMClient {
                     return;
                 }
 
-                Log.d(TAG, "=== FULL OPENAI RESPONSE ===\n" + response);
+                Log.d(TAG, "=== FULL OPENAI RESPONSE ===\n" + completion.content);
 
                 // Create AssistantResponse with model information
-                AssistantResponse assistantResponse = new AssistantResponse(response, getType(), getModel());
+                AssistantResponse.CompletionStatus completionStatus = completion.truncated
+                        ? AssistantResponse.CompletionStatus.TRUNCATED_MAX_TOKENS
+                        : AssistantResponse.CompletionStatus.COMPLETE;
+                AssistantResponse assistantResponse = new AssistantResponse(
+                        completion.content, getType(), getModel(), completionStatus);
 
                 future.complete(assistantResponse);
             } catch (Exception e) {
@@ -294,15 +303,57 @@ public class OpenAIChatClient extends LLMClient {
         return false;
     }
 
-    private String callOpenAIAPI(List<Message> messages, CancellableCompletableFuture<AssistantResponse> future) {
+    private OpenAICompletion callOpenAIAPI(List<Message> messages,
+            CancellableCompletableFuture<AssistantResponse> future) {
+        boolean preferCompletionTokens = MODEL_COMPLETION_TOKEN_SUPPORT.getOrDefault(modelName, false);
+        boolean omitTemperature = MODEL_TEMPERATURE_LIMITED.getOrDefault(modelName, false);
+        RuntimeException lastException = null;
+
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                return callOpenAIAPI(messages, future, preferCompletionTokens, omitTemperature);
+            } catch (RuntimeException e) {
+                lastException = e;
+                if (!preferCompletionTokens && isUnsupportedMaxTokensError(e)) {
+                    Log.w(TAG, "Model " + modelName
+                            + " does not support max_tokens; retrying with max_completion_tokens");
+                    preferCompletionTokens = true;
+                    MODEL_COMPLETION_TOKEN_SUPPORT.put(modelName, true);
+                    continue;
+                }
+                if (!omitTemperature && isUnsupportedTemperatureError(e)) {
+                    Log.w(TAG, "Model " + modelName
+                            + " does not allow custom temperature; retrying without temperature parameter");
+                    omitTemperature = true;
+                    MODEL_TEMPERATURE_LIMITED.put(modelName, true);
+                    continue;
+                }
+                throw e;
+            }
+        }
+
+        throw lastException != null ? lastException
+                : new RuntimeException("Failed to call OpenAI API after retries");
+    }
+
+    private OpenAICompletion callOpenAIAPI(List<Message> messages,
+            CancellableCompletableFuture<AssistantResponse> future,
+            boolean useCompletionTokens,
+            boolean omitTemperature) {
         ensureModelIsSet();
         Log.d(TAG, "=== Calling OpenAI API with " + messages.size() + " messages ===");
 
         try {
             JSONObject requestBody = new JSONObject();
             requestBody.put("model", modelName);
-            requestBody.put("temperature", 0.7);
-            requestBody.put("max_tokens", 4096);
+            if (!omitTemperature) {
+                requestBody.put("temperature", 0.7);
+            }
+            if (useCompletionTokens) {
+                requestBody.put("max_completion_tokens", 4096);
+            } else {
+                requestBody.put("max_tokens", 4096);
+            }
 
             JSONArray messagesArray = new JSONArray();
             for (Message msg : messages) {
@@ -341,7 +392,7 @@ public class OpenAIChatClient extends LLMClient {
         }
     }
 
-    private String callOpenAIAPI(String requestBody, CancellableCompletableFuture<AssistantResponse> future) {
+    private OpenAICompletion callOpenAIAPI(String requestBody, CancellableCompletableFuture<AssistantResponse> future) {
         ensureModelIsSet();
         Log.d(TAG, "=== Calling OpenAI API ===");
         Log.d(TAG, "Request length: " + requestBody.length());
@@ -421,10 +472,15 @@ public class OpenAIChatClient extends LLMClient {
                     if (choices.length() > 0) {
                         JSONObject choice = choices.getJSONObject(0);
                         JSONObject message = choice.getJSONObject("message");
-                        String content = message.getString("content");
-                        return content;
+                        String content = message.optString("content", "");
+                        String finishReason = choice.optString("finish_reason", "");
+                        boolean truncated = "length".equalsIgnoreCase(finishReason);
+                        if (truncated && (content == null || content.trim().isEmpty())) {
+                            content = "Response was truncated due to token limit. Please continue.";
+                        }
+                        return new OpenAICompletion(content, truncated);
                     }
-                    return jsonResponse;
+                    return new OpenAICompletion(jsonResponse, false);
                 }
             } else {
                 try (BufferedReader br = new BufferedReader(
@@ -450,5 +506,41 @@ public class OpenAIChatClient extends LLMClient {
             Log.e(TAG, "Error calling OpenAI API", e);
             throw new RuntimeException("Failed to call OpenAI API", e);
         }
+    }
+
+    private static final class OpenAICompletion {
+        final String content;
+        final boolean truncated;
+
+        OpenAICompletion(String content, boolean truncated) {
+            this.content = content;
+            this.truncated = truncated;
+        }
+    }
+
+    private boolean isUnsupportedMaxTokensError(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && message.contains("Unsupported parameter")
+                    && message.contains("'max_tokens'")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean isUnsupportedTemperatureError(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && message.contains("Unsupported value")
+                    && message.contains("'temperature'")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }

@@ -174,7 +174,7 @@ public abstract class LLMClient {
 
         StringBuilder prompt = new StringBuilder();
         prompt.append(description != null ? description.trim() : "")
-              .append("\n");
+                .append("\n");
 
         if (initialCode != null && !initialCode.isEmpty()) {
             prompt.append(
@@ -232,7 +232,7 @@ public abstract class LLMClient {
         StringBuilder prompt = new StringBuilder();
         if (sanitizedFeedback != null && !sanitizedFeedback.isEmpty()) {
             prompt.append(sanitizedFeedback)
-                  .append("\n\n");
+                    .append("\n\n");
         }
 
         if (hasLogcat) {
@@ -463,22 +463,27 @@ public abstract class LLMClient {
 
     // Assistant response - can have model provider info
     public static class AssistantResponse extends Message {
+        public enum CompletionStatus {
+            COMPLETE,
+            TRUNCATED_MAX_TOKENS
+        }
+
         public final LLMClientFactory.LLMType modelProvider;
         public final String modelName;
         public final CodeExtractionResult codeExtractionResult; // Complete code extraction result
+        private final CompletionStatus completionStatus;
 
         public AssistantResponse(String content) {
-            super(MessageRole.ASSISTANT, content);
-            this.modelProvider = null;
-            this.modelName = null;
-            this.codeExtractionResult = extractClojureCode(content);
+            this(content, null, null, CompletionStatus.COMPLETE, extractClojureCode(content));
         }
 
         public AssistantResponse(String content, LLMClientFactory.LLMType modelProvider, String modelName) {
-            super(MessageRole.ASSISTANT, content);
-            this.modelProvider = modelProvider;
-            this.modelName = modelName;
-            this.codeExtractionResult = extractClojureCode(content);
+            this(content, modelProvider, modelName, CompletionStatus.COMPLETE, extractClojureCode(content));
+        }
+
+        public AssistantResponse(String content, LLMClientFactory.LLMType modelProvider, String modelName,
+                CompletionStatus completionStatus) {
+            this(content, modelProvider, modelName, completionStatus, extractClojureCode(content));
         }
 
         /**
@@ -486,10 +491,16 @@ public abstract class LLMClient {
          */
         public AssistantResponse(String content, LLMClientFactory.LLMType modelProvider, String modelName,
                 CodeExtractionResult codeExtractionResult) {
+            this(content, modelProvider, modelName, CompletionStatus.COMPLETE, codeExtractionResult);
+        }
+
+        public AssistantResponse(String content, LLMClientFactory.LLMType modelProvider, String modelName,
+                CompletionStatus completionStatus, CodeExtractionResult codeExtractionResult) {
             super(MessageRole.ASSISTANT, content);
             this.modelProvider = modelProvider;
             this.modelName = modelName;
             this.codeExtractionResult = codeExtractionResult;
+            this.completionStatus = completionStatus != null ? completionStatus : CompletionStatus.COMPLETE;
         }
 
         /**
@@ -498,15 +509,10 @@ public abstract class LLMClient {
          */
         public AssistantResponse(String content, LLMClientFactory.LLMType modelProvider, String modelName,
                 String extractedCode) {
-            super(MessageRole.ASSISTANT, content);
-            this.modelProvider = modelProvider;
-            this.modelName = modelName;
-            // Create a simple CodeExtractionResult from the extracted code
-            if (extractedCode != null && !extractedCode.trim().isEmpty()) {
-                this.codeExtractionResult = CodeExtractionResult.success(extractedCode, "", "");
-            } else {
-                this.codeExtractionResult = CodeExtractionResult.success("", content != null ? content : "", "");
-            }
+            this(content, modelProvider, modelName, CompletionStatus.COMPLETE,
+                    extractedCode != null && !extractedCode.trim().isEmpty()
+                            ? CodeExtractionResult.success(extractedCode, "", "")
+                            : CodeExtractionResult.success("", content != null ? content : "", ""));
         }
 
         /**
@@ -548,6 +554,25 @@ public abstract class LLMClient {
          */
         public CodeExtractionResult getCodeExtractionResult() {
             return codeExtractionResult;
+        }
+
+        /**
+         * Get the completion status for this assistant response
+         *
+         * @return The completion status enum
+         */
+        public CompletionStatus getCompletionStatus() {
+            return completionStatus;
+        }
+
+        /**
+         * Convenience helper indicating whether the model stopped due to token limits
+         *
+         * @return true if the response was truncated by the model's max output token
+         *         limit
+         */
+        public boolean wasTruncatedByTokenLimit() {
+            return completionStatus == CompletionStatus.TRUNCATED_MAX_TOKENS;
         }
     }
 

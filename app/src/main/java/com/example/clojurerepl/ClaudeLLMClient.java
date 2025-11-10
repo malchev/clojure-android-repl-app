@@ -109,9 +109,9 @@ public class ClaudeLLMClient extends LLMClient {
                 }
 
                 Log.d(TAG, "DEBUG: About to call Claude API in thread: " + Thread.currentThread().getName());
-                String response = null;
+                ClaudeCompletion completion = null;
                 try {
-                    response = callClaudeAPI(messagesToSend, future);
+                    completion = callClaudeAPI(messagesToSend, future);
                     Log.d(TAG, "DEBUG: Claude API call completed successfully");
                 } catch (Exception e) {
                     Log.e(TAG, "ERROR: callClaudeAPI failed", e);
@@ -128,12 +128,17 @@ public class ClaudeLLMClient extends LLMClient {
                 }
 
                 Log.d(TAG, "=== FULL CLAUDE RESPONSE ===\n" +
-                        (response != null
-                                ? (response.length() > 1000 ? response.substring(0, 1000) + "..." : response)
+                        (completion != null
+                                ? (completion.content.length() > 1000 ? completion.content.substring(0, 1000) + "..."
+                                        : completion.content)
                                 : "NULL RESPONSE"));
 
                 // Create AssistantResponse with model information
-                AssistantResponse assistantResponse = new AssistantResponse(response, getType(), getModel());
+                AssistantResponse.CompletionStatus completionStatus = completion != null && completion.truncated
+                        ? AssistantResponse.CompletionStatus.TRUNCATED_MAX_TOKENS
+                        : AssistantResponse.CompletionStatus.COMPLETE;
+                AssistantResponse assistantResponse = new AssistantResponse(
+                        completion != null ? completion.content : "", getType(), getModel(), completionStatus);
 
                 future.complete(assistantResponse);
             } catch (Exception e) {
@@ -192,7 +197,7 @@ public class ClaudeLLMClient extends LLMClient {
      * Helper method to call the Claude API with message history.
      * Claude API requires converting multiple messages into a special format.
      */
-    private String callClaudeAPI(List<Message> history, CancellableCompletableFuture<AssistantResponse> future) {
+    private ClaudeCompletion callClaudeAPI(List<Message> history, CancellableCompletableFuture<AssistantResponse> future) {
         try {
             Log.d(TAG, "DEBUG: callClaudeAPI started in thread: " + Thread.currentThread().getName());
             Log.d(TAG, "=== Calling Claude API ===");
@@ -441,6 +446,7 @@ public class ClaudeLLMClient extends LLMClient {
                     // Extract the content from the response
                     Log.d(TAG, "DEBUG: Extracting content from response");
                     String extractedContent = extractTextFromResponse(jsonResponse);
+                    boolean truncated = isClaudeResponseTruncated(jsonResponse);
 
                     // Log the full extracted content for debugging
                     Log.d(TAG, "╔═════════════════════════════╗");
@@ -451,7 +457,7 @@ public class ClaudeLLMClient extends LLMClient {
                     Log.d(TAG, "║ STOP EXTRACTED RAW CONTENT ║");
                     Log.d(TAG, "╚════════════════════════════╝");
 
-                    return extractedContent;
+                    return new ClaudeCompletion(extractedContent, truncated);
                 }
             } else {
                 // Handle error response
@@ -509,6 +515,33 @@ public class ClaudeLLMClient extends LLMClient {
             Log.d(tag, label + " (truncated to " + maxLength + " chars): " +
                     text.substring(0, maxLength) + "...");
         }
+    }
+
+    private boolean isClaudeResponseTruncated(String jsonResponse) {
+        if (jsonResponse == null) {
+            return false;
+        }
+
+        String trimmed = jsonResponse.trim();
+        try {
+            if (trimmed.startsWith("{")) {
+                JSONObject root = new JSONObject(trimmed);
+                String stopReason = root.optString("stop_reason", null);
+                if (stopReason != null) {
+                    if ("max_tokens".equalsIgnoreCase(stopReason) || "length".equalsIgnoreCase(stopReason)
+                            || "max_output_tokens".equalsIgnoreCase(stopReason)) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Unable to parse stop_reason from Claude response", e);
+        }
+
+        // Fallback string search for safety
+        return trimmed.contains("\"stop_reason\":\"max_tokens\"")
+                || trimmed.contains("\"stop_reason\":\"length\"")
+                || trimmed.contains("\"stop_reason\":\"max_output_tokens\"");
     }
 
     /**
@@ -1066,4 +1099,13 @@ public class ClaudeLLMClient extends LLMClient {
         }
     }
 
+    private static final class ClaudeCompletion {
+        final String content;
+        final boolean truncated;
+
+        ClaudeCompletion(String content, boolean truncated) {
+            this.content = content;
+            this.truncated = truncated;
+        }
+    }
 }

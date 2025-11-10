@@ -502,7 +502,7 @@ public class GeminiLLMClient extends LLMClient {
                 }
 
                 // Call the API with the filtered messages and system prompt
-                String response = callGeminiAPI(messagesToSend, session.getSystemPrompt(), future);
+                ExtractionResult extractionResult = callGeminiAPI(messagesToSend, session.getSystemPrompt(), future);
 
                 // Check if cancelled after API call
                 if (future.isCancelled()) {
@@ -511,7 +511,19 @@ public class GeminiLLMClient extends LLMClient {
                 }
 
                 // Create AssistantResponse with model information
-                AssistantResponse assistantResponse = new AssistantResponse(response, getType(), getModel());
+                String responseText = extractionResult != null ? extractionResult.getText() : null;
+                if (responseText == null && extractionResult != null) {
+                    responseText = extractionResult.getErrorMessage();
+                }
+                if (responseText == null) {
+                    responseText = "";
+                }
+                AssistantResponse.CompletionStatus completionStatus =
+                        extractionResult != null && extractionResult.getStatus() == ResponseStatus.MAX_TOKENS
+                                ? AssistantResponse.CompletionStatus.TRUNCATED_MAX_TOKENS
+                                : AssistantResponse.CompletionStatus.COMPLETE;
+                AssistantResponse assistantResponse = new AssistantResponse(
+                        responseText, getType(), getModel(), completionStatus);
 
                 // Complete the future with the AssistantResponse
                 future.complete(assistantResponse);
@@ -567,7 +579,7 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     // Helper method to call the Gemini API with message history
-    private String callGeminiAPI(List<Message> history, String systemPrompt,
+    private ExtractionResult callGeminiAPI(List<Message> history, String systemPrompt,
             CancellableCompletableFuture<AssistantResponse> future) {
         int retryCount = 0;
         Exception lastException = null;
@@ -594,8 +606,7 @@ public class GeminiLLMClient extends LLMClient {
                     }
                 }
 
-                // Return the text if successful, otherwise return the error message
-                return extractionResult.isSuccess() ? extractionResult.getText() : extractionResult.getErrorMessage();
+                return extractionResult;
             } catch (java.io.IOException e) {
                 lastException = e;
                 retryCount++;

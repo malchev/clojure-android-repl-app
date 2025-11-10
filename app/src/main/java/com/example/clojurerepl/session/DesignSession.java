@@ -566,6 +566,7 @@ public class DesignSession {
                     messageJson.put("modelProvider", assistantMsg.getModelProvider().name());
                     messageJson.put("modelName", assistantMsg.getModelName());
                 }
+                messageJson.put("completionStatus", assistantMsg.getCompletionStatus().name());
 
                 // Save the complete code extraction result
                 LLMClient.CodeExtractionResult codeResult = assistantMsg.getCodeExtractionResult();
@@ -770,6 +771,15 @@ public class DesignSession {
                 } else if (role == LLMClient.MessageRole.ASSISTANT) {
                     // Handle code extraction result field
                     LLMClient.CodeExtractionResult codeResult = null;
+                    LLMClient.AssistantResponse.CompletionStatus completionStatus = LLMClient.AssistantResponse.CompletionStatus.COMPLETE;
+                    if (messageJson.has("completionStatus")) {
+                        try {
+                            completionStatus = LLMClient.AssistantResponse.CompletionStatus
+                                    .valueOf(messageJson.getString("completionStatus"));
+                        } catch (IllegalArgumentException e) {
+                            Log.w(TAG, "Invalid completion status in session: " + messageJson.getString("completionStatus"));
+                        }
+                    }
 
                     if (messageJson.has("codeExtractionResult")) {
                         // New format with complete CodeExtractionResult
@@ -793,23 +803,32 @@ public class DesignSession {
                         }
 
                         // Use constructor with explicit CodeExtractionResult
-                        chatHistory.add(new LLMClient.AssistantResponse(content, modelProvider, modelName, codeResult));
+                        chatHistory.add(new LLMClient.AssistantResponse(content, modelProvider, modelName,
+                                completionStatus, codeResult));
                     } else if (messageJson.has("extractedCode")) {
                         // TODO(extractedCode): remove this else if
                         // Backwards compatibility: old format with just extractedCode
                         String codeValue = messageJson.getString("extractedCode");
                         String extractedCode = (codeValue != null && !codeValue.trim().isEmpty()) ? codeValue : null;
 
-                        // Use backwards compatibility constructor with extractedCode string
-                        chatHistory
-                                .add(new LLMClient.AssistantResponse(content, modelProvider, modelName, extractedCode));
+                        LLMClient.CodeExtractionResult extractedResult;
+                        if (extractedCode != null) {
+                            extractedResult = LLMClient.CodeExtractionResult.success(extractedCode, "", "");
+                        } else {
+                            extractedResult = LLMClient.CodeExtractionResult.success("",
+                                    content != null ? content : "", "");
+                        }
+
+                        chatHistory.add(new LLMClient.AssistantResponse(content, modelProvider, modelName,
+                                completionStatus, extractedResult));
                     } else {
                         // For compatibility: no code field exists, use regular constructor (which will
                         // auto-extract)
                         if (modelProvider != null && modelName != null) {
-                            chatHistory.add(new LLMClient.AssistantResponse(content, modelProvider, modelName));
+                            chatHistory.add(new LLMClient.AssistantResponse(content, modelProvider, modelName,
+                                    completionStatus));
                         } else {
-                            chatHistory.add(new LLMClient.AssistantResponse(content));
+                            chatHistory.add(new LLMClient.AssistantResponse(content, null, null, completionStatus));
                         }
                     }
                 } else if (role == LLMClient.MessageRole.USER) {
