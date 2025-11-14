@@ -43,7 +43,7 @@ public class DesignSession {
     private String lastErrorFeedback;
     private boolean hasError;
     // screenshotSets and screenshotSetIterations are not serialized to/from
-    // JSON.  They are reconstructed from a filesystem scan.
+    // JSON. They are reconstructed from a filesystem scan.
     private List<List<String>> screenshotSets;
     private List<Integer> screenshotSetIterations; // Tracks which iteration each screenshot set belongs to
     private String currentInputText;
@@ -574,11 +574,14 @@ public class DesignSession {
                     JSONObject codeResultJson = new JSONObject();
                     codeResultJson.put("success", codeResult.success);
                     codeResultJson.put("code", codeResult.code != null ? codeResult.code : "");
+                    codeResultJson.put("reasoning", codeResult.reasoning != null ? codeResult.reasoning : "");
                     codeResultJson.put("textBeforeCode",
                             codeResult.textBeforeCode != null ? codeResult.textBeforeCode : "");
                     codeResultJson.put("textAfterCode",
                             codeResult.textAfterCode != null ? codeResult.textAfterCode : "");
                     codeResultJson.put("errorMessage", codeResult.errorMessage != null ? codeResult.errorMessage : "");
+                    codeResultJson.put("reasoningComplete", codeResult.reasoningComplete);
+                    codeResultJson.put("codeComplete", codeResult.codeComplete);
                     messageJson.put("codeExtractionResult", codeResultJson);
                 }
 
@@ -760,7 +763,8 @@ public class DesignSession {
                                         .valueOf(messageJson.getString("autoIterationEvent"));
                                 chatHistory.add(new LLMClient.AutoIterationMarker(event));
                             } catch (IllegalArgumentException e) {
-                                Log.w(TAG, "Invalid auto iteration event: " + messageJson.getString("autoIterationEvent"));
+                                Log.w(TAG,
+                                        "Invalid auto iteration event: " + messageJson.getString("autoIterationEvent"));
                             }
                         } else {
                             Log.w(TAG, "Unknown or incomplete marker type: " + markerType);
@@ -777,7 +781,8 @@ public class DesignSession {
                             completionStatus = LLMClient.AssistantResponse.CompletionStatus
                                     .valueOf(messageJson.getString("completionStatus"));
                         } catch (IllegalArgumentException e) {
-                            Log.w(TAG, "Invalid completion status in session: " + messageJson.getString("completionStatus"));
+                            Log.w(TAG, "Invalid completion status in session: "
+                                    + messageJson.getString("completionStatus"));
                         }
                     }
 
@@ -785,19 +790,34 @@ public class DesignSession {
                         // New format with complete CodeExtractionResult
                         JSONObject codeResultJson = messageJson.getJSONObject("codeExtractionResult");
                         boolean success = codeResultJson.getBoolean("success");
-                        String code = codeResultJson.getString("code");
-                        String textBeforeCode = codeResultJson.getString("textBeforeCode");
-                        String textAfterCode = codeResultJson.getString("textAfterCode");
-                        String errorMessage = codeResultJson.getString("errorMessage");
+                        String code = codeResultJson.has("code") ? codeResultJson.getString("code") : "";
+                        String reasoning = codeResultJson.has("reasoning") ? codeResultJson.getString("reasoning") : "";
+                        String textBeforeCode = codeResultJson.has("textBeforeCode")
+                                ? codeResultJson.getString("textBeforeCode")
+                                : "";
+                        String textAfterCode = codeResultJson.has("textAfterCode")
+                                ? codeResultJson.getString("textAfterCode")
+                                : "";
+                        String errorMessage = codeResultJson.has("errorMessage")
+                                ? codeResultJson.getString("errorMessage")
+                                : "";
+                        boolean reasoningComplete = codeResultJson.has("reasoningComplete")
+                                ? codeResultJson.getBoolean("reasoningComplete")
+                                : true;
+                        boolean codeComplete = codeResultJson.has("codeComplete")
+                                ? codeResultJson.getBoolean("codeComplete")
+                                : true;
 
                         // Convert empty strings back to null for consistency
                         code = code.isEmpty() ? null : code;
+                        reasoning = reasoning.isEmpty() ? null : reasoning;
                         textBeforeCode = textBeforeCode.isEmpty() ? null : textBeforeCode;
                         textAfterCode = textAfterCode.isEmpty() ? null : textAfterCode;
                         errorMessage = errorMessage.isEmpty() ? null : errorMessage;
 
                         if (success) {
-                            codeResult = LLMClient.CodeExtractionResult.success(code, textBeforeCode, textAfterCode);
+                            codeResult = LLMClient.CodeExtractionResult.success(code, reasoning, textBeforeCode,
+                                    textAfterCode, reasoningComplete, codeComplete);
                         } else {
                             codeResult = LLMClient.CodeExtractionResult.failure(errorMessage);
                         }
@@ -924,10 +944,11 @@ public class DesignSession {
                 if (extractedCode != null && !extractedCode.isEmpty()) {
                     lastCode = extractedCode;
                 } else {
-                    // Fallback for backwards compatibility if extractedCode is null
+                    // Try to extract code from message content using JSON extraction
+                    // This handles cases where the code extraction result wasn't properly saved
                     LLMClient.CodeExtractionResult extractionResult = LLMClient
-                            .extractClojureCode(message.content);
-                    if (extractionResult.success) {
+                            .extractJsonResponse(message.content, false);
+                    if (extractionResult.success && extractionResult.code != null && !extractionResult.code.isEmpty()) {
                         lastCode = extractionResult.code;
                     }
                 }
