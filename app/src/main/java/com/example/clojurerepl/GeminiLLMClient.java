@@ -1059,7 +1059,9 @@ public class GeminiLLMClient extends LLMClient {
             } else {
                 Log.e(TAG, "Could not extract text from any known response structure");
                 Log.e(TAG, "Content structure: " + content.toString());
-                return new ExtractionResult(ResponseStatus.PARSE_ERROR, null, jsonResponse);
+                return new ExtractionResult(maxTokens ?
+                        ResponseStatus.MAX_TOKENS : ResponseStatus.PARSE_ERROR,
+                        null, jsonResponse);
             }
 
         } catch (Exception e) {
