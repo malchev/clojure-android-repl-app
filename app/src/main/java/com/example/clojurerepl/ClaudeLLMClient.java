@@ -257,6 +257,9 @@ public class ClaudeLLMClient extends LLMClient {
 
             requestBody.put("temperature", 0.7);
 
+            // Note: Claude API does not support response_format parameter
+            // JSON output is enforced via system prompt instructions and markdown stripping fallback
+
             // Convert message history to Claude message format
             JSONArray messagesArray = new JSONArray();
 

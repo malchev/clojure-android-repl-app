@@ -355,6 +355,12 @@ public class OpenAIChatClient extends LLMClient {
                 requestBody.put("max_tokens", 4096);
             }
 
+            // Force JSON mode to prevent markdown code blocks
+            JSONObject responseFormat = new JSONObject();
+            responseFormat.put("type", "json_object");
+            requestBody.put("response_format", responseFormat);
+            Log.d(TAG, "Added response_format: json_object to enforce pure JSON output");
+
             JSONArray messagesArray = new JSONArray();
             for (Message msg : messages) {
                 JSONObject msgObj = new JSONObject();

@@ -686,22 +686,49 @@ public abstract class LLMClient {
 
         String jsonText = input.trim();
 
-        // Remove markdown code block markers if present (```json or ```)
+        // Aggressively remove markdown code block markers if present
+        // Handle cases like: ```json\n{...}\n``` or ```\n{...}\n``` or ```json{...}```
+        // Also handle text before/after code blocks
+
+        // Remove opening code fence (```json, ```clojure, ```, etc.)
         if (jsonText.startsWith("```")) {
             // Find the first newline after ```
             int firstNewline = jsonText.indexOf('\n');
             if (firstNewline != -1) {
                 jsonText = jsonText.substring(firstNewline + 1);
             } else {
-                // No newline, just remove ```
-                jsonText = jsonText.substring(3);
-            }
-            // Remove closing ``` if present
-            if (jsonText.endsWith("```")) {
-                jsonText = jsonText.substring(0, jsonText.length() - 3);
+                // No newline, check if there's a language identifier
+                // Pattern: ```json or ```clojure (3 backticks + optional language)
+                int codeFenceEnd = 3; // Start after ```
+                // Skip language identifier if present (alphanumeric characters)
+                while (codeFenceEnd < jsonText.length() &&
+                       Character.isLetterOrDigit(jsonText.charAt(codeFenceEnd))) {
+                    codeFenceEnd++;
+                }
+                jsonText = jsonText.substring(codeFenceEnd);
             }
             jsonText = jsonText.trim();
         }
+
+        // Remove closing code fence (```) - handle both end of string and before trailing text
+        // Look for ``` that might be at the end or followed by whitespace/newlines
+        int closingFenceIndex = jsonText.lastIndexOf("```");
+        if (closingFenceIndex != -1) {
+            // Check if it's actually a closing fence (not part of content)
+            String afterFence = jsonText.substring(closingFenceIndex + 3).trim();
+            // If there's only whitespace/newlines after the ```, it's a closing fence
+            if (afterFence.isEmpty() || afterFence.matches("^[\\s\\n\\r]*$")) {
+                jsonText = jsonText.substring(0, closingFenceIndex).trim();
+            }
+        }
+
+        // Also check for closing ``` at the very end
+        if (jsonText.endsWith("```")) {
+            jsonText = jsonText.substring(0, jsonText.length() - 3).trim();
+        }
+
+        // Remove any remaining leading/trailing whitespace
+        jsonText = jsonText.trim();
 
         // Try to find JSON object in the response
         // Look for the first '{' that starts a JSON object

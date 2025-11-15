@@ -834,6 +834,11 @@ public class GeminiLLMClient extends LLMClient {
 
             generationConfig.put("topP", 0.8); // Add top_p for better quality
             generationConfig.put("topK", 40); // Add top_k for better quality
+
+            // Force JSON mode to prevent markdown code blocks
+            generationConfig.put("responseMimeType", "application/json");
+            Log.d(TAG, "Added responseMimeType: application/json to enforce pure JSON output");
+
             requestBody.put("generationConfig", generationConfig);
 
             // Write the request
