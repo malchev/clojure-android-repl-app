@@ -661,10 +661,10 @@ public abstract class LLMClient {
     /**
      * Extracts reasoning and code from a JSON response.
      * Handles partial responses by completing incomplete JSON fields.
-     * Expected JSON structure from LLM (without "complete" fields):
+     * Expected JSON structure from LLM:
      * {
-     * "reasoning": { "content": "..." },
-     * "code": { "content": "..." }
+     * "reasoning": "...",
+     * "code": "..."
      * }
      * At least one of "reasoning" or "code" must be present.
      * 
@@ -784,15 +784,12 @@ public abstract class LLMClient {
             // Extract reasoning field
             if (json.has("reasoning")) {
                 Object reasoningObj = json.get("reasoning");
-                if (reasoningObj instanceof JSONObject) {
-                    JSONObject reasoningJson = (JSONObject) reasoningObj;
-                    if (reasoningJson.has("content")) {
-                        reasoning = reasoningJson.getString("content");
-                    }
+                if (reasoningObj instanceof String) {
+                    reasoning = (String) reasoningObj;
                 } else {
-                    Log.w(TAG, "Reasoning field is not a JSON object, expected { \"content\": \"...\" }");
+                    Log.w(TAG, "Reasoning field must be a string");
                     return CodeExtractionResult.failure(
-                            "Invalid JSON structure: 'reasoning' field must be a JSON object with 'content' field");
+                            "Invalid JSON structure: 'reasoning' field must be a string");
                 }
                 // Determine completion status based on whether response was partial
                 reasoningComplete = !isPartial || !reasoningWasIncomplete;
@@ -801,15 +798,12 @@ public abstract class LLMClient {
             // Extract code field
             if (json.has("code")) {
                 Object codeObj = json.get("code");
-                if (codeObj instanceof JSONObject) {
-                    JSONObject codeJson = (JSONObject) codeObj;
-                    if (codeJson.has("content")) {
-                        code = codeJson.getString("content");
-                    }
+                if (codeObj instanceof String) {
+                    code = (String) codeObj;
                 } else {
-                    Log.w(TAG, "Code field is not a JSON object, expected { \"content\": \"...\" }");
+                    Log.w(TAG, "Code field must be a string");
                     return CodeExtractionResult
-                            .failure("Invalid JSON structure: 'code' field must be a JSON object with 'content' field");
+                            .failure("Invalid JSON structure: 'code' field must be a string");
                 }
                 // Determine completion status based on whether response was partial
                 codeComplete = !isPartial || !codeWasIncomplete;
@@ -873,9 +867,8 @@ public abstract class LLMClient {
         boolean inString = false;
         boolean escaped = false;
         String currentField = null; // "reasoning" or "code"
-        boolean inContentValue = false; // Are we inside a "content" value?
-        int braceDepth = 0;
-        int fieldObjectDepth = -1; // Depth at which we entered the current field object
+        boolean inFieldValue = false; // Are we inside a field value?
+        boolean expectingValue = false; // Did we just see a colon after a field name?
 
         for (int i = 0; i < json.length(); i++) {
             char c = json.charAt(i);
@@ -899,42 +892,37 @@ public abstract class LLMClient {
                     String recent = json.substring(lookbackStart, i);
                     if (recent.contains("\"reasoning\"")) {
                         currentField = "reasoning";
-                        fieldObjectDepth = braceDepth;
-                        inContentValue = false;
+                        inFieldValue = false;
+                        expectingValue = true; // Next value after colon is the field value
                     } else if (recent.contains("\"code\"")) {
                         currentField = "code";
-                        fieldObjectDepth = braceDepth;
-                        inContentValue = false;
-                    } else if (recent.contains("\"content\"") && currentField != null) {
-                        // We're entering a content value for the current field
-                        inContentValue = true;
+                        inFieldValue = false;
+                        expectingValue = true; // Next value after colon is the field value
+                    }
+                } else {
+                    // Opening a string
+                    if (expectingValue && currentField != null) {
+                        // Direct string value after field name
+                        inFieldValue = true;
+                        expectingValue = false;
                     }
                 }
                 continue;
             }
 
             if (!inString) {
-                if (c == '{') {
-                    braceDepth++;
-                } else if (c == '}') {
-                    braceDepth--;
-                    // If we're closing the field object we were tracking, reset
-                    if (fieldObjectDepth == braceDepth + 1) {
+                if (c == ',' || c == '}') {
+                    // Field value ended
+                    if (inFieldValue && currentField != null) {
+                        inFieldValue = false;
                         currentField = null;
-                        inContentValue = false;
-                        fieldObjectDepth = -1;
                     }
-                } else if (c == ':') {
-                    // After a colon, if we're in a field object and next is a string, it might be
-                    // content
-                    // This is handled when we see the opening quote
                 }
             }
         }
 
-        // If we ended while still in a string and we're in a content value, mark that
-        // field incomplete
-        if (inString && inContentValue && currentField != null) {
+        // If we ended while still in a string and we're in a field value, mark that field incomplete
+        if (inString && inFieldValue && currentField != null) {
             if ("reasoning".equals(currentField)) {
                 info.reasoningIncomplete = true;
             } else if ("code".equals(currentField)) {
@@ -949,13 +937,11 @@ public abstract class LLMClient {
      * Attempts to complete a partial JSON string by closing any open structures.
      * This is a best-effort approach to make partial JSON parseable.
      * Handles incomplete string values by closing them properly.
-     * Adds "complete": true/false fields to reasoning and code objects based on
-     * which fields were incomplete.
      *
      * @param json                The partial JSON string
-     * @param reasoningIncomplete Whether the reasoning field was cut off
-     * @param codeIncomplete      Whether the code field was cut off
-     * @return Completed JSON string with "complete" fields added
+     * @param reasoningIncomplete Whether the reasoning field was cut off (unused, kept for compatibility)
+     * @param codeIncomplete      Whether the code field was cut off (unused, kept for compatibility)
+     * @return Completed JSON string
      */
     private static String completePartialJson(String json, boolean reasoningIncomplete, boolean codeIncomplete) {
         if (json == null || json.isEmpty()) {
@@ -967,10 +953,6 @@ public abstract class LLMClient {
         int openBrackets = 0;
         boolean inString = false;
         boolean escaped = false;
-
-        // Track which field object we're currently in
-        String currentField = null;
-        int fieldObjectStart = -1;
 
         // Count open structures and track string state
         for (int i = 0; i < json.length(); i++) {
@@ -990,55 +972,8 @@ public abstract class LLMClient {
             if (!inString) {
                 if (c == '{') {
                     openBraces++;
-                    // Check if this brace opens a field object
-                    int lookback = Math.max(0, i - 20); // Look back a bit to find field name
-                    String beforeBrace = json.substring(lookback, i);
-                    if (beforeBrace.contains("\"reasoning\"")) {
-                        int colonPos = beforeBrace.lastIndexOf(':');
-                        if (colonPos != -1 && colonPos > beforeBrace.lastIndexOf('{', colonPos)) {
-                            currentField = "reasoning";
-                            fieldObjectStart = i;
-                        }
-                    } else if (beforeBrace.contains("\"code\"")) {
-                        int colonPos = beforeBrace.lastIndexOf(':');
-                        if (colonPos != -1 && colonPos > beforeBrace.lastIndexOf('{', colonPos)) {
-                            currentField = "code";
-                            fieldObjectStart = i;
-                        }
-                    }
                 } else if (c == '}') {
                     openBraces--;
-                    // If we're closing a field object, check if we need to add "complete" field
-                    if (currentField != null && fieldObjectStart != -1 && openBraces >= 0) {
-                        // Check if this closing brace belongs to the field object we're tracking
-                        // Look for the content field before this brace
-                        String fieldContent = json.substring(fieldObjectStart, i);
-                        if (fieldContent.contains("\"content\"") && !fieldContent.contains("\"complete\"")) {
-                            // We need to add the complete field before closing this brace
-                            // Find where to insert it (before the closing brace)
-                            int insertPos = completed.length() - (json.length() - i);
-                            if (insertPos > 0 && insertPos < completed.length()) {
-                                // Check if there's already content, add comma if needed
-                                String beforeInsert = completed.substring(Math.max(0, insertPos - 10), insertPos);
-                                boolean needsComma = !beforeInsert.trim().endsWith(",") &&
-                                        !beforeInsert.trim().endsWith("{") &&
-                                        beforeInsert.trim().length() > 0;
-
-                                boolean isIncomplete = ("reasoning".equals(currentField) && reasoningIncomplete) ||
-                                        ("code".equals(currentField) && codeIncomplete);
-
-                                String completeField = (needsComma ? ", " : "") + "\"complete\": " +
-                                        (isIncomplete ? "false" : "true");
-                                completed.insert(insertPos, completeField);
-
-                                // Adjust i since we inserted text
-                                i += completeField.length();
-                            }
-                        }
-                        // Reset tracking
-                        currentField = null;
-                        fieldObjectStart = -1;
-                    }
                 } else if (c == '[') {
                     openBrackets++;
                 } else if (c == ']') {
@@ -1052,87 +987,16 @@ public abstract class LLMClient {
             completed.append('"');
         }
 
-        // Before closing braces, check if we need to add "complete" fields
-        // This handles the case where we're closing a field object that's still open
-        if (currentField != null && fieldObjectStart != -1) {
-            String fieldContent = completed.substring(fieldObjectStart);
-            if (fieldContent.contains("\"content\"") && !fieldContent.contains("\"complete\"")) {
-                // Find the last position before any closing braces
-                int lastContentEnd = fieldContent.lastIndexOf('"');
-                if (lastContentEnd != -1) {
-                    // Insert complete field before closing braces
-                    boolean needsComma = !fieldContent.substring(Math.max(0, lastContentEnd - 5), lastContentEnd).trim()
-                            .endsWith(",");
-                    boolean isIncomplete = ("reasoning".equals(currentField) && reasoningIncomplete) ||
-                            ("code".equals(currentField) && codeIncomplete);
-                    String completeField = (needsComma ? ", " : "") + "\"complete\": " +
-                            (isIncomplete ? "false" : "true");
-                    completed.insert(fieldObjectStart + lastContentEnd + 1, completeField);
-                }
-            }
-        }
-
         // Close any open brackets first
         while (openBrackets > 0) {
             completed.append(']');
             openBrackets--;
         }
 
-        // Close any open braces, adding complete fields if needed
+        // Close any open braces
         while (openBraces > 0) {
             completed.append('}');
             openBraces--;
-        }
-
-        // Final pass: ensure all field objects have "complete" fields
-        // This handles cases where JSON was already complete
-        String finalContent = completed.toString();
-
-        // Check for reasoning field
-        int reasoningPos = finalContent.indexOf("\"reasoning\"");
-        if (reasoningPos != -1) {
-            int reasoningObjStart = finalContent.indexOf('{', reasoningPos);
-            if (reasoningObjStart != -1) {
-                int reasoningObjEnd = findMatchingBrace(finalContent, reasoningObjStart);
-                if (reasoningObjEnd != -1) {
-                    String reasoningObj = finalContent.substring(reasoningObjStart, reasoningObjEnd + 1);
-                    if (reasoningObj.contains("\"content\"") && !reasoningObj.contains("\"complete\"")) {
-                        // Add complete field before closing brace
-                        int insertPos = reasoningObjEnd;
-                        String beforeInsert = finalContent.substring(Math.max(0, insertPos - 10), insertPos);
-                        boolean needsComma = !beforeInsert.trim().endsWith(",") &&
-                                !beforeInsert.trim().endsWith("{") &&
-                                beforeInsert.trim().length() > 0;
-                        String completeField = (needsComma ? ", " : "") + "\"complete\": " +
-                                (reasoningIncomplete ? "false" : "true");
-                        completed.insert(insertPos, completeField);
-                        finalContent = completed.toString(); // Update for next check
-                    }
-                }
-            }
-        }
-
-        // Check for code field
-        int codePos = finalContent.indexOf("\"code\"");
-        if (codePos != -1) {
-            int codeObjStart = finalContent.indexOf('{', codePos);
-            if (codeObjStart != -1) {
-                int codeObjEnd = findMatchingBrace(finalContent, codeObjStart);
-                if (codeObjEnd != -1) {
-                    String codeObj = finalContent.substring(codeObjStart, codeObjEnd + 1);
-                    if (codeObj.contains("\"content\"") && !codeObj.contains("\"complete\"")) {
-                        // Add complete field before closing brace
-                        int insertPos = codeObjEnd;
-                        String beforeInsert = finalContent.substring(Math.max(0, insertPos - 10), insertPos);
-                        boolean needsComma = !beforeInsert.trim().endsWith(",") &&
-                                !beforeInsert.trim().endsWith("{") &&
-                                beforeInsert.trim().length() > 0;
-                        String completeField = (needsComma ? ", " : "") + "\"complete\": " +
-                                (codeIncomplete ? "false" : "true");
-                        completed.insert(insertPos, completeField);
-                    }
-                }
-            }
         }
 
         return completed.toString();
@@ -1187,34 +1051,22 @@ public abstract class LLMClient {
 
         // Try to extract reasoning field using regex
         java.util.regex.Pattern reasoningPattern = java.util.regex.Pattern.compile(
-                "\"reasoning\"\\s*:\\s*\\{\\s*\"content\"\\s*:\\s*\"([^\"]*(?:\\\\.[^\"]*)*)\"",
+                "\"reasoning\"\\s*:\\s*\"([^\"]*(?:\\\\.[^\"]*)*)\"",
                 java.util.regex.Pattern.DOTALL);
         java.util.regex.Matcher reasoningMatcher = reasoningPattern.matcher(json);
         if (reasoningMatcher.find()) {
             reasoning = reasoningMatcher.group(1).replace("\\\"", "\"").replace("\\n", "\n");
-            // Check if reasoning field is complete
-            int reasoningEnd = reasoningMatcher.end();
-            if (reasoningEnd < json.length()) {
-                String afterReasoning = json.substring(reasoningEnd);
-                reasoningComplete = afterReasoning.contains("\"complete\"") ||
-                        afterReasoning.contains("true") || afterReasoning.contains("false");
-            }
+            reasoningComplete = true; // If we found the closing quote, it's complete
         }
 
         // Try to extract code field using regex
         java.util.regex.Pattern codePattern = java.util.regex.Pattern.compile(
-                "\"code\"\\s*:\\s*\\{\\s*\"content\"\\s*:\\s*\"([^\"]*(?:\\\\.[^\"]*)*)\"",
+                "\"code\"\\s*:\\s*\"([^\"]*(?:\\\\.[^\"]*)*)\"",
                 java.util.regex.Pattern.DOTALL);
         java.util.regex.Matcher codeMatcher = codePattern.matcher(json);
         if (codeMatcher.find()) {
             code = codeMatcher.group(1).replace("\\\"", "\"").replace("\\n", "\n");
-            // Check if code field is complete
-            int codeEnd = codeMatcher.end();
-            if (codeEnd < json.length()) {
-                String afterCode = json.substring(codeEnd);
-                codeComplete = afterCode.contains("\"complete\"") ||
-                        afterCode.contains("true") || afterCode.contains("false");
-            }
+            codeComplete = true; // If we found the closing quote, it's complete
         }
 
         if (reasoning == null && code == null) {
