@@ -446,7 +446,13 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
     /**
      * Creates a message filter that excludes marker messages and previous
-     * auto-iteration sequences when in an active auto-iteration.
+     * auto-iteration sequences.
+     *
+     * When in an active auto-iteration, excludes all previous sequences.
+     * When not in an active auto-iteration, excludes all sequences up to the
+     * last successful one (ending with DONE), but includes the last successful
+     * sequence and all messages after it.
+     *
      * When encountering a DONE marker, transforms the previous AssistantResponse
      * to contain only the code (no rationale text).
      *
@@ -457,26 +463,77 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         List<LLMClient.Message> allMessages = chatSession.getMessages();
 
         // Determine the stop index: if we're in an auto-iteration, stop at its start marker
-        // Otherwise, process all messages (exclude all auto-iteration sequences)
+        // Otherwise, process all messages
         final int stopIndex = autoIterationStartMarkerIndex >= 0 ? autoIterationStartMarkerIndex : allMessages.size();
 
         // Pre-process messages to determine exclusion state at each index
         // Build a map of message index -> whether it should be excluded
         Set<Integer> excludedIndices = new HashSet<>();
-        boolean excludingSequence = false;
 
-        for (int i = 0; i < stopIndex; i++) {
-            LLMClient.Message msg = allMessages.get(i);
-            if (msg.role == LLMClient.MessageRole.MARKER && msg instanceof LLMClient.AutoIterationMarker) {
-                LLMClient.AutoIterationMarker marker = (LLMClient.AutoIterationMarker) msg;
-                LLMClient.AutoIterationMarker.AutoIterationEvent event = marker.getEvent();
-                excludingSequence = (event == LLMClient.AutoIterationMarker.AutoIterationEvent.START);
+        if (autoIterationStartMarkerIndex >= 0) {
+            // We're in an active auto-iteration: exclude all previous sequences
+            boolean excludingSequence = false;
+            for (int i = 0; i < stopIndex; i++) {
+                LLMClient.Message msg = allMessages.get(i);
+                if (msg.role == LLMClient.MessageRole.MARKER && msg instanceof LLMClient.AutoIterationMarker) {
+                    LLMClient.AutoIterationMarker marker = (LLMClient.AutoIterationMarker) msg;
+                    LLMClient.AutoIterationMarker.AutoIterationEvent event = marker.getEvent();
+                    excludingSequence = (event == LLMClient.AutoIterationMarker.AutoIterationEvent.START);
+                }
+
+                // If we're in an excluding sequence, mark this message index as excluded
+                if (excludingSequence) {
+                    excludedIndices.add(i);
+                }
+            }
+        } else {
+            // No active auto-iteration: skip sequences up to the last successful one
+            // Find the last DONE marker
+            int lastDoneIndex = -1;
+            for (int i = 0; i < allMessages.size(); i++) {
+                LLMClient.Message msg = allMessages.get(i);
+                if (msg.role == LLMClient.MessageRole.MARKER && msg instanceof LLMClient.AutoIterationMarker) {
+                    LLMClient.AutoIterationMarker marker = (LLMClient.AutoIterationMarker) msg;
+                    if (marker.getEvent() == LLMClient.AutoIterationMarker.AutoIterationEvent.DONE) {
+                        lastDoneIndex = i;
+                    }
+                }
             }
 
-            // If we're in an excluding sequence, mark this message index as excluded
-            if (excludingSequence) {
-                excludedIndices.add(i);
+            if (lastDoneIndex >= 0) {
+                // Found a successful sequence: exclude all sequences that end before this DONE marker.
+                // The last successful sequence (ending at lastDoneIndex) and all messages after it
+                // are included (not excluded).
+                int currentSequenceStartIndex = -1;
+
+                for (int i = 0; i <= lastDoneIndex; i++) {
+                    LLMClient.Message msg = allMessages.get(i);
+                    if (msg.role == LLMClient.MessageRole.MARKER && msg instanceof LLMClient.AutoIterationMarker) {
+                        LLMClient.AutoIterationMarker marker = (LLMClient.AutoIterationMarker) msg;
+                        LLMClient.AutoIterationMarker.AutoIterationEvent event = marker.getEvent();
+
+                        if (event == LLMClient.AutoIterationMarker.AutoIterationEvent.START) {
+                            currentSequenceStartIndex = i;
+                        } else if (event == LLMClient.AutoIterationMarker.AutoIterationEvent.DONE ||
+                                   event == LLMClient.AutoIterationMarker.AutoIterationEvent.ERROR ||
+                                   event == LLMClient.AutoIterationMarker.AutoIterationEvent.CANCEL) {
+                            // End of a sequence
+                            if (i < lastDoneIndex && currentSequenceStartIndex >= 0) {
+                                // This sequence ends before the last successful one, exclude it entirely
+                                for (int j = currentSequenceStartIndex; j <= i; j++) {
+                                    excludedIndices.add(j);
+                                }
+                            }
+                            // Don't exclude the last successful sequence (the one ending at lastDoneIndex)
+                            currentSequenceStartIndex = -1;
+                        }
+                    } else if (currentSequenceStartIndex >= 0 && i < lastDoneIndex) {
+                        // Non-marker message in a sequence that ends before the last successful one
+                        excludedIndices.add(i);
+                    }
+                }
             }
+            // If no successful sequence found, don't exclude any auto-iteration sequences
         }
 
         final Set<Integer> finalExcludedIndices = excludedIndices;
