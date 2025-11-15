@@ -45,6 +45,8 @@ import java.util.UUID;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletionException;
+import org.json.JSONObject;
+import org.json.JSONException;
 
 public class ClojureAppDesignActivity extends AppCompatActivity {
     private static final String TAG = "ClojureAppDesign";
@@ -557,12 +559,21 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                         if (code != null && !code.isEmpty()) {
                             // Create a new AssistantResponse with only the code
                             LLMClient.CodeExtractionResult codeOnly = LLMClient.CodeExtractionResult.success(
-                                    code, "", ""); // No text before or after code
-                            return new LLMClient.AssistantResponse(
-                                    "```clojure\n" + code + "\n```",
-                                    response.getModelProvider(),
-                                    response.getModelName(),
-                                    codeOnly);
+                                    code, null, "", "", true, true); // No reasoning, no text before or after code
+                            // Create JSON-formatted content string (not markdown)
+                            try {
+                                JSONObject jsonContent = new JSONObject();
+                                jsonContent.put("code", code);
+                                return new LLMClient.AssistantResponse(
+                                        jsonContent.toString(),
+                                        response.getModelProvider(),
+                                        response.getModelName(),
+                                        codeOnly);
+                            } catch (JSONException e) {
+                                Log.e(TAG, "Failed to create JSON content for transformed response", e);
+                                // Fallback: return original response if JSON construction fails
+                                return message;
+                            }
                         }
                     }
                 }
