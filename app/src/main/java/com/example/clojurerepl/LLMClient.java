@@ -215,8 +215,7 @@ public abstract class LLMClient {
                 return String.format(
                         "The app needs work. Provide an improved version addressing the feedback%s logcat output%s.\n" +
                                 "User feedback: %s\n" +
-                                "Logcat output:\n```\n%s\n```\n\n" +
-                                "Return the complete updated Clojure app in a single ```clojure``` block. Include any brief rationale before the code.",
+                                "Logcat output:\n```\n%s\n```\n",
                         hasImages ? "," : " and",
                         hasImages ? ", and attached images" : "",
                         sanitizedFeedback,
@@ -224,8 +223,7 @@ public abstract class LLMClient {
             } else {
                 return String.format(
                         "The app needs work. Provide an improved version addressing the feedback%s.\n" +
-                                "User feedback: %s\n\n" +
-                                "Return the complete updated Clojure app in a single ```clojure``` block. Include any brief rationale before the code.",
+                                "User feedback: %s\n",
                         hasImages ? " and attached images" : "",
                         sanitizedFeedback);
             }
@@ -244,7 +242,7 @@ public abstract class LLMClient {
         }
 
         if (hasImages) {
-            prompt.append("The user also provided screenshots/images for additional context.\n\n");
+            prompt.append("Also see the provided screenshots/images for additional context.\n\n");
         }
 
         return prompt.toString().trim();
