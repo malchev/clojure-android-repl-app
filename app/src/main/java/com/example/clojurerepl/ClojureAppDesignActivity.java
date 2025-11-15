@@ -542,6 +542,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         return (message, index) -> {
             // Always exclude markers
             if (message.role == LLMClient.MessageRole.MARKER) {
+                Log.i(TAG, "MESSAGE FILTER: Excluding MARKER at index " + index);
                 return null;
             }
 
@@ -564,6 +565,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                             try {
                                 JSONObject jsonContent = new JSONObject();
                                 jsonContent.put("code", code);
+                                Log.i(TAG, "MESSAGE FILTER: Constructing AssistantResponse at index " + index + " with only code prior to DONE marker.");
                                 return new LLMClient.AssistantResponse(
                                         jsonContent.toString(),
                                         response.getModelProvider(),
@@ -581,10 +583,12 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
             // Check if this message is in an excluded auto-iteration sequence
             if (finalExcludedIndices.contains(index)) {
+                Log.i(TAG, "MESSAGE FILTER: Excluding message at index " + index);
                 return null; // Exclude this message
             }
 
             // Include this message as-is
+            Log.i(TAG, "MESSAGE FILTER: Sending message " + message.role + " at index " + index);
             return message;
         };
     }
