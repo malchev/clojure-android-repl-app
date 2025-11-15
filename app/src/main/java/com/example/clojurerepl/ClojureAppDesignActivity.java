@@ -2560,18 +2560,32 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             }
         }
 
-        // No logcat found, check for code
+        // No logcat found, check for code and reasoning
         String extractedCode = null;
+        String reasoning = null;
+        LLMClient.CodeExtractionResult result = null;
         if (message.role == LLMClient.MessageRole.ASSISTANT) {
             LLMClient.AssistantResponse assistantMsg = (LLMClient.AssistantResponse) message;
             extractedCode = assistantMsg.getExtractedCode();
+            reasoning = assistantMsg.getReasoning();
+            result = assistantMsg.getCodeExtractionResult();
+        }
+
+        // Show reasoning if present (display before code section)
+        if (reasoning != null && !reasoning.trim().isEmpty()) {
+            TextView reasoningView = new TextView(this);
+            reasoningView.setLayoutParams(new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            reasoningView.setTextSize(14);
+            reasoningView.setPadding(0, 4, 0, 8);
+            reasoningView.setText(reasoning);
+            container.addView(reasoningView);
         }
 
         if (extractedCode != null && !extractedCode.isEmpty()) {
             // Show text before code - get the complete extraction result from
             // AssistantResponse
-            LLMClient.AssistantResponse assistantMsg = (LLMClient.AssistantResponse) message;
-            LLMClient.CodeExtractionResult result = assistantMsg.getCodeExtractionResult();
             if (result != null && result.textBeforeCode != null && !result.textBeforeCode.isEmpty()) {
                 TextView beforeTextView = new TextView(this);
                 beforeTextView.setLayoutParams(new LinearLayout.LayoutParams(
@@ -2702,15 +2716,33 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 container.addView(afterTextView);
             }
         } else {
-            // No code found, show full message
-            TextView contentView = new TextView(this);
-            contentView.setLayoutParams(new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT));
-            contentView.setTextSize(14);
-            contentView.setPadding(0, 4, 0, 4);
-            contentView.setText(message.content);
-            container.addView(contentView);
+            // No code found
+            if (message.role == LLMClient.MessageRole.ASSISTANT) {
+                // For assistant messages, show reasoning if present, otherwise show full message
+                if (reasoning != null && !reasoning.trim().isEmpty()) {
+                    // Reasoning already displayed above, nothing more to show
+                } else {
+                    // No reasoning, show full message content
+                    TextView contentView = new TextView(this);
+                    contentView.setLayoutParams(new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT));
+                    contentView.setTextSize(14);
+                    contentView.setPadding(0, 4, 0, 4);
+                    contentView.setText(message.content);
+                    container.addView(contentView);
+                }
+            } else {
+                // For non-assistant messages, show full message
+                TextView contentView = new TextView(this);
+                contentView.setLayoutParams(new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+                contentView.setTextSize(14);
+                contentView.setPadding(0, 4, 0, 4);
+                contentView.setText(message.content);
+                container.addView(contentView);
+            }
         }
     }
 
@@ -3446,22 +3478,31 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             return false;
         }
 
-        // Check if selected message is the latest AI response or a user message
+        // Check if selected message is the latest AI response, a user message, or a marker
         LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
         boolean isSelectedMessageAI = (selectedMessage.role == LLMClient.MessageRole.ASSISTANT);
         boolean isSelectedMessageUser = (selectedMessage.role == LLMClient.MessageRole.USER);
+        boolean isSelectedMessageMarker = (selectedMessage.role == LLMClient.MessageRole.MARKER);
         boolean isLatestAIResponse = (selectedChatEntryIndex == latestAiResponseIndex);
 
         Log.d(TAG, "doesSelectedMessageRequireFork: selectedIndex=" + selectedChatEntryIndex +
                 ", latestAiIndex=" + latestAiResponseIndex +
                 ", isSelectedAI=" + isSelectedMessageAI +
                 ", isSelectedUser=" + isSelectedMessageUser +
+                ", isSelectedMarker=" + isSelectedMessageMarker +
                 ", isLatest=" + isLatestAIResponse);
 
         // Fork is needed if:
         // 1. An AI response is selected, but it's not the latest one, OR
-        // 2. A user message is selected (fork to previous AI response)
-        boolean requiresFork = (isSelectedMessageAI && !isLatestAIResponse) || isSelectedMessageUser;
+        // 2. A user message is selected that comes BEFORE the latest AI response
+        //    (user wants to edit an old message, so fork to the AI response before it), OR
+        // 3. A marker message is selected that comes BEFORE the latest AI response
+        //    (treat markers like user messages - fork if before latest AI response)
+        // Note: If a user message or marker comes AFTER the latest AI response, we can just
+        // continue the conversation normally without forking
+        boolean requiresFork = (isSelectedMessageAI && !isLatestAIResponse) ||
+                               (isSelectedMessageUser && selectedChatEntryIndex < latestAiResponseIndex) ||
+                               (isSelectedMessageMarker && selectedChatEntryIndex < latestAiResponseIndex);
         Log.d(TAG, "doesSelectedMessageRequireFork: result=" + requiresFork);
         return requiresFork;
     }
