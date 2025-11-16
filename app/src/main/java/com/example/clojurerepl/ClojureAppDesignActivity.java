@@ -758,7 +758,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         initialGenerationProgressDialog.show();
 
         // Manage message history and call sendMessages directly
-        LLMClient.ChatSession chatSession = iterationManager.getLLMClient().getChatSession();
+        LLMClient.ChatSession chatSession = currentSession.getChatSession();
 
         // Format initial prompt and queue user message (system prompt already queued
         // when creating iteration manager)
@@ -961,7 +961,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         }
 
         // Manage message history and call sendMessages directly
-        LLMClient.ChatSession chatSession = iterationManager.getLLMClient().getChatSession();
+        LLMClient.ChatSession chatSession = currentSession.getChatSession();
 
         // Format the iteration prompt
         String prompt = iterationManager.getLLMClient().formatIterationPrompt(currentSession.getDescription(),
@@ -1987,7 +1987,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
      * @param marker The marker to queue
      */
     private void queueAutoIterationEndMarker(LLMClient.Marker marker, boolean select) {
-        LLMClient.ChatSession chatSession = iterationManager.getLLMClient().getChatSession();
+        LLMClient.ChatSession chatSession = currentSession.getChatSession();
         chatSession.queueMarker(marker);
 
         if (select) {
@@ -2006,7 +2006,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         List<LLMClient.Message> messagesBefore = currentSession.getChatHistory();
         int lastMessageIndexBefore = messagesBefore.size() - 1;
 
-        LLMClient.ChatSession chatSession = iterationManager.getLLMClient().getChatSession();
+        LLMClient.ChatSession chatSession = currentSession.getChatSession();
         chatSession.queueAutoIterationStartMarker();
 
         // If the last message (which should be an AI response) was selected,
@@ -3145,7 +3145,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
         Log.d(TAG, "Starting automatic iteration with error feedback: " + errorFeedback);
 
-        LLMClient.ChatSession chatSession = iterationManager.getLLMClient().getChatSession();
+        LLMClient.ChatSession chatSession = currentSession.getChatSession();
 
         // Queue START marker one position before the last message.
         if (autoIterationCount == 1) {
