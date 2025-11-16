@@ -782,12 +782,16 @@ public abstract class LLMClient {
             // Extract reasoning field
             if (json.has("reasoning")) {
                 Object reasoningObj = json.get("reasoning");
-                if (reasoningObj instanceof String) {
+                // Allow null/JSONObject.NULL as valid (meaning no reasoning provided)
+                if (reasoningObj == null || reasoningObj == JSONObject.NULL) {
+                    // Field exists but is null, treat as if field wasn't present
+                    reasoning = null;
+                } else if (reasoningObj instanceof String) {
                     reasoning = (String) reasoningObj;
                 } else {
-                    Log.w(TAG, "Reasoning field must be a string");
+                    Log.w(TAG, "Reasoning field must be a string or null");
                     return CodeExtractionResult.failure(
-                            "Invalid JSON structure: 'reasoning' field must be a string");
+                            "Invalid JSON structure: 'reasoning' field must be a string or null");
                 }
                 // Determine completion status based on whether response was partial
                 reasoningComplete = !isPartial || !reasoningWasIncomplete;
@@ -796,12 +800,16 @@ public abstract class LLMClient {
             // Extract code field
             if (json.has("code")) {
                 Object codeObj = json.get("code");
-                if (codeObj instanceof String) {
+                // Allow null/JSONObject.NULL as valid (meaning no code provided)
+                if (codeObj == null || codeObj == JSONObject.NULL) {
+                    // Field exists but is null, treat as if field wasn't present
+                    code = null;
+                } else if (codeObj instanceof String) {
                     code = (String) codeObj;
                 } else {
-                    Log.w(TAG, "Code field must be a string");
+                    Log.w(TAG, "Code field must be a string or null");
                     return CodeExtractionResult
-                            .failure("Invalid JSON structure: 'code' field must be a string");
+                            .failure("Invalid JSON structure: 'code' field must be a string or null");
                 }
                 // Determine completion status based on whether response was partial
                 codeComplete = !isPartial || !codeWasIncomplete;
