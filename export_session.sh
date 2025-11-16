@@ -25,7 +25,7 @@ fi
 SESSION_INDEX=$1
 ANDROID_PKG="com.example.clojurerepl"
 ANDROID_DATA_DIR="/data/data/$ANDROID_PKG"
-SESSIONS_FILE="$ANDROID_DATA_DIR/files/sessions/design_sessions.json"
+SESSIONS_DIR="$ANDROID_DATA_DIR/files/sessions"
 EXPORT_BASE_DIR="./exported_sessions"
 TMP_DIR="/tmp/clojure_session_export"
 
@@ -34,38 +34,68 @@ mkdir -p "$TMP_DIR"
 SESSION_JSON="$TMP_DIR/session_data.json"
 SESSIONS_JSON="$TMP_DIR/sessions.json"
 
-# Pull the sessions file from the device
-echo "Pulling sessions data from device..."
-adb shell "su 0 cat $SESSIONS_FILE" > "$SESSIONS_JSON"
+# Pull all session files from the device
+echo "Pulling session files from device..."
+SESSIONS_LIST=$(adb shell "su 0 ls $SESSIONS_DIR/*.json 2>/dev/null" | grep -E '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$')
 
-# Check if the sessions file was successfully pulled
-if [ ! -s "$SESSIONS_JSON" ]; then
-  echo "ERROR: Failed to pull sessions file from device or file is empty."
-  echo "Make sure the app has created design sessions and that the path is correct."
-  echo "Attempted to read: $SESSIONS_FILE"
-
-  # Try without su as fallback
+# If that failed, try without su
+if [ -z "$SESSIONS_LIST" ]; then
   echo "Trying without superuser privileges..."
-  adb shell "cat $SESSIONS_FILE" > "$SESSIONS_JSON"
-
-  if [ ! -s "$SESSIONS_JSON" ]; then
-    echo "ERROR: Failed to pull sessions file without superuser privileges."
-    echo "Checking if app has storage permissions..."
-
-    # Try with run-as if available (works for debuggable apps)
-    adb shell "run-as $ANDROID_PKG cat files/sessions/design_sessions.json" > "$SESSIONS_JSON"
-
-    if [ ! -s "$SESSIONS_JSON" ]; then
-      echo "ERROR: All attempts to access session data failed."
-      echo "Please ensure the device is rooted or the app is debuggable."
-      exit 1
-    fi
-  fi
+  SESSIONS_LIST=$(adb shell "ls $SESSIONS_DIR/*.json 2>/dev/null" | grep -E '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$')
 fi
 
-# Use jq to extract all sessions and get the session at the specified index
+# If that failed, try with run-as
+if [ -z "$SESSIONS_LIST" ]; then
+  echo "Trying with run-as..."
+  SESSIONS_LIST=$(adb shell "run-as $ANDROID_PKG ls files/sessions/*.json 2>/dev/null" | grep -E '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$')
+fi
+
+# Check if we found any sessions
+if [ -z "$SESSIONS_LIST" ]; then
+  echo "ERROR: Failed to find session files on device."
+  echo "Make sure the app has created design sessions and that the path is correct."
+  echo "Please ensure the device is rooted or the app is debuggable."
+  exit 1
+fi
+
+# Create a temporary array to store session data
+echo "[" > "$SESSIONS_JSON"
+FIRST=true
+
+# Pull each session file and combine into a JSON array
+for SESSION_FILE in $SESSIONS_LIST; do
+  SESSION_TMP="$TMP_DIR/$(basename "$SESSION_FILE")"
+
+  # Try to pull with su first
+  adb shell "su 0 cat \"$SESSION_FILE\"" > "$SESSION_TMP" 2>/dev/null
+
+  # If that failed, try without su
+  if [ ! -s "$SESSION_TMP" ]; then
+    adb shell "cat \"$SESSION_FILE\"" > "$SESSION_TMP" 2>/dev/null
+  fi
+
+  # If that failed, try with run-as
+  if [ ! -s "$SESSION_TMP" ]; then
+    RELATIVE_PATH=$(echo "$SESSION_FILE" | sed "s|$ANDROID_DATA_DIR/||")
+    adb shell "run-as $ANDROID_PKG cat \"$RELATIVE_PATH\"" > "$SESSION_TMP" 2>/dev/null
+  fi
+
+  # If we successfully pulled the file, add it to the array
+  if [ -s "$SESSION_TMP" ]; then
+    if [ "$FIRST" = true ]; then
+      FIRST=false
+    else
+      echo "," >> "$SESSIONS_JSON"
+    fi
+    cat "$SESSION_TMP" >> "$SESSIONS_JSON"
+  fi
+done
+
+echo "]" >> "$SESSIONS_JSON"
+
+# Sort sessions by createdAt (newest first) and get the session at the specified index
 echo "Extracting session at index $SESSION_INDEX..."
-jq -r ".[$SESSION_INDEX]" "$SESSIONS_JSON" > "$SESSION_JSON"
+jq -r "sort_by(-.createdAt)[$SESSION_INDEX]" "$SESSIONS_JSON" > "$SESSION_JSON"
 
 # Check if session exists at the specified index
 if [[ $(cat "$SESSION_JSON") == "null" ]]; then

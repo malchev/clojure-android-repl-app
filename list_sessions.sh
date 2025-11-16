@@ -23,40 +23,71 @@ fi
 
 ANDROID_PKG="com.example.clojurerepl"
 ANDROID_DATA_DIR="/data/data/$ANDROID_PKG"
-SESSIONS_FILE="$ANDROID_DATA_DIR/files/sessions/design_sessions.json"
+SESSIONS_DIR="$ANDROID_DATA_DIR/files/sessions"
 TMP_DIR="/tmp/clojure_session_export"
 SESSIONS_JSON="$TMP_DIR/sessions.json"
 
 # Create temporary directory
 mkdir -p "$TMP_DIR"
 
-# Pull the sessions file from the device
-echo "Pulling sessions data from device..."
-adb shell "su 0 cat $SESSIONS_FILE" > "$SESSIONS_JSON"
+# Pull all session files from the device
+echo "Pulling session files from device..."
+SESSIONS_LIST=$(adb shell "su 0 ls $SESSIONS_DIR/*.json 2>/dev/null" | grep -E '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$')
 
-# Check if the sessions file was successfully pulled
-if [ ! -s "$SESSIONS_JSON" ]; then
-  echo "ERROR: Failed to pull sessions file from device or file is empty."
-  echo "Make sure the app has created design sessions and that the path is correct."
-
-  # Try without su as fallback
+# If that failed, try without su
+if [ -z "$SESSIONS_LIST" ]; then
   echo "Trying without superuser privileges..."
-  adb shell "cat $SESSIONS_FILE" > "$SESSIONS_JSON"
-
-  if [ ! -s "$SESSIONS_JSON" ]; then
-    echo "ERROR: Failed to pull sessions file without superuser privileges."
-    echo "Checking if app has storage permissions..."
-
-    # Try with run-as if available (works for debuggable apps)
-    adb shell "run-as $ANDROID_PKG cat files/sessions/design_sessions.json" > "$SESSIONS_JSON"
-
-    if [ ! -s "$SESSIONS_JSON" ]; then
-      echo "ERROR: All attempts to access session data failed."
-      echo "Please ensure the device is rooted or the app is debuggable."
-      exit 1
-    fi
-  fi
+  SESSIONS_LIST=$(adb shell "ls $SESSIONS_DIR/*.json 2>/dev/null" | grep -E '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$')
 fi
+
+# If that failed, try with run-as
+if [ -z "$SESSIONS_LIST" ]; then
+  echo "Trying with run-as..."
+  SESSIONS_LIST=$(adb shell "run-as $ANDROID_PKG ls files/sessions/*.json 2>/dev/null" | grep -E '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$')
+fi
+
+# Check if we found any sessions
+if [ -z "$SESSIONS_LIST" ]; then
+  echo "ERROR: Failed to find session files on device."
+  echo "Make sure the app has created design sessions and that the path is correct."
+  echo "Please ensure the device is rooted or the app is debuggable."
+  exit 1
+fi
+
+# Create a temporary array to store session data
+echo "[" > "$SESSIONS_JSON"
+FIRST=true
+
+# Pull each session file and combine into a JSON array
+for SESSION_FILE in $SESSIONS_LIST; do
+  SESSION_TMP="$TMP_DIR/$(basename "$SESSION_FILE")"
+  
+  # Try to pull with su first
+  adb shell "su 0 cat \"$SESSION_FILE\"" > "$SESSION_TMP" 2>/dev/null
+  
+  # If that failed, try without su
+  if [ ! -s "$SESSION_TMP" ]; then
+    adb shell "cat \"$SESSION_FILE\"" > "$SESSION_TMP" 2>/dev/null
+  fi
+  
+  # If that failed, try with run-as
+  if [ ! -s "$SESSION_TMP" ]; then
+    RELATIVE_PATH=$(echo "$SESSION_FILE" | sed "s|$ANDROID_DATA_DIR/||")
+    adb shell "run-as $ANDROID_PKG cat \"$RELATIVE_PATH\"" > "$SESSION_TMP" 2>/dev/null
+  fi
+  
+  # If we successfully pulled the file, add it to the array
+  if [ -s "$SESSION_TMP" ]; then
+    if [ "$FIRST" = true ]; then
+      FIRST=false
+    else
+      echo "," >> "$SESSIONS_JSON"
+    fi
+    cat "$SESSION_TMP" >> "$SESSIONS_JSON"
+  fi
+done
+
+echo "]" >> "$SESSIONS_JSON"
 
 # Get number of sessions
 NUM_SESSIONS=$(jq '. | length' "$SESSIONS_JSON")
@@ -67,14 +98,18 @@ echo "==========================================================================
 printf "%-5s %-36s %-20s %-15s %-20s %s\n" "IDX" "SESSION ID" "CREATED" "MODEL" "MODELS USED" "DESCRIPTION"
 echo "-----------------------------------------------------------------------------------"
 
+# Sort sessions by createdAt (newest first) and create sorted array
+SORTED_SESSIONS=$(jq -c 'sort_by(-.createdAt)' "$SESSIONS_JSON")
+
 # Loop through each session and display information
-for i in $(seq 0 $(($NUM_SESSIONS - 1))); do
+SESSION_INDEX=0
+echo "$SORTED_SESSIONS" | jq -c '.[]' | while read -r session; do
   # Extract info for this session
-  SESSION_ID=$(jq -r ".[$i].id" "$SESSIONS_JSON")
-  DESCRIPTION=$(jq -r ".[$i].description" "$SESSIONS_JSON" | cut -c 1-40)
-  CREATED_AT=$(jq -r ".[$i].createdAt" "$SESSIONS_JSON")
-  LLM_TYPE=$(jq -r ".[$i].llmType" "$SESSIONS_JSON")
-  LLM_MODEL=$(jq -r ".[$i].llmModel" "$SESSIONS_JSON")
+  SESSION_ID=$(echo "$session" | jq -r '.id')
+  DESCRIPTION=$(echo "$session" | jq -r '.description' | cut -c 1-40)
+  CREATED_AT=$(echo "$session" | jq -r '.createdAt')
+  LLM_TYPE=$(echo "$session" | jq -r '.llmType')
+  LLM_MODEL=$(echo "$session" | jq -r '.llmModel')
 
   # Format timestamp (convert from milliseconds to seconds first)
   FORMATTED_DATE=$(date -d "@$(echo $CREATED_AT/1000 | bc)" "+%Y-%m-%d %H:%M:%S")
@@ -89,10 +124,11 @@ for i in $(seq 0 $(($NUM_SESSIONS - 1))); do
 
   # Extract models used from chat history
   MODELS_USED=""
-  if [ "$(jq -r ".[$i].chatHistory" "$SESSIONS_JSON")" != "null" ]; then
+  CHAT_HISTORY=$(echo "$session" | jq -r '.chatHistory')
+  if [ "$CHAT_HISTORY" != "null" ]; then
     # Get unique model providers from assistant messages
-    MODELS_USED=$(jq -r ".[$i].chatHistory[] | select(.role == \"assistant\") | .modelProvider // empty" "$SESSIONS_JSON" | sort | uniq | tr '\n' ',' | sed 's/,$//')
-    
+    MODELS_USED=$(echo "$session" | jq -r '.chatHistory[] | select(.role == "assistant") | .modelProvider // empty' | sort | uniq | tr '\n' ',' | sed 's/,$//')
+
     # If no model providers found in chat history, use the session's model info
     if [ -z "$MODELS_USED" ]; then
       if [ "$LLM_TYPE" != "null" ]; then
@@ -111,7 +147,8 @@ for i in $(seq 0 $(($NUM_SESSIONS - 1))); do
   fi
 
   # Print the information
-  printf "%-5s %-36s %-20s %-15s %-20s %s\n" "[$i]" "$SESSION_ID" "$FORMATTED_DATE" "$MODEL_INFO" "$MODELS_USED" "$DESCRIPTION"
+  printf "%-5s %-36s %-20s %-15s %-20s %s\n" "[$SESSION_INDEX]" "$SESSION_ID" "$FORMATTED_DATE" "$MODEL_INFO" "$MODELS_USED" "$DESCRIPTION"
+  SESSION_INDEX=$((SESSION_INDEX + 1))
 done
 
 echo "==================================================================================="
