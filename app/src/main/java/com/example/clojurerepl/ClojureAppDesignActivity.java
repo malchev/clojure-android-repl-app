@@ -3292,6 +3292,11 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                         Log.d(TAG, "Auto-iterating stopped in " + autoIterationCount + ": cancelled.");
                     }
 
+                    // Remove the user message we added before sendMessages (1 message)
+                    // Do this BEFORE queuing the ERROR/CANCEL marker so we don't accidentally remove it
+                    chatSession.removeLastMessages(1);
+                    Log.d(TAG, "Removed 1 message (user message) due to failure in automatic iteration");
+
                     // Queue appropriate marker based on cancellation status.
                     // Do not select since we do that at the end of this
                     // method.
@@ -3308,10 +3313,6 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                     // Mark the auto-iteration process as stopped by clearing the counter.
                     autoIterationCount = 0;
                     autoIterationStartMarkerIndex = -1;
-
-                    // Remove the user message we added before sendMessages (1 message)
-                    chatSession.removeLastMessages(1);
-                    Log.d(TAG, "Removed 1 message (user message) due to failure in automatic iteration");
 
                     runOnUiThread(() -> {
                         // Dismiss progress dialog
