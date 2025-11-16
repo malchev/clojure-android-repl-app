@@ -1095,7 +1095,7 @@ public abstract class LLMClient {
         /**
          * Resets the chat session by clearing all messages
          */
-        public void reset() {
+        public synchronized void reset() {
             Log.d(TAG, "Resetting chat session: " + sessionId);
             messages.clear();
             systemPrompt = null;
@@ -1106,7 +1106,7 @@ public abstract class LLMClient {
          *
          * @param assistantResponse The AssistantResponse object to queue
          */
-        public void queueAssistantResponse(AssistantResponse assistantResponse) {
+        public synchronized void queueAssistantResponse(AssistantResponse assistantResponse) {
             Log.d(TAG, "Queuing assistant response object in session: " + sessionId +
                     " (provider: " + assistantResponse.getModelProvider() +
                     ", model: " + assistantResponse.getModelName() + ")");
@@ -1118,7 +1118,7 @@ public abstract class LLMClient {
          *
          * @param systemPrompt The SystemPrompt object to queue
          */
-        public void queueSystemPrompt(SystemPrompt systemPrompt) {
+        public synchronized void queueSystemPrompt(SystemPrompt systemPrompt) {
             Log.d(TAG, "Queuing system prompt object in session: " + sessionId);
             this.systemPrompt = systemPrompt.content;
             messages.add(systemPrompt);
@@ -1129,7 +1129,7 @@ public abstract class LLMClient {
          *
          * @param userMessage The UserMessage object to queue
          */
-        public void queueUserMessage(UserMessage userMessage) {
+        public synchronized void queueUserMessage(UserMessage userMessage) {
             Log.d(TAG, "Queuing user message object in session: " + sessionId +
                     " (has images: " + userMessage.hasImages() + ")");
             messages.add(userMessage);
@@ -1140,7 +1140,7 @@ public abstract class LLMClient {
          *
          * @param marker The Marker object to queue
          */
-        public void queueMarker(Marker marker) {
+        public synchronized void queueMarker(Marker marker) {
             Log.d(TAG, "Queuing marker object in session: " + sessionId);
             messages.add(marker);
         }
@@ -1152,7 +1152,7 @@ public abstract class LLMClient {
          * which must exist and be an AssistantResponse with code that errored
          * out.
          */
-        public void queueAutoIterationStartMarker() {
+        public synchronized void queueAutoIterationStartMarker() {
             assert !messages.isEmpty() : "Chat session must have at least one message when auto-iteration starts";
             LLMClient.Message lastMessage = messages.get(messages.size() - 1);
             assert lastMessage.role == LLMClient.MessageRole.ASSISTANT
@@ -1168,7 +1168,7 @@ public abstract class LLMClient {
          *
          * @return A list of Message objects representing the chat history
          */
-        public List<Message> getMessages() {
+        public synchronized List<Message> getMessages() {
             return new ArrayList<>(messages);
         }
 
@@ -1186,7 +1186,7 @@ public abstract class LLMClient {
          *
          * @return The system prompt, or null if not set
          */
-        public String getSystemPrompt() {
+        public synchronized String getSystemPrompt() {
             return systemPrompt;
         }
 
@@ -1195,7 +1195,7 @@ public abstract class LLMClient {
          *
          * @return true if system prompt is set and not empty
          */
-        public boolean hasSystemPrompt() {
+        public synchronized boolean hasSystemPrompt() {
             return systemPrompt != null && !systemPrompt.trim().isEmpty();
         }
 
@@ -1206,7 +1206,7 @@ public abstract class LLMClient {
          * @param count Number of messages to remove from the end
          * @return List of removed messages (in reverse order - last removed first)
          */
-        public List<Message> removeLastMessages(int count) {
+        public synchronized List<Message> removeLastMessages(int count) {
             List<Message> removed = new ArrayList<>();
             for (int i = 0; i < count && !messages.isEmpty(); i++) {
                 Message msg = messages.remove(messages.size() - 1);

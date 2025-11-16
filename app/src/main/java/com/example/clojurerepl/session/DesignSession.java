@@ -102,7 +102,7 @@ public class DesignSession {
         return initialCode;
     }
 
-    public List<String> getAllCode() {
+    public synchronized List<String> getAllCode() {
         List<String> code = new ArrayList<>();
         for (LLMClient.Message message : chatSession.getMessages()) {
             if (LLMClient.MessageRole.ASSISTANT.equals(message.role)) {
@@ -117,7 +117,7 @@ public class DesignSession {
         return code;
     }
 
-    public String getCurrentCode() {
+    public synchronized String getCurrentCode() {
         List<String> code = getAllCode();
         if (code.size() > 0) {
             return code.get(code.size() - 1);
@@ -125,13 +125,13 @@ public class DesignSession {
         return null;
     }
 
-    public void setCurrentCode(String currentCode) {
+    public synchronized void setCurrentCode(String currentCode) {
         String code = getCurrentCode();
         // They are either both null or contain identical strings.
         assert code == currentCode || code.equals(currentCode);
     }
 
-    public int getIterationCount() {
+    public synchronized int getIterationCount() {
         List<String> code = getAllCode();
         if (code == null) {
             return 0;
@@ -155,7 +155,7 @@ public class DesignSession {
         this.llmModel = llmModel;
     }
 
-    public LLMClient.ChatSession getChatSession() {
+    public synchronized LLMClient.ChatSession getChatSession() {
         return chatSession;
     }
 
@@ -165,21 +165,21 @@ public class DesignSession {
      * 
      * @param systemPrompt The system prompt to queue
      */
-    public void queueSystemPromptIfEmpty(String systemPrompt) {
+    public synchronized void queueSystemPromptIfEmpty(String systemPrompt) {
         if (chatSession.getMessages().isEmpty()) {
             chatSession.queueSystemPrompt(new LLMClient.SystemPrompt(systemPrompt));
         }
     }
 
-    public List<LLMClient.Message> getChatHistory() {
+    public synchronized List<LLMClient.Message> getChatHistory() {
         return chatSession.getMessages();
     }
 
-    public String getLastLogcat() {
+    public synchronized String getLastLogcat() {
         return lastLogcat;
     }
 
-    public void setLastLogcat(String lastLogcat) {
+    public synchronized void setLastLogcat(String lastLogcat) {
         this.lastLogcat = lastLogcat;
     }
 
@@ -188,7 +188,7 @@ public class DesignSession {
      *
      * @return The list of screenshot sets.
      */
-    public List<List<String>> getScreenshotSets() {
+    public synchronized List<List<String>> getScreenshotSets() {
         return screenshotSets;
     }
 
@@ -197,7 +197,7 @@ public class DesignSession {
      *
      * @return The list of iteration numbers, parallel to screenshotSets.
      */
-    public List<Integer> getScreenshotSetIterations() {
+    public synchronized List<Integer> getScreenshotSetIterations() {
         return screenshotSetIterations;
     }
 
@@ -207,7 +207,7 @@ public class DesignSession {
      * @param screenshotSet A list of paths to screenshot files.
      * @param iteration     The iteration number this screenshot set belongs to.
      */
-    public void addScreenshotSet(List<String> screenshotSet, int iteration) {
+    public synchronized void addScreenshotSet(List<String> screenshotSet, int iteration) {
         if (this.screenshotSets == null) {
             this.screenshotSets = new ArrayList<>();
         }
@@ -225,7 +225,7 @@ public class DesignSession {
      *
      * @param screenshotSet A list of paths to screenshot files.
      */
-    public void addScreenshotSet(List<String> screenshotSet) {
+    public synchronized void addScreenshotSet(List<String> screenshotSet) {
         addScreenshotSet(screenshotSet, getIterationCount());
     }
 
@@ -234,7 +234,7 @@ public class DesignSession {
      *
      * @return The most recently added screenshot set.
      */
-    public List<String> getLatestScreenshotSet() {
+    public synchronized List<String> getLatestScreenshotSet() {
         if (this.screenshotSets == null || this.screenshotSets.isEmpty()) {
             return new ArrayList<>();
         }
@@ -247,7 +247,7 @@ public class DesignSession {
      * @param iterationNumber The iteration number to get screenshots for
      * @return A list of all screenshot paths for that iteration.
      */
-    public List<String> getScreenshotsForIteration(int iterationNumber) {
+    public synchronized List<String> getScreenshotsForIteration(int iterationNumber) {
         if (this.screenshotSets == null || this.screenshotSets.isEmpty() ||
                 this.screenshotSetIterations == null || this.screenshotSetIterations.isEmpty()) {
             return new ArrayList<>();
@@ -270,7 +270,7 @@ public class DesignSession {
      *
      * @return A list of all screenshot paths from the current iteration.
      */
-    public List<String> getCurrentIterationScreenshots() {
+    public synchronized List<String> getCurrentIterationScreenshots() {
         if (this.screenshotSets == null || this.screenshotSets.isEmpty() ||
                 this.screenshotSetIterations == null || this.screenshotSetIterations.isEmpty()) {
             return new ArrayList<>();
@@ -282,35 +282,35 @@ public class DesignSession {
         return getScreenshotsForIteration(currentIteration);
     }
 
-    public String getLastErrorFeedback() {
+    public synchronized String getLastErrorFeedback() {
         return lastErrorFeedback;
     }
 
-    public void setLastErrorFeedback(String lastErrorFeedback) {
+    public synchronized void setLastErrorFeedback(String lastErrorFeedback) {
         this.lastErrorFeedback = lastErrorFeedback;
     }
 
-    public boolean hasError() {
+    public synchronized boolean hasError() {
         return hasError;
     }
 
-    public void setHasError(boolean hasError) {
+    public synchronized void setHasError(boolean hasError) {
         this.hasError = hasError;
     }
 
-    public String getCurrentInputText() {
+    public synchronized String getCurrentInputText() {
         return currentInputText;
     }
 
-    public void setCurrentInputText(String currentInputText) {
+    public synchronized void setCurrentInputText(String currentInputText) {
         this.currentInputText = currentInputText;
     }
 
-    public List<String> getSelectedImagePaths() {
+    public synchronized List<String> getSelectedImagePaths() {
         return selectedImagePaths;
     }
 
-    public void setSelectedImagePaths(List<String> selectedImagePaths) {
+    public synchronized void setSelectedImagePaths(List<String> selectedImagePaths) {
         this.selectedImagePaths = selectedImagePaths;
     }
 
@@ -320,7 +320,7 @@ public class DesignSession {
      * @param iteration    The iteration number (1-based)
      * @param errorMessage The error message, or null to clear the error
      */
-    public void setIterationError(int iteration, String errorMessage) {
+    public synchronized void setIterationError(int iteration, String errorMessage) {
         if (this.iterationErrors == null) {
             this.iterationErrors = new HashMap<>();
         }
@@ -342,7 +342,7 @@ public class DesignSession {
      * @param iteration The iteration number (1-based)
      * @return The error message, or null if no error for this iteration
      */
-    public String getIterationError(int iteration) {
+    public synchronized String getIterationError(int iteration) {
         if (this.iterationErrors == null) {
             return null;
         }
@@ -355,7 +355,7 @@ public class DesignSession {
      * @param iteration The iteration number (1-based)
      * @return True if this iteration has an error, false otherwise
      */
-    public boolean hasIterationError(int iteration) {
+    public synchronized boolean hasIterationError(int iteration) {
         return getIterationError(iteration) != null;
     }
 
@@ -364,7 +364,7 @@ public class DesignSession {
      * 
      * @return Map of iteration numbers to error messages
      */
-    public Map<Integer, String> getAllIterationErrors() {
+    public synchronized Map<Integer, String> getAllIterationErrors() {
         if (this.iterationErrors == null) {
             return new HashMap<>();
         }
@@ -376,7 +376,7 @@ public class DesignSession {
      *
      * @return The message index, or -1 if no message is selected
      */
-    public int getSelectedMessageIndex() {
+    public synchronized int getSelectedMessageIndex() {
         return selectedMessageIndex;
     }
 
@@ -385,7 +385,7 @@ public class DesignSession {
      *
      * @param selectedMessageIndex The message index, or -1 for no selection
      */
-    public void setSelectedMessageIndex(int selectedMessageIndex) {
+    public synchronized void setSelectedMessageIndex(int selectedMessageIndex) {
         this.selectedMessageIndex = selectedMessageIndex;
     }
 
@@ -394,7 +394,7 @@ public class DesignSession {
      *
      * @return The code with line numbers
      */
-    public String getCodeWithLineNumbers() {
+    public synchronized String getCodeWithLineNumbers() {
         String currentCode = getCurrentCode();
         if (currentCode == null)
             return null;
@@ -533,7 +533,7 @@ public class DesignSession {
     /**
      * Converts this session to a JSONObject
      */
-    public JSONObject toJson() throws JSONException {
+    public synchronized JSONObject toJson() throws JSONException {
         JSONObject json = new JSONObject();
         json.put("id", id.toString());
         if (sessionName != null) {
