@@ -361,6 +361,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             List<LLMClient.Message> chatHistory = currentSession.getChatHistory();
             boolean hasChatHistory = chatHistory != null && !chatHistory.isEmpty();
 
+            // Check if there's any AI response with code in the chat history
+            boolean hasAiGeneratedCode = hasAnyAiResponseWithCode(chatHistory);
+
             if (currentSession.getCurrentCode() != null) {
                 String currentCode = currentSession.getCurrentCode();
 
@@ -370,6 +373,19 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 feedbackButtonsContainer.setVisibility(View.VISIBLE);
                 thumbsUpButton.setVisibility(View.VISIBLE);
                 runButton.setVisibility(View.VISIBLE);
+            } else if (hasAiGeneratedCode) {
+                // There's AI-generated code in chat history, show both buttons
+                feedbackButtonsContainer.setVisibility(View.VISIBLE);
+                thumbsUpButton.setVisibility(View.VISIBLE);
+                runButton.setVisibility(View.VISIBLE);
+            } else if (currentSession.getInitialCode() != null && !currentSession.getInitialCode().isEmpty()) {
+                // If we have initial code but no AI-generated code yet (e.g., from MainActivity),
+                // show only the RUN button so users can run the initial code
+                feedbackButtonsContainer.setVisibility(View.VISIBLE);
+                thumbsUpButton.setVisibility(View.GONE); // Hide thumbs up until AI generates code
+                runButton.setVisibility(View.VISIBLE);
+                runButton.setEnabled(true);
+                Log.d(TAG, "Showing RUN button for initial code from MainActivity (no AI-generated code yet)");
             }
 
             if (hasChatHistory) {
@@ -1175,7 +1191,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         boolean doUpdateSession = false;
 
         int selectedMessageIndex = currentSession.getSelectedMessageIndex();
-        int currentRunningIteration = getIterationNumberForMessage(selectedMessageIndex);
+        int currentRunningIteration = selectedMessageIndex < 0 ? -1 :
+            getIterationNumberForMessage(selectedMessageIndex);
 
         // Get the session ID, message index, and iteration count back from RenderActivity.
         String UUIDStr = intent.getStringExtra(RenderActivity.EXTRA_RESULT_SESSION_ID);
@@ -1189,7 +1206,9 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             String[] screenshotPaths = intent.getStringArrayExtra(RenderActivity.EXTRA_RESULT_SCREENSHOT_PATHS);
             Log.d(TAG, "Received " + screenshotPaths.length + " screenshots in onNewIntent");
 
-            // Save screenshots to session
+            // Save screenshots to session.  The currentRunningIteration may be
+            // negative, if this session was created with initial code but
+            // there hasn't been an AssistantResponse with code yet.
             if (screenshotPaths.length > 0) {
                 List<String> paths = new ArrayList<>(Arrays.asList(screenshotPaths));
                 currentSession.addScreenshotSet(paths, currentRunningIteration);
@@ -1638,43 +1657,61 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
     /**
      * Runs the code from the selected message (AI response) or the last AI response
-     * before selected user message or marker
+     * before selected user message or marker. Also handles running initial code
+     * when there is no chat history yet.
      */
     private void runSelectedCode(boolean returnOnError) {
-        if (selectedChatEntryIndex < 0 || currentSession == null) {
+        if (currentSession == null) {
+            Toast.makeText(this, "No session available", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String codeToRun = null;
+        int codeMessageIndex = -1; // No message index for initial code
+        int selectedIteration = -1; // Default for initial code
+
+        // Check if we have initial code but no AI-generated code yet (e.g., from MainActivity)
+        List<LLMClient.Message> messages = currentSession.getChatHistory();
+        boolean hasAiGeneratedCode = hasAnyAiResponseWithCode(messages);
+
+        // If we have initial code but no AI-generated code yet, use initial code
+        // This handles the case where selecting an LLM adds a system prompt to chat history
+        if (!hasAiGeneratedCode && currentSession.getInitialCode() != null && !currentSession.getInitialCode().isEmpty()) {
+            // Use initial code when there's no AI-generated code yet
+            codeToRun = currentSession.getInitialCode();
+            Log.d(TAG, "Running initial code (no AI-generated code yet)");
+        } else if (selectedChatEntryIndex < 0) {
             Toast.makeText(this, "No message selected", Toast.LENGTH_SHORT).show();
             return;
-        }
-
-        List<LLMClient.Message> messages = currentSession.getChatHistory();
-        if (selectedChatEntryIndex >= messages.size()) {
+        } else if (messages == null || selectedChatEntryIndex >= messages.size()) {
             Toast.makeText(this, "Selected message not found", Toast.LENGTH_SHORT).show();
             return;
+        } else {
+            // Normal flow: get code from selected message
+            LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
+
+            // Get code for execution using smart fallback logic
+            CodeSearchResult codeResult = getCodeForExecution(selectedMessage, selectedChatEntryIndex, "Run");
+
+            if (!codeResult.found) {
+                Toast.makeText(this, "No code found in message history. Please generate code first.", Toast.LENGTH_SHORT)
+                        .show();
+                return;
+            }
+
+            codeToRun = codeResult.code;
+            // codeMessageIndex could be < selectedChatEntryIndex if the last
+            // AssistantResponse with code in it was prior to the currently-selected
+            // message.
+            codeMessageIndex = codeResult.messageIndex;
+
+            // Calculate the correct iteration number for the code message
+            selectedIteration = getIterationNumberForMessage(codeMessageIndex);
+
+            Log.d(TAG,
+                    "Running code from iteration " + selectedIteration + " (AI response at index " + codeMessageIndex +
+                            ", originally selected index " + selectedChatEntryIndex + ")");
         }
-
-        LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
-
-        // Get code for execution using smart fallback logic
-        CodeSearchResult codeResult = getCodeForExecution(selectedMessage, selectedChatEntryIndex, "Run");
-
-        if (!codeResult.found) {
-            Toast.makeText(this, "No code found in message history. Please generate code first.", Toast.LENGTH_SHORT)
-                    .show();
-            return;
-        }
-
-        String codeToRun = codeResult.code;
-        // codeMessageIndex could be < selectedChatEntryIndex if the last
-        // AssistantResponse with code in it was prior to the currently-selected
-        // message.
-        int codeMessageIndex = codeResult.messageIndex;
-
-        // Calculate the correct iteration number for the code message
-        int selectedIteration = getIterationNumberForMessage(codeMessageIndex);
-
-        Log.d(TAG,
-                "Running code from iteration " + selectedIteration + " (AI response at index " + codeMessageIndex +
-                        ", originally selected index " + selectedChatEntryIndex + ")");
 
         // Start the activity with the selected code
         RenderActivity.launch(this, ClojureAppDesignActivity.class,
@@ -1747,6 +1784,30 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         public static CodeSearchResult notFound() {
             return new CodeSearchResult(-1, null, false);
         }
+    }
+
+    /**
+     * Checks if there's any AI response with code in the chat history.
+     *
+     * @param messages The chat history messages, or null
+     * @return true if there's at least one AI response with code, false otherwise
+     */
+    private boolean hasAnyAiResponseWithCode(List<LLMClient.Message> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return false;
+        }
+
+        for (LLMClient.Message message : messages) {
+            if (message.role == LLMClient.MessageRole.ASSISTANT) {
+                LLMClient.AssistantResponse assistantMsg = (LLMClient.AssistantResponse) message;
+                String extractedCode = assistantMsg.getExtractedCode();
+                if (extractedCode != null && !extractedCode.isEmpty()) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -1872,7 +1933,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
         assert messages != null && messageIndex >= 0 && messageIndex < messages.size();
 
         // Count assistant responses with code up to and including the selected message
-        int iterationNumber = 0;
+        int iterationNumber = -1;
         for (int i = 0; i <= messageIndex; i++) {
             LLMClient.Message message = messages.get(i);
             if (message.role == LLMClient.MessageRole.ASSISTANT) {
@@ -1885,7 +1946,8 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
             }
         }
 
-        assert iterationNumber > 0;
+        // The iteration count may fail if there are no AssistantResponse messages with code in them.
+        // assert iterationNumber > 0;
         return iterationNumber;
     }
 
@@ -2296,12 +2358,35 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
 
     /**
      * Updates action buttons based on the currently selected message (AI response,
-     * user message, or marker)
+     * user message, or marker). Also handles the case where there's initial code
+     * but no chat history yet.
      */
     private void updateActionButtonsForSelection() {
         assert currentSession != null;
+
+        List<LLMClient.Message> messages = currentSession.getChatHistory();
+        boolean hasChatHistory = messages != null && !messages.isEmpty();
+
+        // Check if there's any AI response with code in the chat history
+        boolean hasAiGeneratedCode = hasAnyAiResponseWithCode(messages);
+
+        // Only handle initial code case if there's no AI-generated code yet
+        if (!hasAiGeneratedCode && currentSession.getInitialCode() != null && !currentSession.getInitialCode().isEmpty()) {
+            // Enable RUN button for initial code, but disable thumbs up until AI generates code
+            runButton.setEnabled(true);
+            thumbsUpButton.setEnabled(false);
+            // Make sure thumbs up is hidden (it should already be hidden from setupSessionState)
+            thumbsUpButton.setVisibility(View.GONE);
+            Log.d(TAG, "Updated action buttons for initial code (no AI-generated code yet)");
+            return;
+        }
+
+        // If there's AI-generated code, make sure thumbs up is visible
+        if (hasAiGeneratedCode) {
+            thumbsUpButton.setVisibility(View.VISIBLE);
+        }
+
         if (selectedChatEntryIndex >= 0) {
-            List<LLMClient.Message> messages = currentSession.getChatHistory();
             if (selectedChatEntryIndex < messages.size()) {
                 LLMClient.Message selectedMessage = messages.get(selectedChatEntryIndex);
 
