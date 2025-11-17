@@ -25,6 +25,17 @@ import java.util.UUID;
 /**
  * Implementation of LLMClient for OpenAI's API.
  * Based on API documentation: https://platform.openai.com/docs/api-reference
+ *
+ * Vision/image support is determined dynamically when models are fetched from
+ * the OpenAI API. The system:
+ * -- Checks the API response for explicit vision capabilities
+ * -- Falls back to heuristics based on model name patterns (e.g., "vision",
+ * "multimodal", "gpt-5", "gpt-4o")
+ * -- Caches the results for performance
+ *
+ * Use supportsImages(String) getModelProperties(String) to check if a specific
+ * model supports image attachments. The system automatically adapts to new
+ * models as they become available through the API.
  */
 public class OpenAIChatClient extends LLMClient {
     private static final String TAG = "OpenAIChatClient";
@@ -37,6 +48,8 @@ public class OpenAIChatClient extends LLMClient {
     private static List<String> cachedModels = null;
     private static final Map<String, Boolean> MODEL_COMPLETION_TOKEN_SUPPORT = new ConcurrentHashMap<>();
     private static final Map<String, Boolean> MODEL_TEMPERATURE_LIMITED = new ConcurrentHashMap<>();
+    // Cache for model vision/image support capabilities
+    private static final Map<String, Boolean> MODEL_VISION_SUPPORT = new ConcurrentHashMap<>();
 
     public OpenAIChatClient(Context context, ChatSession chatSession) {
         super(context, chatSession);
@@ -141,6 +154,11 @@ public class OpenAIChatClient extends LLMClient {
                     // Only include GPT models
                     if (modelId.startsWith("gpt-")) {
                         models.add(modelId);
+
+                        // Determine if model supports vision/images
+                        boolean supportsVision = determineVisionSupport(model, modelId);
+                        MODEL_VISION_SUPPORT.put(modelId, supportsVision);
+                        Log.d(TAG, "Model " + modelId + " vision support: " + supportsVision);
                     }
                 }
 
@@ -179,7 +197,87 @@ public class OpenAIChatClient extends LLMClient {
      */
     public static void clearModelCache() {
         cachedModels = null;
+        MODEL_VISION_SUPPORT.clear();
         Log.d(TAG, "Cleared OpenAI model cache");
+    }
+
+    /**
+     * Determines if a model supports vision/image inputs based on API response and
+     * heuristics
+     *
+     * @param model   The model JSON object from the API response
+     * @param modelId The model ID string
+     * @return true if the model supports vision, false otherwise
+     */
+    private static boolean determineVisionSupport(JSONObject model, String modelId) {
+        // First, check if the API response explicitly indicates vision support
+        try {
+            // Check for capabilities field (if present in API response)
+            if (model.has("capabilities")) {
+                JSONObject capabilities = model.getJSONObject("capabilities");
+                if (capabilities.has("vision") && capabilities.getBoolean("vision")) {
+                    return true;
+                }
+            }
+
+            // Check for vision in other possible fields
+            if (model.has("permission")) {
+                JSONArray permissions = model.getJSONArray("permission");
+                for (int j = 0; j < permissions.length(); j++) {
+                    JSONObject perm = permissions.getJSONObject(j);
+                    if (perm.has("allow_create_engine") || perm.has("allow_sampling")) {
+                        // Permission exists, but doesn't directly indicate vision
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.d(TAG, "Could not parse capabilities from API response for " + modelId + ", using heuristics");
+        }
+
+        // Fallback to heuristics based on model name patterns
+        // Models that typically support vision:
+        // - gpt-4o, gpt-4o-mini (multimodal models)
+        // - gpt-5, gpt-5.* (latest models with vision)
+        // - gpt-4-turbo with vision/preview indicators
+        // - gpt-4-vision-preview
+        // - Models with "vision", "multimodal", or "o" (omni) in name
+
+        String lowerModelId = modelId.toLowerCase();
+
+        // Check for explicit vision indicators
+        if (lowerModelId.contains("vision") || lowerModelId.contains("multimodal")) {
+            return true;
+        }
+
+        // GPT-5 series (latest models with vision)
+        if (lowerModelId.startsWith("gpt-5")) {
+            return true;
+        }
+
+        // GPT-4o series (omni/multimodal)
+        if (lowerModelId.startsWith("gpt-4o")) {
+            return true;
+        }
+
+        // GPT-4 Turbo with vision variants
+        if (lowerModelId.contains("gpt-4-turbo")) {
+            // Check for vision-related date variants or preview
+            if (lowerModelId.contains("2024-04-09") ||
+                    lowerModelId.contains("2024-11-20") ||
+                    lowerModelId.contains("preview")) {
+                return true;
+            }
+            // Default GPT-4 Turbo may or may not support vision, be conservative
+            return false;
+        }
+
+        // Legacy GPT-4 Vision Preview
+        if (lowerModelId.contains("gpt-4-vision")) {
+            return true;
+        }
+
+        // Default: assume no vision support for unknown models
+        return false;
     }
 
     /**
@@ -189,8 +287,126 @@ public class OpenAIChatClient extends LLMClient {
      * @return ModelProperties for the model, or null if not found
      */
     public static ModelProperties getModelProperties(String modelName) {
-        // TODO: Implement OpenAI model properties lookup table
-        return null;
+        if (modelName == null) {
+            return null;
+        }
+
+        // First, check if we have cached vision support from API
+        Boolean cachedVisionSupport = MODEL_VISION_SUPPORT.get(modelName);
+        boolean supportsVision = false;
+
+        if (cachedVisionSupport != null) {
+            // Use cached value from API
+            supportsVision = cachedVisionSupport;
+            Log.d(TAG, "Using cached vision support for " + modelName + ": " + supportsVision);
+        } else {
+            // Fallback to heuristics if not in cache (e.g., model not yet fetched from API)
+            supportsVision = determineVisionSupportFromName(modelName);
+            Log.d(TAG, "Using heuristic vision support for " + modelName + ": " + supportsVision);
+        }
+
+        // Determine context window and output limits based on model family
+        int maxInputTokens = 8192; // Default
+        int maxOutputTokens = 4096; // Default
+        String status = "Current";
+
+        // GPT-5 series
+        if (modelName.startsWith("gpt-5")) {
+            maxInputTokens = 128000;
+            maxOutputTokens = 16384;
+            status = "Current";
+        }
+        // GPT-4o series
+        else if (modelName.startsWith("gpt-4o")) {
+            maxInputTokens = 128000;
+            maxOutputTokens = 16384;
+            status = "Current";
+        }
+        // GPT-4 Turbo series
+        else if (modelName.contains("gpt-4-turbo")) {
+            maxInputTokens = 128000;
+            maxOutputTokens = 4096;
+            status = "Current";
+        }
+        // GPT-4 original
+        else if (modelName.startsWith("gpt-4") && !modelName.contains("turbo") &&
+                !modelName.contains("vision") && !modelName.contains("o")) {
+            maxInputTokens = 8192;
+            maxOutputTokens = 4096;
+            status = "Legacy";
+        }
+        // GPT-3.5 Turbo
+        else if (modelName.contains("gpt-3.5-turbo")) {
+            maxInputTokens = 16385;
+            maxOutputTokens = 4096;
+            status = "Current";
+        }
+        // Unknown model - use defaults
+        else {
+            Log.d(TAG, "Unknown OpenAI model family: " + modelName + ", using default token limits");
+        }
+
+        return new ModelProperties(
+                maxInputTokens,
+                maxOutputTokens,
+                supportsVision, // Use dynamically determined vision support
+                status);
+    }
+
+    /**
+     * Determines vision support from model name using heuristics
+     * Used as fallback when model hasn't been fetched from API yet
+     */
+    private static boolean determineVisionSupportFromName(String modelName) {
+        if (modelName == null) {
+            return false;
+        }
+
+        String lowerModelName = modelName.toLowerCase();
+
+        // Explicit vision indicators
+        if (lowerModelName.contains("vision") || lowerModelName.contains("multimodal")) {
+            return true;
+        }
+
+        // GPT-5 series
+        if (lowerModelName.startsWith("gpt-5")) {
+            return true;
+        }
+
+        // GPT-4o series (omni/multimodal)
+        if (lowerModelName.startsWith("gpt-4o")) {
+            return true;
+        }
+
+        // GPT-4 Turbo with vision variants
+        if (lowerModelName.contains("gpt-4-turbo")) {
+            if (lowerModelName.contains("2024-04-09") ||
+                    lowerModelName.contains("2024-11-20") ||
+                    lowerModelName.contains("preview")) {
+                return true;
+            }
+            return false; // Conservative: standard GPT-4 Turbo may not support vision
+        }
+
+        // Legacy GPT-4 Vision Preview
+        if (lowerModelName.contains("gpt-4-vision")) {
+            return true;
+        }
+
+        // Default: no vision support
+        return false;
+    }
+
+    /**
+     * Check if a model supports image attachments
+     *
+     * @param modelName The name of the model
+     * @return true if the model supports images, false otherwise
+     */
+    public static boolean supportsImages(String modelName) {
+        ModelProperties props = getModelProperties(modelName);
+        return props != null && props.isMultimodal;
     }
 
     @Override
@@ -219,7 +435,11 @@ public class OpenAIChatClient extends LLMClient {
             } else {
                 throw new RuntimeException("Unknown role value " + msg.role.getApiValue());
             }
-            Log.d(TAG, "Message type: " + openaiRole + ", content: " + msg.content);
+            Log.d(TAG, "Message type: " + openaiRole);
+            String contentPreview = msg.content != null && msg.content.length() > 100
+                    ? msg.content.substring(0, 100) + "..."
+                    : msg.content;
+            Log.d(TAG, "Message type: " + openaiRole + ", content: " + contentPreview);
         }
 
         // Create a new cancellable future
@@ -242,7 +462,10 @@ public class OpenAIChatClient extends LLMClient {
                     return;
                 }
 
-                Log.d(TAG, "=== FULL OPENAI RESPONSE ===\n" + completion.content);
+                String responsePreview = completion.content != null && completion.content.length() > 100
+                        ? completion.content.substring(0, 100) + "..."
+                        : completion.content;
+                Log.d(TAG, "=== FULL OPENAI RESPONSE ===\n" + responsePreview);
 
                 // Create AssistantResponse with model information
                 AssistantResponse.CompletionStatus completionStatus = completion.truncated
@@ -355,11 +578,41 @@ public class OpenAIChatClient extends LLMClient {
                 requestBody.put("max_tokens", 4096);
             }
 
-            // Force JSON mode to prevent markdown code blocks
-            JSONObject responseFormat = new JSONObject();
-            responseFormat.put("type", "json_object");
-            requestBody.put("response_format", responseFormat);
-            Log.d(TAG, "Added response_format: json_object to enforce pure JSON output");
+            // Check if any message has images (vision models may not support
+            // response_format)
+            boolean hasImages = false;
+            for (Message msg : messages) {
+                if (msg.role == MessageRole.USER && msg instanceof LLMClient.UserMessage) {
+                    LLMClient.UserMessage userMsg = (LLMClient.UserMessage) msg;
+                    if (userMsg.hasImages()) {
+                        hasImages = true;
+                        break;
+                    }
+                }
+            }
+
+            // Log image support status for debugging
+            if (hasImages) {
+                boolean modelSupportsImages = supportsImages(modelName);
+                if (modelSupportsImages) {
+                    Log.d(TAG, "Model " + modelName + " supports image attachments");
+                } else {
+                    Log.w(TAG, "Model " + modelName + " may not support image attachments. " +
+                            "Vision support is determined dynamically from the API. " +
+                            "Common vision-capable models include: gpt-5*, gpt-4o*, gpt-4-turbo (vision variants)");
+                }
+            }
+
+            // Force JSON mode to prevent markdown code blocks (only if no images)
+            // Vision models typically don't support response_format
+            if (!hasImages) {
+                JSONObject responseFormat = new JSONObject();
+                responseFormat.put("type", "json_object");
+                requestBody.put("response_format", responseFormat);
+                Log.d(TAG, "Added response_format: json_object to enforce pure JSON output");
+            } else {
+                Log.d(TAG, "Skipping response_format for messages with images (vision models may not support it)");
+            }
 
             JSONArray messagesArray = new JSONArray();
             for (Message msg : messages) {
@@ -379,7 +632,77 @@ public class OpenAIChatClient extends LLMClient {
                     throw new RuntimeException("Unknown role for OpenAI API: " + msg.role + ", using: " + openaiRole);
                 }
                 msgObj.put("role", openaiRole);
-                msgObj.put("content", msg.content);
+
+                // For OpenAI API, we need to handle both text and image content for user
+                // messages
+                boolean isUserMessage = msg instanceof LLMClient.UserMessage;
+                if (msg.role == MessageRole.USER && isUserMessage && ((LLMClient.UserMessage) msg).hasImages()) {
+                    // Create content array with text and multiple images
+                    JSONArray contentArray = new JSONArray();
+
+                    // Add text content if present
+                    if (msg.content != null && !msg.content.trim().isEmpty()) {
+                        JSONObject textContent = new JSONObject();
+                        textContent.put("type", "text");
+                        textContent.put("text", msg.content);
+                        contentArray.put(textContent);
+                    }
+
+                    // Add all images
+                    LLMClient.UserMessage userMsg = (LLMClient.UserMessage) msg;
+                    List<File> validImages = userMsg.getValidImageFiles();
+                    List<String> validMimes = userMsg.getValidMimeTypes();
+
+                    for (int imgIndex = 0; imgIndex < validImages.size() && imgIndex < validMimes.size(); imgIndex++) {
+                        try {
+                            File imageFile = validImages.get(imgIndex);
+                            String mimeType = validMimes.get(imgIndex);
+
+                            // Verify image file exists and is readable
+                            if (!imageFile.exists()) {
+                                Log.e(TAG, "Image file " + (imgIndex + 1) + " does not exist: "
+                                        + imageFile.getAbsolutePath());
+                                continue; // Skip this image
+                            }
+
+                            if (!imageFile.canRead()) {
+                                Log.e(TAG, "Image file " + (imgIndex + 1) + " is not readable: "
+                                        + imageFile.getAbsolutePath());
+                                continue; // Skip this image
+                            }
+
+                            Log.d(TAG, "Processing image " + (imgIndex + 1) + "/" + validImages.size() + ": " +
+                                    imageFile.getAbsolutePath() + ", size: " + imageFile.length() + " bytes");
+
+                            String base64Image = encodeImageToBase64(imageFile);
+                            JSONObject imageContent = new JSONObject();
+                            imageContent.put("type", "image_url");
+                            JSONObject imageUrl = new JSONObject();
+                            imageUrl.put("url", "data:" + mimeType + ";base64," + base64Image);
+                            imageContent.put("image_url", imageUrl);
+                            contentArray.put(imageContent);
+
+                            Log.d(TAG, "Added image " + (imgIndex + 1) + "/" + validImages.size() +
+                                    ", text length: " + (msg.content != null ? msg.content.length() : 0) +
+                                    ", image base64 length: " + base64Image.length() +
+                                    ", MIME type: " + mimeType);
+                        } catch (IOException e) {
+                            Log.e(TAG, "Failed to encode image " + (imgIndex + 1) + " for message: " +
+                                    validImages.get(imgIndex).getAbsolutePath(), e);
+                            // Continue with next image
+                        } catch (Exception e) {
+                            Log.e(TAG, "Unexpected error processing image " + (imgIndex + 1) + ": " +
+                                    validImages.get(imgIndex).getAbsolutePath(), e);
+                            // Continue with next image
+                        }
+                    }
+
+                    msgObj.put("content", contentArray);
+                } else {
+                    // Regular text-only message
+                    msgObj.put("content", msg.content);
+                }
+
                 messagesArray.put(msgObj);
             }
             requestBody.put("messages", messagesArray);
@@ -467,7 +790,10 @@ public class OpenAIChatClient extends LLMClient {
                     Log.d(TAG, "╔═══════════════════════════╗");
                     Log.d(TAG, "║ START OPENAI API RESPONSE ║");
                     Log.d(TAG, "╚═══════════════════════════╝");
-                    Log.d(TAG, jsonResponse);
+                    String jsonResponsePreview = jsonResponse != null && jsonResponse.length() > 100
+                            ? jsonResponse.substring(0, 100) + "..."
+                            : jsonResponse;
+                    Log.d(TAG, jsonResponsePreview);
                     Log.d(TAG, "╔══════════════════════════╗");
                     Log.d(TAG, "║ STOP OPENAI API RESPONSE ║");
                     Log.d(TAG, "╚══════════════════════════╝");
