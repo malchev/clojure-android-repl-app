@@ -107,6 +107,7 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     // Track expanded code sections and system prompt
     private Set<Integer> expandedCodeSections = new HashSet<>();
     private Set<Integer> expandedLogcatSections = new HashSet<>();
+    private Set<Integer> expandedUserCodeSections = new HashSet<>();
     private boolean systemPromptExpanded = false;
 
     // Add fields for automatic iteration and cancel functionality
@@ -2623,6 +2624,46 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
     }
 
     /**
+     * Extracts Clojure code from a User message that contains ```clojure ... ``` code blocks.
+     * Returns an array with [code, textBeforeCode, textAfterCode] or null if no code found.
+     */
+    private String[] extractClojureCodeFromUserMessage(String content) {
+        if (content == null || content.isEmpty()) {
+            return null;
+        }
+
+        // Find the LAST occurrence of ```clojure to ensure we get the final code block
+        int startMarkerPos = content.lastIndexOf("```clojure");
+        if (startMarkerPos != -1) {
+            try {
+                // Find the end of the start marker line
+                int lineEnd = content.indexOf('\n', startMarkerPos);
+                if (lineEnd != -1) {
+                    // Skip past the entire marker line
+                    int codeStart = lineEnd + 1;
+
+                    // Find the closing code block marker
+                    int endMarkerPos = content.indexOf("```", codeStart);
+                    if (endMarkerPos != -1) {
+                        // Extract just the code between the markers
+                        String extractedCode = content.substring(codeStart, endMarkerPos).trim();
+
+                        // Extract text before and after the code block
+                        String textBeforeCode = content.substring(0, startMarkerPos).trim();
+                        String textAfterCode = content.substring(endMarkerPos + 3).trim(); // +3 for "```"
+
+                        return new String[]{extractedCode, textBeforeCode, textAfterCode};
+                    }
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error extracting Clojure code from user message", e);
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Creates a view for regular messages (user/assistant)
      */
     private void createMessageView(LinearLayout container, LLMClient.Message message, int messageIndex) {
@@ -2715,9 +2756,106 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 }
                 return; // Exit early since we handled the logcat case
             }
+
+            // Check if this user message contains Clojure code blocks
+            String[] codeExtraction = extractClojureCodeFromUserMessage(message.content);
+            if (codeExtraction != null) {
+                String extractedCode = codeExtraction[0];
+                String textBeforeCode = codeExtraction[1];
+                String textAfterCode = codeExtraction[2];
+
+                // Show text before code
+                if (!textBeforeCode.isEmpty()) {
+                    TextView beforeTextView = new TextView(this);
+                    beforeTextView.setLayoutParams(new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT));
+                    beforeTextView.setTextSize(14);
+                    beforeTextView.setPadding(0, 4, 0, 4);
+                    beforeTextView.setText(textBeforeCode);
+                    container.addView(beforeTextView);
+                }
+
+                // Create clickable button for code
+                Button codeButton = new Button(this);
+                codeButton.setLayoutParams(new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+                codeButton.setTextAlignment(View.TEXT_ALIGNMENT_TEXT_START);
+                codeButton.setBackgroundResource(android.R.color.transparent);
+                codeButton.setTextColor(getResources().getColor(android.R.color.holo_blue_dark));
+                codeButton.setPadding(0, 8, 0, 8);
+
+                if (expandedUserCodeSections.contains(messageIndex)) {
+                    codeButton.setText("📄 [Click to hide Clojure code]");
+                } else {
+                    codeButton.setText("📄 [Click to show Clojure code]");
+                }
+
+                codeButton.setOnClickListener(v -> {
+                    if (expandedUserCodeSections.contains(messageIndex)) {
+                        expandedUserCodeSections.remove(messageIndex);
+                    } else {
+                        expandedUserCodeSections.add(messageIndex);
+                    }
+                    updateChatHistoryDisplay(false, false); // Preserve selection, no auto-scroll
+                });
+                container.addView(codeButton);
+
+                // Add code content if expanded
+                if (expandedUserCodeSections.contains(messageIndex)) {
+                    // Create horizontal scrollable container for code
+                    HorizontalScrollView codeScrollView = new HorizontalScrollView(this);
+                    codeScrollView.setLayoutParams(new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT));
+                    codeScrollView.setBackgroundColor(getResources().getColor(android.R.color.white));
+                    codeScrollView.setPadding(16, 8, 16, 8);
+
+                    TextView codeView = new TextView(this);
+                    codeView.setLayoutParams(new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT));
+                    codeView.setTextSize(12);
+                    // Try multiple monospace fonts to ensure we get a truly fixed-width font
+                    Typeface monoTypeface = null;
+                    try {
+                        // First try Droid Sans Mono (common on Android)
+                        monoTypeface = Typeface.create("Droid Sans Mono", Typeface.NORMAL);
+                    } catch (Exception e) {
+                        try {
+                            // Fallback to Courier
+                            monoTypeface = Typeface.create("Courier", Typeface.NORMAL);
+                        } catch (Exception e2) {
+                            // Final fallback to system monospace
+                            monoTypeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL);
+                        }
+                    }
+                    codeView.setTypeface(monoTypeface);
+                    codeView.setPadding(0, 0, 0, 0);
+                    codeView.setText(extractedCode);
+
+                    codeScrollView.addView(codeView);
+                    container.addView(codeScrollView);
+                }
+
+                // Show text after code
+                if (!textAfterCode.isEmpty()) {
+                    TextView afterTextView = new TextView(this);
+                    afterTextView.setLayoutParams(new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT));
+                    afterTextView.setTextSize(14);
+                    afterTextView.setPadding(0, 4, 0, 4);
+                    afterTextView.setText(textAfterCode);
+                    container.addView(afterTextView);
+                }
+
+                return; // Exit early since we handled the code block case
+            }
         }
 
-        // No logcat found, check for code and reasoning
+        // No logcat or user code found, check for code and reasoning
         String extractedCode = null;
         String reasoning = null;
         LLMClient.CodeExtractionResult result = null;
