@@ -71,14 +71,50 @@ public class SessionManager {
     }
 
     /**
-     * Gets a session by ID
+     * Gets a session by ID. If not found in memory, attempts to load from disk.
      */
     public DesignSession getSessionById(UUID sessionId) {
+        // First check in-memory list
         for (DesignSession session : sessions) {
             if (session.getId().equals(sessionId)) {
                 return session;
             }
         }
+
+        // Not found in memory, try loading from disk
+        File sessionFile = getSessionFile(sessionId);
+        if (sessionFile.exists()) {
+            try {
+                try (BufferedReader reader = new BufferedReader(new FileReader(sessionFile))) {
+                    StringBuilder jsonString = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        jsonString.append(line);
+                    }
+
+                    JSONObject sessionJson = new JSONObject(jsonString.toString());
+                    DesignSession session = DesignSession.fromJson(sessionJson, context);
+
+                    // Add to in-memory list if not already present (prevent duplicates)
+                    boolean alreadyExists = false;
+                    for (DesignSession existingSession : sessions) {
+                        if (existingSession.getId().equals(sessionId)) {
+                            alreadyExists = true;
+                            break;
+                        }
+                    }
+                    if (!alreadyExists) {
+                        sessions.add(session);
+                        Log.d(TAG, "Loaded session " + sessionId + " from disk");
+                    }
+
+                    return session;
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error loading session from disk: " + sessionFile.getName(), e);
+            }
+        }
+
         return null;
     }
 
@@ -276,11 +312,24 @@ public class SessionManager {
 
                     JSONObject sessionJson = new JSONObject(jsonString.toString());
                     DesignSession session = DesignSession.fromJson(sessionJson, context);
-                    sessions.add(session);
-                    successCount++;
-                    Log.v(TAG, "Loaded session ID: " + session.getId() + ", Description: " +
-                            (session.getDescription() != null ? session.getDescription().substring(0,
-                                    Math.min(30, session.getDescription().length())) + "..." : "null"));
+
+                    // Check for duplicates before adding (shouldn't happen after clear, but be safe)
+                    boolean alreadyExists = false;
+                    for (DesignSession existingSession : sessions) {
+                        if (existingSession.getId().equals(session.getId())) {
+                            alreadyExists = true;
+                            Log.w(TAG, "Duplicate session found when loading: " + session.getId() + ", skipping");
+                            break;
+                        }
+                    }
+
+                    if (!alreadyExists) {
+                        sessions.add(session);
+                        successCount++;
+                        Log.v(TAG, "Loaded session ID: " + session.getId() + ", Description: " +
+                                (session.getDescription() != null ? session.getDescription().substring(0,
+                                        Math.min(30, session.getDescription().length())) + "..." : "null"));
+                    }
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Error loading session file: " + sessionFile.getName(), e);
