@@ -38,12 +38,18 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.io.File;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.view.PixelCopy;
+import android.opengl.GLSurfaceView;
 import android.view.View;
+import android.view.ViewParent;
 import android.view.MotionEvent;
 import android.os.Handler;
+import android.os.HandlerThread;
 import java.util.ArrayList;
 import android.view.ViewGroup;
 import java.lang.reflect.Field;
+import android.os.Build;
 
 public class RenderActivity extends AppCompatActivity {
     private static final String TAG = "ClojureRender";
@@ -561,7 +567,11 @@ public class RenderActivity extends AppCompatActivity {
                 return null;
             }
 
-            // Create a bitmap with the layout
+            // Find all GLSurfaceView instances in the hierarchy
+            List<GLSurfaceView> glSurfaceViews = findGLSurfaceViews(rootView);
+            Log.d(TAG, "Found " + glSurfaceViews.size() + " GLSurfaceView(s) in hierarchy");
+
+            // Create a bitmap with the layout (this won't capture GLSurfaceView content)
             rootView.setDrawingCacheEnabled(true);
             Bitmap bitmap = Bitmap.createBitmap(rootView.getDrawingCache());
             rootView.setDrawingCacheEnabled(false);
@@ -569,6 +579,11 @@ public class RenderActivity extends AppCompatActivity {
             if (bitmap == null) {
                 Log.e(TAG, "Failed to create bitmap from drawing cache");
                 return null;
+            }
+
+            // If we have GLSurfaceView instances, capture them and composite onto the bitmap
+            if (!glSurfaceViews.isEmpty()) {
+                bitmap = compositeGLSurfaceViews(bitmap, rootView, glSurfaceViews);
             }
 
             // Use ScreenshotManager to save the bitmap
@@ -597,6 +612,165 @@ public class RenderActivity extends AppCompatActivity {
             Log.e(TAG, "Error taking screenshot", e);
             return null;
         }
+    }
+
+    /**
+     * Recursively find all GLSurfaceView instances in the view hierarchy
+     */
+    private List<GLSurfaceView> findGLSurfaceViews(View root) {
+        List<GLSurfaceView> glSurfaceViews = new ArrayList<>();
+        findGLSurfaceViewsRecursive(root, glSurfaceViews);
+        return glSurfaceViews;
+    }
+
+    private void findGLSurfaceViewsRecursive(View view, List<GLSurfaceView> result) {
+        if (view instanceof GLSurfaceView) {
+            result.add((GLSurfaceView) view);
+        } else if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                findGLSurfaceViewsRecursive(group.getChildAt(i), result);
+            }
+        }
+    }
+
+    /**
+     * Calculate the position of a view relative to a root view by traversing the hierarchy
+     */
+    private int[] getViewPositionRelativeToRoot(View view, View rootView) {
+        int x = 0;
+        int y = 0;
+        View current = view;
+
+        while (current != null && current != rootView) {
+            x += current.getLeft();
+            y += current.getTop();
+            ViewParent parent = current.getParent();
+            if (parent instanceof View) {
+                current = (View) parent;
+            } else {
+                break;
+            }
+        }
+
+        return new int[]{x, y};
+    }
+
+    /**
+     * Composite GLSurfaceView captures onto the base bitmap using PixelCopy
+     */
+    private Bitmap compositeGLSurfaceViews(Bitmap baseBitmap, View rootView, List<GLSurfaceView> glSurfaceViews) {
+        // Create a mutable copy of the base bitmap for compositing
+        Bitmap compositeBitmap = baseBitmap.copy(Bitmap.Config.ARGB_8888, true);
+        Canvas canvas = new Canvas(compositeBitmap);
+
+        // Capture each GLSurfaceView and composite it onto the bitmap
+        for (GLSurfaceView glView : glSurfaceViews) {
+            try {
+                // Get the view's position relative to the root view by traversing the hierarchy
+                int[] relativePos = getViewPositionRelativeToRoot(glView, rootView);
+                int x = relativePos[0];
+                int y = relativePos[1];
+                int width = glView.getWidth();
+                int height = glView.getHeight();
+
+                Log.d(TAG, "GLSurfaceView relative position: (" + x + ", " + y +
+                    "), size: " + width + "x" + height +
+                    ", bitmap size: " + compositeBitmap.getWidth() + "x" + compositeBitmap.getHeight());
+
+                if (width <= 0 || height <= 0) {
+                    Log.w(TAG, "GLSurfaceView has invalid dimensions, skipping: " + width + "x" + height);
+                    continue;
+                }
+
+                Log.d(TAG, "Capturing GLSurfaceView at (" + x + ", " + y + ") size: " + width + "x" + height);
+
+                // Create a bitmap for the GLSurfaceView content
+                Bitmap glBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+
+                // Use PixelCopy API (available from API 26+) to capture GLSurfaceView directly
+                // GLSurfaceView extends SurfaceView, so we can use PixelCopy.request() with it
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    // Use a synchronized approach to capture the result
+                    final Bitmap[] capturedBitmap = new Bitmap[1];
+                    final Object lock = new Object();
+                    final boolean[] completed = new boolean[1];
+                    final int[] copyResult = new int[1];
+
+                    // Create a background handler thread for the callback to avoid blocking main thread
+                    HandlerThread handlerThread = new HandlerThread("PixelCopyHandler");
+                    handlerThread.start();
+                    Handler handler = new Handler(handlerThread.getLooper());
+
+                    try {
+                        // Request pixel copy from the GLSurfaceView
+                        PixelCopy.request(glView, glBitmap,
+                            new PixelCopy.OnPixelCopyFinishedListener() {
+                                @Override
+                                public void onPixelCopyFinished(int result) {
+                                    synchronized (lock) {
+                                        copyResult[0] = result;
+                                        if (result == PixelCopy.SUCCESS) {
+                                            capturedBitmap[0] = glBitmap;
+                                            Log.d(TAG, "Successfully captured GLSurfaceView content");
+                                        } else {
+                                            Log.e(TAG, "PixelCopy failed with result: " + result);
+                                        }
+                                        completed[0] = true;
+                                        lock.notifyAll();
+                                    }
+                                }
+                            }, handler);
+
+                        // Wait for the PixelCopy to complete (with timeout)
+                        synchronized (lock) {
+                            try {
+                                if (!completed[0]) {
+                                    lock.wait(2000); // Wait up to 2 seconds
+                                }
+                                if (!completed[0]) {
+                                    Log.w(TAG, "PixelCopy timed out after 2 seconds");
+                                }
+                            } catch (InterruptedException e) {
+                                Log.e(TAG, "Interrupted while waiting for PixelCopy", e);
+                                Thread.currentThread().interrupt();
+                            }
+                        }
+
+                        // Draw the captured GL content onto the composite bitmap
+                        if (capturedBitmap[0] != null && x >= 0 && y >= 0 &&
+                            x + width <= compositeBitmap.getWidth() &&
+                            y + height <= compositeBitmap.getHeight()) {
+                            canvas.drawBitmap(capturedBitmap[0], x, y, null);
+                            Log.d(TAG, "Composited GLSurfaceView onto screenshot at (" + x + ", " + y + ")");
+                        } else {
+                            if (capturedBitmap[0] == null) {
+                                Log.w(TAG, "Could not composite GLSurfaceView - capture failed (result: " + copyResult[0] + ")");
+                            } else {
+                                Log.w(TAG, "Could not composite GLSurfaceView - invalid position: (" + x + ", " + y +
+                                    ") bitmap size: " + compositeBitmap.getWidth() + "x" + compositeBitmap.getHeight() +
+                                    " GLView size: " + width + "x" + height);
+                            }
+                        }
+                    } finally {
+                        // Clean up handler thread
+                        handlerThread.quitSafely();
+                        try {
+                            handlerThread.join(100); // Wait up to 100ms for thread to finish
+                        } catch (InterruptedException e) {
+                            Log.w(TAG, "Interrupted while waiting for handler thread to finish", e);
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+                } else {
+                    Log.w(TAG, "PixelCopy not available on this API level");
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error capturing GLSurfaceView", e);
+            }
+        }
+
+        return compositeBitmap;
     }
 
     private void setupClojureClassLoader() {
