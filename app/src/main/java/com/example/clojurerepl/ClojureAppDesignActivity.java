@@ -2127,32 +2127,19 @@ public class ClojureAppDesignActivity extends AppCompatActivity {
                 int savedSelection = currentSession.getSelectedMessageIndex();
                 if (savedSelection >= 0 && savedSelection < messages.size()) {
                     LLMClient.MessageRole savedRole = messages.get(savedSelection).role;
-                    // Allow AI responses, user messages, and markers to be restored
-                    if (savedRole == LLMClient.MessageRole.ASSISTANT || savedRole == LLMClient.MessageRole.USER
-                            || savedRole == LLMClient.MessageRole.MARKER) {
-                        selectedChatEntryIndex = savedSelection;
-                        Log.d(TAG, "Restored saved message selection: " + savedSelection + " (" + savedRole + ")");
-                    } else {
-                        // Fall back to selecting the last (most recent) AI response
-                        selectedChatEntryIndex = -1; // Reset selection
-                        for (int i = messages.size() - 1; i >= 0; i--) {
-                            if (messages.get(i).role == LLMClient.MessageRole.ASSISTANT) {
-                                selectedChatEntryIndex = i;
-                                Log.d(TAG, "Auto-selected last AI response: " + selectedChatEntryIndex);
-                                break;
-                            }
-                        }
-                    }
+                    selectedChatEntryIndex = savedSelection;
+                    Log.d(TAG, "Restoring saved selection: " + savedSelection + " (" + savedRole + ")");
                 } else {
-                    // Fall back to selecting the last (most recent) AI response
+                    // Fall back to selecting the last (most recent) message
                     selectedChatEntryIndex = messages.size() - 1;
+                    LLMClient.MessageRole savedRole = messages.get(selectedChatEntryIndex).role;
+                    Log.d(TAG, "No saved selection, restoring last message: " + selectedChatEntryIndex + " (" + savedRole + ")");
+                    currentSession.setSelectedMessageIndex(selectedChatEntryIndex);
+                    sessionManager.updateSession(currentSession);
                 }
 
                 // Save the selected message index to the session if we made a selection
                 assert selectedChatEntryIndex >= 0;
-                currentSession.setSelectedMessageIndex(selectedChatEntryIndex);
-                sessionManager.updateSession(currentSession);
-                Log.d(TAG, "Saved auto-selected message index " + selectedChatEntryIndex + " to session");
             }
 
             // Clear existing views
