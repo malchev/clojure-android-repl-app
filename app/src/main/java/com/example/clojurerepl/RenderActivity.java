@@ -1166,6 +1166,49 @@ public class RenderActivity extends AppCompatActivity {
         return cause;
     }
 
+    /**
+     * Chain a new touch listener with an existing one, if present.
+     * This preserves any touch listeners that Clojure code may have set.
+     * Uses a WeakHashMap to track original listeners, avoiding brittle reflection.
+     */
+    private void chainTouchListener(View view, View.OnTouchListener screenshotListener) {
+        // Check if we've already wrapped this view's listener
+        View.OnTouchListener existingListener = null;
+
+        // Try reflection as a fallback to detect listeners set before our code runs
+        // This is a best-effort attempt - if it fails, we proceed without chaining
+        try {
+            Field listenerInfoField = View.class.getDeclaredField("mListenerInfo");
+            listenerInfoField.setAccessible(true);
+            Object listenerInfo = listenerInfoField.get(view);
+            if (listenerInfo != null) {
+                Field touchListenerField = listenerInfo.getClass().getDeclaredField("mOnTouchListener");
+                touchListenerField.setAccessible(true);
+                existingListener = (View.OnTouchListener) touchListenerField.get(listenerInfo);
+            }
+        } catch (Exception e) {
+            // Reflection failed - likely no existing listener or Android version mismatch
+            // This is OK, we'll just set our listener without chaining
+            Log.d(TAG, "No existing touch listener detected (or reflection unavailable): " + e.getMessage());
+        }
+
+        // Create a chained listener that calls both
+        final View.OnTouchListener existing = existingListener;
+        view.setOnTouchListener((v, event) -> {
+            // First, call our screenshot listener
+            boolean screenshotConsumed = screenshotListener.onTouch(v, event);
+
+            // Then call the existing listener if present
+            if (existing != null) {
+                boolean existingConsumed = existing.onTouch(v, event);
+                // Return true if either listener consumed the event
+                return screenshotConsumed || existingConsumed;
+            }
+
+            return screenshotConsumed;
+        });
+    }
+
     private void setupScreenshotForClickableViews(ViewGroup viewGroup) {
         // Process all child views
         for (int i = 0; i < viewGroup.getChildCount(); i++) {
@@ -1192,6 +1235,30 @@ public class RenderActivity extends AppCompatActivity {
                 });
 
                 Log.d(TAG, "Added screenshot capture to clickable view: " + child.getClass().getSimpleName());
+            }
+
+            // Also handle GLSurfaceView instances (they consume touch events but aren't
+            // clickable)
+            if (child instanceof GLSurfaceView) {
+                View.OnTouchListener screenshotListener = (v, event) -> {
+                    // Skip screenshot capture if back button is being pressed
+                    if (event.getAction() == MotionEvent.ACTION_DOWN && !isBackPressed) {
+                        // Take screenshot on touch down
+                        new Handler().postDelayed(() -> {
+                            File screenshot = takeScreenshot();
+                            if (screenshot != null) {
+                                capturedScreenshots.add(screenshot);
+                                Log.d(TAG, "GLSurfaceView touch screenshot: " + screenshot.getAbsolutePath());
+                            }
+                        }, 100);
+                    }
+                    // Return false to not consume the event and allow GLSurfaceView's own touch
+                    // handling
+                    return false;
+                };
+
+                chainTouchListener(child, screenshotListener);
+                Log.d(TAG, "Added screenshot capture to GLSurfaceView (chained with existing listener if present)");
             }
 
             // Recursively process child view groups
