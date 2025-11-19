@@ -126,6 +126,13 @@ public class GeminiLLMClient extends LLMClient {
     private static final Map<String, ModelProperties> MODEL_PROPERTIES = new HashMap<>();
 
     static {
+        // Gemini 3.0 Pro models
+        MODEL_PROPERTIES.put("gemini-3-pro-preview", new ModelProperties(
+                2_000_000, // ~2M tokens input context
+                8_192, // 8,192 tokens output
+                true, // multimodal
+                "Preview"));
+
         // Gemini 2.5 Pro models
         MODEL_PROPERTIES.put("gemini-2.5-pro", new ModelProperties(
                 2_000_000, // ~2M tokens input context
@@ -479,7 +486,8 @@ public class GeminiLLMClient extends LLMClient {
     }
 
     @Override
-    protected CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session, MessageFilter messageFilter) {
+    protected CancellableCompletableFuture<AssistantResponse> sendMessages(ChatSession session,
+            MessageFilter messageFilter) {
         Log.d(TAG, "Sending " + session.getMessages().size() + " messages in session: " + session.getSessionId());
         Log.d(TAG, "System prompt available: " + (session.hasSystemPrompt() ? "yes" : "no"));
 
@@ -518,8 +526,8 @@ public class GeminiLLMClient extends LLMClient {
                 if (responseText == null) {
                     responseText = "";
                 }
-                AssistantResponse.CompletionStatus completionStatus =
-                        extractionResult != null && extractionResult.getStatus() == ResponseStatus.MAX_TOKENS
+                AssistantResponse.CompletionStatus completionStatus = extractionResult != null
+                        && extractionResult.getStatus() == ResponseStatus.MAX_TOKENS
                                 ? AssistantResponse.CompletionStatus.TRUNCATED_MAX_TOKENS
                                 : AssistantResponse.CompletionStatus.COMPLETE;
                 AssistantResponse assistantResponse = new AssistantResponse(
@@ -1058,14 +1066,12 @@ public class GeminiLLMClient extends LLMClient {
             }
 
             if (text != null) {
-                return new ExtractionResult(maxTokens ?
-                        ResponseStatus.MAX_TOKENS : ResponseStatus.SUCCESS,
+                return new ExtractionResult(maxTokens ? ResponseStatus.MAX_TOKENS : ResponseStatus.SUCCESS,
                         text, jsonResponse);
             } else {
                 Log.e(TAG, "Could not extract text from any known response structure");
                 Log.e(TAG, "Content structure: " + content.toString());
-                return new ExtractionResult(maxTokens ?
-                        ResponseStatus.MAX_TOKENS : ResponseStatus.PARSE_ERROR,
+                return new ExtractionResult(maxTokens ? ResponseStatus.MAX_TOKENS : ResponseStatus.PARSE_ERROR,
                         null, jsonResponse);
             }
 
