@@ -1,132 +1,75 @@
-# Clojure Android REPL App
+# Clojure Android REPL & App Designer
 
-A powerful Android application that provides a fully functional Clojure REPL environment directly on Android devices, allowing for interactive Clojure development and experimentation on mobile platforms with full access to the Android SDK APIs.
+A powerful Android application that combines a fully functional Clojure REPL with an LLM-powered app designer. It allows you to interactively develop Clojure code on Android and use AI to generate, run, and iterate on full Android UI applications directly on your device.
 
 ## Overview
 
-This application enables running Clojure code directly on Android devices by implementing a custom REPL (Read-Eval-Print Loop) environment. It features:
+This application transforms your Android device into a self-contained development environment. It features:
 
-- Live Clojure code evaluation on Android
-- Full access to Android SDK APIs (sensors, networking, UI, etc.)
-- Custom class loading system for Android compatibility
-- Example applications demonstrating various Android features and APIs
-
-### Why Clojure on Android?
-
-Unlike other mobile development approaches like ReactNative, this app leverages Clojure's native JVM integration for seamless Android development:
-
-- **Direct SDK Access**: As a JVM language, Clojure can directly call Android SDK APIs without requiring bridge adapters or JavaScript interfaces. This is in contrast to ReactNative, which needs to maintain a complex bridge layer between JavaScript and native code.
-
-- **Native Performance**: Clojure code is compiled to Dalvik bytecode, just like Java code on Android, allowing it to benefit from all the optimizations provided by ART (Android Runtime). This includes ahead-of-time compilation, profile-guided optimizations, and efficient garbage collection. Unlike ReactNative's JavaScript bridge, Clojure code runs natively with the same performance characteristics as Java applications.
-
-- **Elegant Code**: Clojure's functional programming paradigm and rich standard library allow developers to write more expressive and concise code compared to Java. What might take dozens of lines in Java can often be expressed in just a few lines of elegant Clojure code.
-
-- **Live Development**: The REPL environment enables real-time code evaluation and modification, similar to ReactNative's hot reloading but with the added power of direct SDK access.
+- **AI-Powered App Generation**: Describe an app or feature in plain English, and the built-in LLM client (supporting Claude, Gemini, OpenAI) will generate the Clojure code for it.
+- **Live Execution**: Instantly run generated code in a sandboxed environment (`RenderActivity`) that supports full Android UI capabilities.
+- **Interactive REPL**: A traditional Read-Eval-Print Loop for manual coding and experimentation.
+- **Full Android SDK Access**: Access sensors, UI components, networking, and system services directly from Clojure.
+- **Iterative Design**: Refine your apps through conversation with the AI, with instant visual feedback.
 
 ## Architecture
 
+The application is built around a few core components that separate the design interface from the execution environment.
+
 ### Core Components
 
-1. **MainActivity** (`MainActivity.java`)
-   - The central component that manages the REPL environment and UI
-   - Initializes the Clojure runtime environment with custom class loading
-   - Handles code evaluation and result display
-   - Manages dynamic UI updates and Android context integration
-   - Provides thread-safe bindings for Clojure vars and namespace management
-   - Sets up the custom class loader and Android integration
-   - Handles intent-based code evaluation requests
+1. **ClojureAppDesignActivity** (`ClojureAppDesignActivity.java`)
+   - The primary interface for the "App Designer" mode.
+   - Manages the chat interface with the LLM.
+   - Handles user prompts, sends them to the selected LLM provider, and processes the generated code.
+   - Launches `RenderActivity` to display the result.
 
-2. **AndroidClassLoaderDelegate** (`AndroidClassLoaderDelegate.java`)
-   - Handles dynamic class loading for Clojure on Android
-   - Converts JVM bytecode to DEX format using D8 compiler
-   - Manages an in-memory DEX class loader for runtime-generated classes
-   - Implements caching for improved performance
-   - Ensures proper class loading hierarchy and context
-   - Provides real-time class definition capabilities
+2. **RenderActivity** (`RenderActivity.java`)
+   - The execution engine for generated Clojure code.
+   - Runs in a separate process to ensure stability and isolation.
+   - Dynamically compiles and loads Clojure code using a custom class loader.
+   - Provides a `UiSafeViewGroup` to allow safe UI manipulation from background threads.
+   - Captures screenshots of the running app to send back to the LLM for visual context.
+   - Handles errors and crashes gracefully, reporting them back to the design activity.
 
-3. **ClojureCodeReceiver** (`ClojureCodeReceiver.java`)
-   - Broadcast receiver for external Clojure code evaluation
-   - Enables inter-process communication for code execution
-   - Routes evaluation requests to MainActivity via intents
-   - Facilitates integration with external development tools
-   - Handles the `com.example.clojurerepl.EVAL_CODE` action
+3. **LLM Client Infrastructure** (`LLMClient.java`, `ClaudeLLMClient.java`, `GeminiLLMClient.java`, `OpenAIChatClient.java`)
+   - An abstraction layer for communicating with various AI models.
+   - Supports streaming responses for a responsive UI.
+   - Handles API authentication and request formatting.
 
-4. **ClojureClassLoader** (`ClojureClassLoader.java`)
-   - Custom class loader specifically for handling Clojure classes
-   - Intercepts loading of critical Clojure classes (e.g., clojure.lang.Reflector)
-   - Provides special handling for reflection-related classes
-   - Enables seamless integration between Clojure and Android's class loading system
-   - Maintains proper parent-child class loader relationships
+4. **MainActivity** (`MainActivity.java`)
+   - The entry point for the traditional REPL mode.
+   - Manages the basic Clojure runtime environment.
 
-5. **REPL Environment**
-   - Provides a complete Clojure runtime environment
-   - Enables dynamic code evaluation
-   - Supports both synchronous and asynchronous code execution
-   - Maintains session state for continuous development
+5. **AndroidClassLoaderDelegate** (`AndroidClassLoaderDelegate.java`)
+   - The bridge between Clojure's dynamic bytecode generation and Android's ART runtime.
+   - Converts JVM bytecode to Android DEX format on the fly using the D8 compiler.
+   - Caches compiled classes to improve performance on subsequent runs.
 
-6. **Android Integration**
-   - Direct access to all Android SDK APIs through Clojure
-   - Hardware sensor access (GPS, accelerometer, compass, etc.)
-   - Network and system services integration
-   - UI component manipulation in real-time
-   - Event handling and lifecycle management
+## Features
+
+### App Designer
+- **Natural Language Interface**: Just say "Make a calculator app" or "Draw a fractal tree".
+- **Multi-Model Support**: Switch between Claude, Gemini, and OpenAI models.
+- **Visual Feedback**: The AI sees what you see via automated screenshots, allowing it to fix UI glitches and improve layout.
+- **Session Management**: Save and resume design sessions (`DesignSessionsActivity`).
+
+### REPL
+- **Direct Evaluation**: Execute Clojure forms immediately.
+- **History**: Access previous commands.
+- **Output Display**: View results and standard output.
 
 ## Example Applications
 
-The project includes several example applications in the `examples/` directory:
+The project includes example applications in the `examples/` directory that demonstrate what's possible:
 
-- `compass_app.clj`: Demonstrates sensor integration and real-time UI updates
-- `weather_app.clj`: Shows network requests and data visualization
-- `vertical_layout_with_buttons.clj`: Basic UI layout example
-- `button_test.clj`: Event handling demonstration
-- `layout_test.clj`: Advanced layout manipulation
-- `feature_test.clj`: Various Android feature integrations
-
-To run the examples:
-
-1. Launch the application on your Android device
-2. Use the provided `send-clj.sh` script to send and evaluate Clojure code:
-   ```bash
-   ./send-clj.sh examples/compass_app.clj
-   ```
-
-The script will:
-- Start the app if it's not running
-- Base64 encode the Clojure file contents
-- Send the code to the app via an Android broadcast intent
-- The app will evaluate the code and display the results
+- `compass_app.clj`: Sensor integration.
+- `weather_app.clj`: Networking and JSON parsing.
+- `vertical_layout_with_buttons.clj`: Basic UI construction.
 
 ## Building the Application
 
-For detailed build instructions, including prerequisites and step-by-step procedures for both macOS and Linux, please refer to [BUILD.md](BUILD.md).
-
-Key build steps include:
-1. Installing prerequisites (Java 17, Android Studio, Gradle, etc.)
-2. Downloading Clojure dependencies
-3. Patching and building Clojure for Android
-4. Building the debug APK
-
-## Development Workflow
-
-1. **Setup**
-   - Follow the build instructions in BUILD.md
-   - Connect your Android device or start an emulator
-   - Install the debug APK using:
-     ```bash
-     ./gradlew installDebug
-     ```
-     This will build and install the app directly to your connected device or emulator
-
-2. **REPL Connection**
-   - Use the provided `send-clj.sh` script to connect to the REPL
-   - Start experimenting with Clojure code directly on the device
-
-3. **Android Development**
-   - Access any Android SDK API directly from Clojure
-   - Create and modify UI components in real-time
-   - Interact with device sensors and system services
-   - Test changes instantly without rebuilding the app
-   - Use the example files as references for common patterns
+See [BUILD.md](BUILD.md) for detailed instructions on setting up the development environment and building the APK.
 
 ## Contributing
 
@@ -134,4 +77,5 @@ Contributions are welcome! Please feel free to submit pull requests or create is
 
 ## License
 
-This project is licensed under the Apache License, Version 2.0 - see the [LICENSE](LICENSE) file for details. 
+This project is licensed under the Apache License, Version 2.0 - see the [LICENSE](LICENSE) file for details.
+ 
