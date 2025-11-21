@@ -139,15 +139,33 @@ echo "" >> "$CHAT_FILE"
 CODE_ATTEMPTS_DIR="$EXPORT_DIR/code_attempts"
 mkdir -p "$CODE_ATTEMPTS_DIR"
 
-# Initialize attempt counter
+# Create a directory for attachments
+ATTACHMENTS_BASE_DIR="$EXPORT_DIR/attachments"
+mkdir -p "$ATTACHMENTS_BASE_DIR"
+
+# Define temp dir for screenshots
+SCREENSHOT_TMP_DIR="$TMP_DIR/screenshots"
+mkdir -p "$SCREENSHOT_TMP_DIR"
+
+# Initialize counters
 ATTEMPT_COUNTER=1
+MSG_INDEX=0
+ATTEMPT_FILE=""
+
+echo "Processing chat history..."
 
 # Process chat history messages
-jq -c '.chatHistory[]' "$SESSION_JSON" | while read -r message; do
+while read -r message; do
+  MSG_INDEX=$((MSG_INDEX + 1))
+
   ROLE=$(echo "$message" | jq -r '.role')
   CONTENT=$(echo "$message" | jq -r '.content')
   MODEL_PROVIDER=$(echo "$message" | jq -r '.modelProvider // empty')
   MODEL_NAME=$(echo "$message" | jq -r '.modelName // empty')
+
+  # ---------------------------------------------------------
+  # 1. Update Chat History File
+  # ---------------------------------------------------------
 
   # Format based on role
   case $ROLE in
@@ -163,29 +181,6 @@ jq -c '.chatHistory[]' "$SESSION_JSON" | while read -r message; do
       else
         echo "🧠 ASSISTANT:" >> "$CHAT_FILE"
       fi
-
-      # Extract code blocks from assistant messages
-      if [ "$ROLE" = "assistant" ]; then
-        # Look for code blocks marked with ```clojure or ``` (generic code blocks)
-        if echo "$CONTENT" | grep -q '```clojure\|```'; then
-          echo "Extracting code from assistant response (attempt $ATTEMPT_COUNTER)..."
-
-          # Extract code block delineated by ```clojure...``` pattern
-          CODE_BLOCKS=$(echo "$CONTENT" | sed -n '/```clojure/,/```/p' | sed '1d;$d' | sed '/^```$/d')
-
-          # Save code if we found any
-          if [ -n "$CODE_BLOCKS" ]; then
-            # Sanitize model provider and name for filename (replace non-alphanumeric with underscore)
-            SANITIZED_PROVIDER=$(echo "$MODEL_PROVIDER" | sed 's/[^a-zA-Z0-9]/_/g')
-            SANITIZED_MODEL=$(echo "$MODEL_NAME" | sed 's/[^a-zA-Z0-9]/_/g')
-
-            ATTEMPT_FILE="$CODE_ATTEMPTS_DIR/attempt-$ATTEMPT_COUNTER-$SANITIZED_PROVIDER-$SANITIZED_MODEL.clj"
-            echo "$CODE_BLOCKS" > "$ATTEMPT_FILE"
-            echo "Saved code attempt $ATTEMPT_COUNTER to $ATTEMPT_FILE"
-            ATTEMPT_COUNTER=$((ATTEMPT_COUNTER + 1))
-          fi
-        fi
-      fi
       ;;
     *)
       echo "[$ROLE]:" >> "$CHAT_FILE"
@@ -197,67 +192,193 @@ jq -c '.chatHistory[]' "$SESSION_JSON" | while read -r message; do
   echo "" >> "$CHAT_FILE"
   echo "---------------------------------------------------------------" >> "$CHAT_FILE"
   echo "" >> "$CHAT_FILE"
-done
 
-# Create a directory for screenshots
-SCREENSHOTS_DIR="$EXPORT_DIR/screenshots"
-mkdir -p "$SCREENSHOTS_DIR"
-SCREENSHOT_TMP_DIR="$TMP_DIR/screenshots"
-mkdir -p "$SCREENSHOT_TMP_DIR"
+  # ---------------------------------------------------------
+  # 2. Handle Assistant Code Extraction
+  # ---------------------------------------------------------
+  if [ "$ROLE" = "assistant" ]; then
+    # Try to get code from extractedCode field first
+    EXTRACTED_CODE=$(echo "$message" | jq -r '.extractedCode // empty')
 
-echo "Copying screenshots..."
-
-# Save the number of sets to a variable
-SET_COUNT=$(jq -r '.screenshotSets | length' "$SESSION_JSON")
-echo "Found $SET_COUNT screenshot sets"
-
-# Extract screenshots using a manual, one-by-one approach
-for ((set_idx=0; set_idx<$SET_COUNT; set_idx++)); do
-  SET_NUM=$((set_idx+1))
-  SET_DIR="$SCREENSHOTS_DIR/set_${SET_NUM}"
-  mkdir -p "$SET_DIR"
-
-  echo "Processing screenshot set $SET_NUM"
-
-  # Count how many screenshots are in this set
-  PATH_COUNT=$(jq -r ".screenshotSets[$set_idx] | length" "$SESSION_JSON")
-  echo "Set $SET_NUM has $PATH_COUNT screenshots"
-
-  # Process screenshots one by one
-  for ((path_idx=0; path_idx<$PATH_COUNT; path_idx++)); do
-    # Get a single path
-    SCREENSHOT_PATH=$(jq -r ".screenshotSets[$set_idx][$path_idx]" "$SESSION_JSON")
-
-    # Skip empty paths
-    if [ -z "$SCREENSHOT_PATH" ] || [ "$SCREENSHOT_PATH" == "null" ]; then
-      continue
+    # If empty, try codeExtractionResult.code
+    if [ -z "$EXTRACTED_CODE" ]; then
+      EXTRACTED_CODE=$(echo "$message" | jq -r '.codeExtractionResult.code // empty')
     fi
 
-    FILENAME=$(basename "$SCREENSHOT_PATH")
+    # If we found extracted code, save it
+    CODE_FOUND=false
+    if [ -n "$EXTRACTED_CODE" ]; then
+         CODE_FOUND=true
+    else
+        # Fallback to parsing content if no extracted code found
+        if echo "$CONTENT" | grep -q '```clojure\|```'; then
+          # Extract code block delineated by ```clojure...``` pattern
+          CODE_BLOCKS=$(echo "$CONTENT" | sed -n '/```clojure/,/```/p' | sed '1d;$d' | sed '/^```$/d')
+          if [ -n "$CODE_BLOCKS" ]; then
+            EXTRACTED_CODE="$CODE_BLOCKS"
+            CODE_FOUND=true
+          fi
+        fi
+    fi
+
+    if [ "$CODE_FOUND" = true ]; then
+         echo "Found extracted code in message $MSG_INDEX (iteration $ATTEMPT_COUNTER)..."
+
+         # Sanitize model provider and name for filename
+         SANITIZED_PROVIDER=$(echo "$MODEL_PROVIDER" | sed 's/[^a-zA-Z0-9]/_/g')
+         SANITIZED_MODEL=$(echo "$MODEL_NAME" | sed 's/[^a-zA-Z0-9]/_/g')
+
+         # Filename format: attempt-m[msg]-it[iter]-[model].clj
+         # We use provider_model for [model] part
+         ATTEMPT_FILE="$CODE_ATTEMPTS_DIR/attempt-m${MSG_INDEX}-it${ATTEMPT_COUNTER}-${SANITIZED_PROVIDER}_${SANITIZED_MODEL}.clj"
+
+         echo "$EXTRACTED_CODE" > "$ATTEMPT_FILE"
+         echo "Saved code attempt to $ATTEMPT_FILE"
+
+         # Increment iteration counter only when code is found
+         ATTEMPT_COUNTER=$((ATTEMPT_COUNTER + 1))
+    fi
+  fi
+
+  # ---------------------------------------------------------
+  # 3. Handle User Attachments (Screenshots & Logcat)
+  # ---------------------------------------------------------
+  if [ "$ROLE" = "user" ]; then
+      IMAGE_FILES=$(echo "$message" | jq -r '.imageFiles[]? // empty')
+      LOGCAT_CONTENT=$(echo "$message" | jq -r '.logcat // empty')
+
+      if [ -n "$IMAGE_FILES" ] || [ -n "$LOGCAT_CONTENT" ]; then
+          MSG_DIR="$ATTACHMENTS_BASE_DIR/msg_$MSG_INDEX"
+          mkdir -p "$MSG_DIR"
+
+          # Save Logcat
+          if [ -n "$LOGCAT_CONTENT" ]; then
+              echo "$LOGCAT_CONTENT" > "$MSG_DIR/logcat"
+              echo "Saved logcat to msg_$MSG_INDEX/logcat"
+          fi
+
+          # Save Screenshots
+          if [ -n "$IMAGE_FILES" ]; then
+              for SCREENSHOT_PATH in $IMAGE_FILES; do
+                # Skip empty paths
+                if [ -z "$SCREENSHOT_PATH" ] || [ "$SCREENSHOT_PATH" == "null" ]; then
+                  continue
+                fi
+
+                FILENAME=$(basename "$SCREENSHOT_PATH")
+                TEMP_SCREENSHOT="$SCREENSHOT_TMP_DIR/$FILENAME"
+
+                echo "Trying to pull screenshot: $FILENAME"
+
+                # Try to pull with su first
+                adb shell "su 0 cat \"$SCREENSHOT_PATH\"" > "$TEMP_SCREENSHOT" 2>/dev/null < /dev/null
+
+                # If that failed, try without su
+                if [ ! -s "$TEMP_SCREENSHOT" ]; then
+                    adb shell "cat \"$SCREENSHOT_PATH\"" > "$TEMP_SCREENSHOT" 2>/dev/null < /dev/null
+                fi
+
+                # If that failed, try with run-as
+                if [ ! -s "$TEMP_SCREENSHOT" ]; then
+                    RELATIVE_PATH=$(echo "$SCREENSHOT_PATH" | sed "s|$ANDROID_DATA_DIR/||")
+                    adb shell "run-as $ANDROID_PKG cat \"$RELATIVE_PATH\"" > "$TEMP_SCREENSHOT" 2>/dev/null < /dev/null
+                fi
+
+                # Check if successful
+                if [ -s "$TEMP_SCREENSHOT" ]; then
+                  cp "$TEMP_SCREENSHOT" "$MSG_DIR/$FILENAME"
+                  echo "Copied screenshot: $FILENAME to msg_$MSG_INDEX"
+                else
+                  echo "Warning: Could not pull screenshot from path: $SCREENSHOT_PATH"
+                fi
+              done
+          fi
+      fi
+  fi
+
+done < <(jq -c '.chatHistory[]' "$SESSION_JSON")
+
+echo "Pulling all raw screenshots for this session..."
+# Define the screenshot directory on the device
+DEVICE_SCREENSHOT_DIR="$ANDROID_DATA_DIR/cache/screenshots"
+
+# List files matching the session ID pattern
+# Pattern: session_[UUID]_*.png
+FILE_PATTERN="session_${SESSION_ID}_*.png"
+
+# Try to list files using su
+RAW_FILES=$(adb shell "su 0 ls $DEVICE_SCREENSHOT_DIR/$FILE_PATTERN 2>/dev/null")
+
+# If empty, try without su
+if [ -z "$RAW_FILES" ]; then
+  RAW_FILES=$(adb shell "ls $DEVICE_SCREENSHOT_DIR/$FILE_PATTERN 2>/dev/null")
+fi
+
+# If still empty, try run-as
+if [ -z "$RAW_FILES" ]; then
+  RAW_FILES=$(adb shell "run-as $ANDROID_PKG ls cache/screenshots/$FILE_PATTERN 2>/dev/null")
+fi
+
+if [ -n "$RAW_FILES" ]; then
+  for FILE_PATH in $RAW_FILES; do
+    # Handle potential "No such file" errors in output if ls failed weirdly
+    if [[ "$FILE_PATH" == *"No such file"* ]]; then continue; fi
+
+    FILENAME=$(basename "$FILE_PATH")
     TEMP_SCREENSHOT="$SCREENSHOT_TMP_DIR/$FILENAME"
 
-    echo "Trying to pull screenshot: $FILENAME"
+    # Extract iteration number from filename
+    # Format: session_[id]_iter_[num]_[timestamp].png
+    ITER_NUM=$(echo "$FILENAME" | sed -n 's/.*_iter_\([0-9]*\)_.*\.png/\1/p')
 
-    # UNCOMMENT the line you want to use
-    adb shell "su 0 cat \"$SCREENSHOT_PATH\"" > "$TEMP_SCREENSHOT" 2>/dev/null
-    # echo "Test data" > "$TEMP_SCREENSHOT"  # For testing
-
-    # Check if successful
-    if [ -s "$TEMP_SCREENSHOT" ]; then
-      cp "$TEMP_SCREENSHOT" "$SET_DIR/$FILENAME"
-      echo "Copied screenshot: $FILENAME to set $SET_NUM"
+    if [ -n "$ITER_NUM" ]; then
+        TARGET_DIR="$EXPORT_DIR/screenshots_iter_$ITER_NUM"
     else
-      echo "Warning: Could not pull screenshot from path: $SCREENSHOT_PATH"
+        TARGET_DIR="$EXPORT_DIR/screenshots_not_indexed"
     fi
+    mkdir -p "$TARGET_DIR"
 
-    # Add a small delay to prevent overwhelming the device
-    # sleep 0.1
+    if [ -f "$TEMP_SCREENSHOT" ]; then
+       echo "Already have $FILENAME, copying to $(basename "$TARGET_DIR")..."
+       cp "$TEMP_SCREENSHOT" "$TARGET_DIR/$FILENAME"
+    else
+       echo "Pulling screenshot: $FILENAME to $(basename "$TARGET_DIR")"
+
+       # Try su
+       adb shell "su 0 cat \"$FILE_PATH\"" > "$TEMP_SCREENSHOT" 2>/dev/null
+
+       # Try normal
+       if [ ! -s "$TEMP_SCREENSHOT" ]; then
+         adb shell "cat \"$FILE_PATH\"" > "$TEMP_SCREENSHOT" 2>/dev/null
+       fi
+
+       # Try run-as
+       if [ ! -s "$TEMP_SCREENSHOT" ]; then
+         # Construct relative path for run-as
+         REL_PATH=$(echo "$FILE_PATH" | sed "s|$ANDROID_DATA_DIR/||")
+         adb shell "run-as $ANDROID_PKG cat \"$REL_PATH\"" > "$TEMP_SCREENSHOT" 2>/dev/null
+       fi
+
+       if [ -s "$TEMP_SCREENSHOT" ]; then
+         cp "$TEMP_SCREENSHOT" "$TARGET_DIR/$FILENAME"
+       else
+         echo "Failed to pull $FILENAME"
+       fi
+    fi
   done
-done
+else
+  echo "No raw screenshots found matching pattern."
+fi
 
 # Extract and save the current code
-CODE=$(jq -r '.currentCode' "$SESSION_JSON")
-echo "$CODE" > "$EXPORT_DIR/current_code.clj"
+if [ -n "$ATTEMPT_FILE" ]; then
+    cp "$ATTEMPT_FILE" "$EXPORT_DIR/current_code.clj"
+else
+    CODE=$(jq -r '.currentCode' "$SESSION_JSON")
+    if [ -n "$CODE" -a "$CODE" != "null" ]; then
+        echo "$CODE" > "$EXPORT_DIR/current_code.clj"
+    fi
+fi
 
 # Extract and save logcat output if it exists
 LOGCAT=$(jq -r '.lastLogcat' "$SESSION_JSON")
@@ -281,8 +402,13 @@ echo "Session export complete!"
 echo "Exported to: $EXPORT_DIR"
 echo "Chat history: $CHAT_FILE"
 echo "Screenshots: $SCREENSHOTS_DIR"
-echo "Code attempts: $CODE_ATTEMPTS_DIR"
-echo "Final code: $EXPORT_DIR/current_code.clj"
+echo "Attachments: $ATTACHMENTS_BASE_DIR"
+if [ -f "$EXPORT_DIR/current_code.clj" ]; then
+    echo "Code attempts: $CODE_ATTEMPTS_DIR"
+    echo "Final code: $EXPORT_DIR/current_code.clj"
+else
+    echo "This chat session has not produced any code."
+fi
 echo "=============================================================="
 
 # Clean up temp directory
